@@ -4,7 +4,8 @@ import { User } from './user.entity'
 
 export enum WorkspaceName {
     DEFAULT_WORKSPACE = 'Default Workspace',
-    DEFAULT_PERSONAL_WORKSPACE = 'Personal Workspace'
+    DEFAULT_PERSONAL_WORKSPACE = 'Personal Workspace',
+    SHARED_CREDENTIALS = 'Shared Credentials'
 }
 
 @Entity()

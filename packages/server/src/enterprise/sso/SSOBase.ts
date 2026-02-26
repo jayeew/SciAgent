@@ -7,6 +7,7 @@ import { UserErrorMessage, UserService } from '../services/user.service'
 import { WorkspaceUserService } from '../services/workspace-user.service'
 import { AccountService } from '../services/account.service'
 import { WorkspaceUser } from '../database/entities/workspace-user.entity'
+import { OrganizationUserService } from '../services/organization-user.service'
 import { OrganizationService } from '../services/organization.service'
 import { GeneralRole } from '../database/entities/role.entity'
 import { RoleErrorMessage, RoleService } from '../services/role.service'
@@ -97,6 +98,14 @@ abstract class SSOBase {
             }
 
             const workspaceUser = wu as WorkspaceUser
+            const organizationUserService = new OrganizationUserService()
+            const { organizationUser } = await organizationUserService.readOrganizationUserByWorkspaceIdUserId(
+                workspaceUser.workspaceId,
+                workspaceUser.userId,
+                queryRunner
+            )
+            if (!organizationUser) throw new InternalFlowiseError(StatusCodes.NOT_FOUND, 'Organization user not found')
+
             let roleService = new RoleService()
             const ownerRole = await roleService.readGeneralRoleByName(GeneralRole.OWNER, queryRunner)
             const role = await roleService.readRoleById(workspaceUser.roleId, queryRunner)
@@ -128,7 +137,7 @@ abstract class SSOBase {
                 activeOrganizationSubscriptionId: subscriptionId,
                 activeOrganizationCustomerId: customerId,
                 activeOrganizationProductId: productId,
-                isOrganizationAdmin: workspaceUser.roleId === ownerRole?.id,
+                isOrganizationAdmin: organizationUser.roleId === ownerRole?.id,
                 activeWorkspaceId: workspaceUser.workspaceId,
                 activeWorkspace: workspaceUser.workspace.name,
                 assignedWorkspaces,

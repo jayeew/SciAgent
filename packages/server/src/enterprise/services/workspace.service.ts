@@ -63,9 +63,23 @@ export class WorkspaceService {
 
     public validateWorkspaceName(name: string | undefined, isRegister: boolean = false) {
         if (isInvalidName(name)) throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, WorkspaceErrorMessage.INVALID_WORKSPACE_NAME)
-        if (!isRegister && (name === WorkspaceName.DEFAULT_PERSONAL_WORKSPACE || name === WorkspaceName.DEFAULT_WORKSPACE)) {
+        if (
+            !isRegister &&
+            (name === WorkspaceName.DEFAULT_PERSONAL_WORKSPACE ||
+                name === WorkspaceName.DEFAULT_WORKSPACE ||
+                name === WorkspaceName.SHARED_CREDENTIALS)
+        ) {
             throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, WorkspaceErrorMessage.WORKSPACE_RESERVERD_NAME)
         }
+    }
+
+    public async getSharedCredentialsWorkspaceId(organizationId: string | undefined): Promise<string | null> {
+        if (!organizationId) return null
+        const workspace = await this.dataSource.getRepository(Workspace).findOne({
+            where: { organizationId, name: WorkspaceName.SHARED_CREDENTIALS },
+            select: ['id']
+        })
+        return workspace?.id ?? null
     }
 
     public async readWorkspaceByOrganizationId(organizationId: string | undefined, queryRunner: QueryRunner) {

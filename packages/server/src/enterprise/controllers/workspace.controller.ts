@@ -125,7 +125,7 @@ export class WorkspaceController {
                 activeOrganizationSubscriptionId: subscriptionId,
                 activeOrganizationCustomerId: customerId,
                 activeOrganizationProductId: productId,
-                isOrganizationAdmin: workspaceUser.roleId === ownerRole.id,
+                isOrganizationAdmin: organizationUser.roleId === ownerRole.id,
                 activeWorkspaceId: workspace.id,
                 activeWorkspace: workspace.name,
                 assignedWorkspaces,

@@ -104,6 +104,7 @@ if (!fs.existsSync(logDir)) {
 }
 
 const logger = createLogger({
+    level: config.logging.server.level ?? 'info',
     format: combine(
         timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
         format.json(),

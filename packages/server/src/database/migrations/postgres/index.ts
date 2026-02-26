@@ -53,6 +53,8 @@ import { AddSSOColumns1730519457880 } from '../../../enterprise/database/migrati
 import { AddPersonalWorkspace1734074497540 } from '../../../enterprise/database/migrations/postgres/1734074497540-AddPersonalWorkspace'
 import { RefactorEnterpriseDatabase1737076223692 } from '../../../enterprise/database/migrations/postgres/1737076223692-RefactorEnterpriseDatabase'
 import { ExecutionLinkWorkspaceId1746862866554 } from '../../../enterprise/database/migrations/postgres/1746862866554-ExecutionLinkWorkspaceId'
+import { OwnerRoleFullPermissions1765400000000 } from '../../../enterprise/database/migrations/postgres/1765400000000-OwnerRoleFullPermissions'
+import { CredentialOwnerOnlyAndSharedWorkspace1765500000000 } from '../../../enterprise/database/migrations/postgres/1765500000000-CredentialOwnerOnlyAndSharedWorkspace'
 
 export const postgresMigrations = [
     Init1693891895163,
@@ -108,5 +110,7 @@ export const postgresMigrations = [
     ModifyChatflowType1755066758601,
     AddTextToSpeechToChatFlow1759419194331,
     AddChatFlowNameIndex1759424903973,
-    AddApiKeyPermission1765360298674
+    AddApiKeyPermission1765360298674,
+    OwnerRoleFullPermissions1765400000000,
+    CredentialOwnerOnlyAndSharedWorkspace1765500000000
 ]

@@ -55,6 +55,8 @@ import { AddSSOColumns1730519457880 } from '../../../enterprise/database/migrati
 import { AddPersonalWorkspace1734074497540 } from '../../../enterprise/database/migrations/mysql/1734074497540-AddPersonalWorkspace'
 import { RefactorEnterpriseDatabase1737076223692 } from '../../../enterprise/database/migrations/mysql/1737076223692-RefactorEnterpriseDatabase'
 import { ExecutionLinkWorkspaceId1746862866554 } from '../../../enterprise/database/migrations/mysql/1746862866554-ExecutionLinkWorkspaceId'
+import { OwnerRoleFullPermissions1765400000000 } from '../../../enterprise/database/migrations/mysql/1765400000000-OwnerRoleFullPermissions'
+import { CredentialOwnerOnlyAndSharedWorkspace1765500000000 } from '../../../enterprise/database/migrations/mysql/1765500000000-CredentialOwnerOnlyAndSharedWorkspace'
 
 export const mysqlMigrations = [
     Init1693840429259,
@@ -112,5 +114,7 @@ export const mysqlMigrations = [
     AddTextToSpeechToChatFlow1759419216034,
     AddChatFlowNameIndex1759424828558,
     FixDocumentStoreFileChunkLongText1765000000000,
-    AddApiKeyPermission1765360298674
+    AddApiKeyPermission1765360298674,
+    OwnerRoleFullPermissions1765400000000,
+    CredentialOwnerOnlyAndSharedWorkspace1765500000000
 ]

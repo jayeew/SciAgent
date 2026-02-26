@@ -276,8 +276,14 @@ export class IdentityManager {
 
     public static checkFeatureByPlan(feature: string) {
         return (req: Request, res: Response, next: NextFunction) => {
-            const user = req.user
+            const user = req.user as LoggedInUser | undefined
             if (user) {
+                // Open Source: owner has access to all feature-gated routes (features are not populated by plan)
+                const app = getRunningExpressApp()
+                if (user.isOrganizationAdmin && app.identityManager.getPlatformType() === Platform.OPEN_SOURCE) {
+                    console.log('user.isOrganizationAdmin', user.isOrganizationAdmin)
+                    return next()
+                }
                 if (!user.features || Object.keys(user.features).length === 0) {
                     return res.status(403).json({ message: ErrorMessage.FORBIDDEN })
                 }
@@ -285,6 +291,7 @@ export class IdentityManager {
                     return next()
                 }
             }
+            console.log('user无效', user)
             return res.status(403).json({ message: ErrorMessage.FORBIDDEN })
         }
     }

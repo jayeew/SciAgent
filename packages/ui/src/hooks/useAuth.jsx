@@ -9,30 +9,31 @@ export const useAuth = () => {
     const currentUser = useSelector((state) => state.auth.user)
 
     const hasPermission = (permissionId) => {
-        if (isOpenSource || isGlobal) {
-            return true
-        }
+        // Owner (isGlobal) has full access in all modes
+        if (isGlobal) return true
+        // Open Source non-owners: check permissions array (so User & Workspace Management only for owner)
+        // Enterprise/Cloud: always check permissions array
         if (!permissionId) return false
         const permissionIds = permissionId.split(',')
         if (permissions && permissions.length) {
-            return permissionIds.some((permissionId) => permissions.includes(permissionId))
+            return permissionIds.some((pid) => permissions.includes(pid))
         }
         return false
     }
 
     const hasAssignedWorkspace = (workspaceId) => {
-        if (isOpenSource || isGlobal) {
-            return true
-        }
+        if (isGlobal) return true
         const activeWorkspaceId = currentUser?.activeWorkspaceId || ''
-        if (workspaceId === activeWorkspaceId) {
-            return true
-        }
-        return false
+        return workspaceId === activeWorkspaceId
     }
 
     const hasDisplay = (display) => {
         if (!display) {
+            return true
+        }
+
+        // Owner (isGlobal) can see all display-gated items (e.g. User & Workspace Management in Open Source)
+        if (isGlobal) {
             return true
         }
 

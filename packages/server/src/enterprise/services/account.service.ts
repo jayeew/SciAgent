@@ -163,17 +163,11 @@ export class AccountService {
                 const personalWorkspaceRole = await this.roleService.readGeneralRoleByName(GeneralRole.PERSONAL_WORKSPACE, queryRunner)
 
                 // 组织层面是 Member，工作区层面给个人工作区权限，保证有完整使用能力
-                // 测试发现组织层面给menberRole，无法正常登录工作区，所以这里给个人工作区权限
                 data.organizationUser.role = memberRole
                 data.workspaceUser.role = personalWorkspaceRole
 
-                // 尝试复用该组织下已有的非个人 workspace，若没有则后续会创建默认 workspace
-                const availableWorkspaces = await this.workspaceService.readWorkspaceByOrganizationId(existingOrganization.id, queryRunner)
-                if (availableWorkspaces.length > 0) {
-                    data.workspace = availableWorkspaces[0]
-                } else {
-                    data.workspace.name = WorkspaceName.DEFAULT_WORKSPACE
-                }
+                // 每个新用户注册时获得自己的个人工作区，不同用户 workspace 隔离
+                data.workspace.name = WorkspaceName.DEFAULT_PERSONAL_WORKSPACE
 
                 data.user.status = UserStatus.ACTIVE
                 data.user = await this.userService.createNewUser(data.user, queryRunner)
@@ -292,15 +286,8 @@ export class AccountService {
                         // 自助注册用户：组织层面是 Member，工作区层面拥有个人工作区的权限
                         data.workspaceUser.role = personalWorkspaceRole
 
-                        const availableWorkspaces = await this.workspaceService.readWorkspaceByOrganizationId(
-                            existingOrganization.id,
-                            queryRunner
-                        )
-                        if (availableWorkspaces.length > 0) {
-                            data.workspace = availableWorkspaces[0]
-                        } else {
-                            data.workspace.name = WorkspaceName.DEFAULT_WORKSPACE
-                        }
+                        // 每个新用户注册时获得自己的个人工作区，不同用户 workspace 隔离
+                        data.workspace.name = WorkspaceName.DEFAULT_PERSONAL_WORKSPACE
 
                         data.user.status = UserStatus.ACTIVE
                         data.user = await this.userService.createNewUser(data.user, queryRunner)
@@ -355,6 +342,30 @@ export class AccountService {
                 ownerRole.id === data.organizationUser.roleId
             ) {
                 await this.workspaceService.setNullWorkspaceId(queryRunner, data.workspace.id)
+            }
+            if ((platform === Platform.OPEN_SOURCE || platform === Platform.CLOUD) && ownerRole.id === data.organizationUser.roleId) {
+                const sharedCredsWorkspace = this.workspaceService.createNewWorkspace(
+                    {
+                        name: WorkspaceName.SHARED_CREDENTIALS,
+                        description: 'Credentials shared across all workspaces',
+                        organizationId: data.organization.id,
+                        createdBy: data.user.id
+                    },
+                    queryRunner,
+                    true
+                )
+                const savedSharedCredsWorkspace = await this.workspaceService.saveWorkspace(sharedCredsWorkspace, queryRunner)
+                const sharedCredsWorkspaceUser = this.workspaceUserService.createNewWorkspaceUser(
+                    {
+                        workspaceId: savedSharedCredsWorkspace.id,
+                        userId: data.user.id,
+                        roleId: ownerRole.id,
+                        status: WorkspaceUserStatus.ACTIVE,
+                        createdBy: data.user.id
+                    },
+                    queryRunner
+                )
+                await this.workspaceUserService.saveWorkspaceUser(sharedCredsWorkspaceUser, queryRunner)
             }
             await queryRunner.commitTransaction()
 

@@ -171,6 +171,7 @@ export const initializeJwtCookieMiddleware = async (app: express.Application, id
                     const features = await identityManager.getFeaturesByPlan(subscriptionId)
                     const productId = await identityManager.getProductIdFromSubscription(subscriptionId)
 
+                    // isOrganizationAdmin: org-level owner (organization_user.roleId), not current workspace role
                     const loggedInUser: LoggedInUser = {
                         id: workspaceUser.userId,
                         email: response.user.email,
@@ -180,7 +181,7 @@ export const initializeJwtCookieMiddleware = async (app: express.Application, id
                         activeOrganizationSubscriptionId: subscriptionId,
                         activeOrganizationCustomerId: customerId,
                         activeOrganizationProductId: productId,
-                        isOrganizationAdmin: workspaceUser.roleId === ownerRole.id,
+                        isOrganizationAdmin: organizationUser.roleId === ownerRole.id,
                         activeWorkspaceId: workspaceUser.workspaceId,
                         activeWorkspace: workspaceUser.workspace.name,
                         assignedWorkspaces,

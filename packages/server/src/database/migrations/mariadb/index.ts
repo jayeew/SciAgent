@@ -54,6 +54,8 @@ import { AddSSOColumns1730519457880 } from '../../../enterprise/database/migrati
 import { AddPersonalWorkspace1734074497540 } from '../../../enterprise/database/migrations/mariadb/1734074497540-AddPersonalWorkspace'
 import { RefactorEnterpriseDatabase1737076223692 } from '../../../enterprise/database/migrations/mariadb/1737076223692-RefactorEnterpriseDatabase'
 import { ExecutionLinkWorkspaceId1746862866554 } from '../../../enterprise/database/migrations/mariadb/1746862866554-ExecutionLinkWorkspaceId'
+import { OwnerRoleFullPermissions1765400000000 } from '../../../enterprise/database/migrations/mariadb/1765400000000-OwnerRoleFullPermissions'
+import { CredentialOwnerOnlyAndSharedWorkspace1765500000000 } from '../../../enterprise/database/migrations/mariadb/1765500000000-CredentialOwnerOnlyAndSharedWorkspace'
 
 export const mariadbMigrations = [
     Init1693840429259,
@@ -110,5 +112,7 @@ export const mariadbMigrations = [
     AddTextToSpeechToChatFlow1759419231100,
     AddChatFlowNameIndex1759424809984,
     FixDocumentStoreFileChunkLongText1765000000000,
-    AddApiKeyPermission1765360298674
+    AddApiKeyPermission1765360298674,
+    OwnerRoleFullPermissions1765400000000,
+    CredentialOwnerOnlyAndSharedWorkspace1765500000000
 ]
