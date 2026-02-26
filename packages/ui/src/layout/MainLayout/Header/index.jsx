@@ -80,6 +80,7 @@ const MaterialUISwitch = styled(Switch)(({ theme }) => ({
     }
 }))
 
+const SHOW_GITHUB_BUTTON = false
 const GitHubStarButton = ({ starCount, isDark }) => {
     const theme = useTheme()
 
@@ -250,7 +251,7 @@ const Header = ({ handleLeftDrawerToggle }) => {
                     </ButtonBase>
                 )}
             </Box>
-            {isCloud || isOpenSource ? (
+            {SHOW_GITHUB_BUTTON && (isCloud || isOpenSource) ? (
                 <Box
                     sx={{
                         flexGrow: 1,

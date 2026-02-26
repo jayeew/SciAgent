@@ -10,6 +10,7 @@ export const ConfigProvider = ({ children }) => {
     const [isEnterpriseLicensed, setEnterpriseLicensed] = useState(false)
     const [isCloud, setCloudLicensed] = useState(false)
     const [isOpenSource, setOpenSource] = useState(false)
+    const [canPublicRegister, setCanPublicRegister] = useState(false)
 
     useEffect(() => {
         const userSettings = platformsettingsApi.getSettings()
@@ -19,6 +20,7 @@ export const ConfigProvider = ({ children }) => {
                     ...currentSettingsData.data
                 }
                 setConfig(finalData)
+                setCanPublicRegister(!!finalData.ENABLE_PUBLIC_REGISTRATION)
                 if (finalData.PLATFORM_TYPE) {
                     if (finalData.PLATFORM_TYPE === 'enterprise') {
                         setEnterpriseLicensed(true)
@@ -44,7 +46,9 @@ export const ConfigProvider = ({ children }) => {
     }, [])
 
     return (
-        <ConfigContext.Provider value={{ config, loading, isEnterpriseLicensed, isCloud, isOpenSource }}>{children}</ConfigContext.Provider>
+        <ConfigContext.Provider value={{ config, loading, isEnterpriseLicensed, isCloud, isOpenSource, canPublicRegister }}>
+            {children}
+        </ConfigContext.Provider>
     )
 }
 

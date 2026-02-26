@@ -3,6 +3,8 @@ import AzureSSO from '../enterprise/sso/AzureSSO'
 import GithubSSO from '../enterprise/sso/GithubSSO'
 import GoogleSSO from '../enterprise/sso/GoogleSSO'
 
+export const ENABLE_PUBLIC_REGISTRATION = process.env.ENABLE_PUBLIC_REGISTRATION === 'true'
+
 export const WHITELIST_URLS = [
     '/api/v1/verify/apikey/',
     '/api/v1/chatflows/apikey/',

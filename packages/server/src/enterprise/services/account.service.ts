@@ -5,7 +5,7 @@ import { DataSource, QueryRunner } from 'typeorm'
 import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import { IdentityManager } from '../../IdentityManager'
 import { Platform, UserPlan } from '../../Interface'
-import { GeneralErrorMessage } from '../../utils/constants'
+import { ENABLE_PUBLIC_REGISTRATION, GeneralErrorMessage } from '../../utils/constants'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import logger from '../../utils/logger'
 import { checkUsageLimit } from '../../utils/quotaUsage'
@@ -113,6 +113,10 @@ export class AccountService {
         return { message: 'success' }
     }
 
+    private static isPublicRegistrationEnabled() {
+        return ENABLE_PUBLIC_REGISTRATION
+    }
+
     private async ensureOneOrganizationOnly(queryRunner: QueryRunner) {
         const organizations = await this.organizationservice.readOrganization(queryRunner)
         if (organizations.length > 0) throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'You can only have one organization')
@@ -124,15 +128,57 @@ export class AccountService {
         const platform = this.identityManager.getPlatformType()
 
         switch (platform) {
-            case Platform.OPEN_SOURCE:
-                await this.ensureOneOrganizationOnly(queryRunner)
-                data.organization.name = OrganizationName.DEFAULT_ORGANIZATION
-                data.organizationUser.role = await this.roleService.readGeneralRoleByName(GeneralRole.OWNER, queryRunner)
-                data.workspace.name = WorkspaceName.DEFAULT_WORKSPACE
-                data.workspaceUser.role = data.organizationUser.role
+            case Platform.OPEN_SOURCE: {
+                const organizations = await this.organizationservice.readOrganization(queryRunner)
+
+                // 如果还没有任何组织，走原来的“首次注册”逻辑
+                if (organizations.length === 0) {
+                    await this.ensureOneOrganizationOnly(queryRunner)
+                    data.organization.name = OrganizationName.DEFAULT_ORGANIZATION
+                    data.organizationUser.role = await this.roleService.readGeneralRoleByName(GeneralRole.OWNER, queryRunner)
+                    data.workspace.name = WorkspaceName.DEFAULT_WORKSPACE
+                    data.workspaceUser.role = data.organizationUser.role
+                    data.user.status = UserStatus.ACTIVE
+                    data.user = await this.userService.createNewUser(data.user, queryRunner)
+                    break
+                }
+
+                // 已经有组织时，若未开启开放注册，保持原有限制行为
+                if (!AccountService.isPublicRegistrationEnabled()) {
+                    throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'You can only have one organization')
+                }
+
+                const existingOrganization = organizations[0]
+
+                // 邮箱唯一性校验
+                if (data.user.email) {
+                    const existingUser = await this.userService.readUserByEmail(data.user.email, queryRunner)
+                    if (existingUser) {
+                        throw new InternalFlowiseError(StatusCodes.NOT_FOUND, UserErrorMessage.USER_EMAIL_ALREADY_EXISTS)
+                    }
+                }
+
+                data.organization = existingOrganization
+                const memberRole = await this.roleService.readGeneralRoleByName(GeneralRole.MEMBER, queryRunner)
+                const personalWorkspaceRole = await this.roleService.readGeneralRoleByName(GeneralRole.PERSONAL_WORKSPACE, queryRunner)
+
+                // 组织层面是 Member，工作区层面给个人工作区权限，保证有完整使用能力
+                // 测试发现组织层面给menberRole，无法正常登录工作区，所以这里给个人工作区权限
+                data.organizationUser.role = memberRole
+                data.workspaceUser.role = personalWorkspaceRole
+
+                // 尝试复用该组织下已有的非个人 workspace，若没有则后续会创建默认 workspace
+                const availableWorkspaces = await this.workspaceService.readWorkspaceByOrganizationId(existingOrganization.id, queryRunner)
+                if (availableWorkspaces.length > 0) {
+                    data.workspace = availableWorkspaces[0]
+                } else {
+                    data.workspace.name = WorkspaceName.DEFAULT_WORKSPACE
+                }
+
                 data.user.status = UserStatus.ACTIVE
                 data.user = await this.userService.createNewUser(data.user, queryRunner)
                 break
+            }
             case Platform.CLOUD: {
                 const user = await this.userService.readUserByEmail(data.user.email, queryRunner)
                 if (user && (user.status === UserStatus.ACTIVE || user.status === UserStatus.UNVERIFIED))
@@ -210,12 +256,55 @@ export class AccountService {
                     data.workspace.name = WorkspaceName.DEFAULT_PERSONAL_WORKSPACE
                     data.workspaceUser.role = await this.roleService.readGeneralRoleByName(GeneralRole.PERSONAL_WORKSPACE, queryRunner)
                 } else {
-                    await this.ensureOneOrganizationOnly(queryRunner)
-                    data.organizationUser.role = await this.roleService.readGeneralRoleByName(GeneralRole.OWNER, queryRunner)
-                    data.workspace.name = WorkspaceName.DEFAULT_WORKSPACE
-                    data.workspaceUser.role = data.organizationUser.role
-                    data.user.status = UserStatus.ACTIVE
-                    data.user = await this.userService.createNewUser(data.user, queryRunner)
+                    const organizations = await this.organizationservice.readOrganization(queryRunner)
+
+                    // 没有任何组织时仍然走原始 owner 注册逻辑
+                    if (organizations.length === 0) {
+                        await this.ensureOneOrganizationOnly(queryRunner)
+                        data.organizationUser.role = await this.roleService.readGeneralRoleByName(GeneralRole.OWNER, queryRunner)
+                        data.workspace.name = WorkspaceName.DEFAULT_WORKSPACE
+                        data.workspaceUser.role = data.organizationUser.role
+                        data.user.status = UserStatus.ACTIVE
+                        data.user = await this.userService.createNewUser(data.user, queryRunner)
+                    } else {
+                        // 已经有组织：受开关控制是否允许自助注册为成员
+                        if (!AccountService.isPublicRegistrationEnabled()) {
+                            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'You can only have one organization')
+                        }
+
+                        const existingOrganization = organizations[0]
+
+                        // 邮箱唯一性校验
+                        if (data.user.email) {
+                            const existingUser = await this.userService.readUserByEmail(data.user.email, queryRunner)
+                            if (existingUser) {
+                                throw new InternalFlowiseError(StatusCodes.NOT_FOUND, UserErrorMessage.USER_EMAIL_ALREADY_EXISTS)
+                            }
+                        }
+
+                        data.organization = existingOrganization
+                        const memberRole = await this.roleService.readGeneralRoleByName(GeneralRole.MEMBER, queryRunner)
+                        const personalWorkspaceRole = await this.roleService.readGeneralRoleByName(
+                            GeneralRole.PERSONAL_WORKSPACE,
+                            queryRunner
+                        )
+                        data.organizationUser.role = memberRole
+                        // 自助注册用户：组织层面是 Member，工作区层面拥有个人工作区的权限
+                        data.workspaceUser.role = personalWorkspaceRole
+
+                        const availableWorkspaces = await this.workspaceService.readWorkspaceByOrganizationId(
+                            existingOrganization.id,
+                            queryRunner
+                        )
+                        if (availableWorkspaces.length > 0) {
+                            data.workspace = availableWorkspaces[0]
+                        } else {
+                            data.workspace.name = WorkspaceName.DEFAULT_WORKSPACE
+                        }
+
+                        data.user.status = UserStatus.ACTIVE
+                        data.user = await this.userService.createNewUser(data.user, queryRunner)
+                    }
                 }
                 break
             }
@@ -231,9 +320,11 @@ export class AccountService {
         data.organizationUser.userId = data.user.id
         data.organizationUser.createdBy = data.user.createdBy
         data.organizationUser = this.organizationUserService.createNewOrganizationUser(data.organizationUser, queryRunner)
-        data.workspace.organizationId = data.organization.id
-        data.workspace.createdBy = data.user.createdBy
-        data.workspace = this.workspaceService.createNewWorkspace(data.workspace, queryRunner, true)
+        if (!data.workspace.id) {
+            data.workspace.organizationId = data.organization.id
+            data.workspace.createdBy = data.user.createdBy
+            data.workspace = this.workspaceService.createNewWorkspace(data.workspace, queryRunner, true)
+        }
         data.workspaceUser.workspaceId = data.workspace.id
         data.workspaceUser.userId = data.user.id
         data.workspaceUser.createdBy = data.user.createdBy

@@ -41,7 +41,7 @@ const SignInPage = () => {
     const theme = useTheme()
     useSelector((state) => state.customization)
     useNotifier()
-    const { isEnterpriseLicensed, isCloud, isOpenSource } = useConfig()
+    const { isEnterpriseLicensed, isCloud, isOpenSource, canPublicRegister } = useConfig()
 
     const usernameInput = {
         label: 'Username',
@@ -217,6 +217,15 @@ const SignInPage = () => {
                                 Have an invite code?{' '}
                                 <Link style={{ color: `${theme.palette.primary.main}` }} to='/register'>
                                     Sign up for an account
+                                </Link>
+                                .
+                            </Typography>
+                        )}
+                        {isOpenSource && canPublicRegister && (
+                            <Typography variant='body2' sx={{ color: theme.palette.grey[600] }}>
+                                Don&apos;t have an account?{' '}
+                                <Link style={{ color: `${theme.palette.primary.main}` }} to='/register'>
+                                    Create a new account
                                 </Link>
                                 .
                             </Typography>
