@@ -48,23 +48,26 @@ export const RequireAuth = ({ permission, display, children }) => {
     }
 
     // Step 2: Deployment Type Specific Logic
-    // Open Source: Only show features without display property
+    // Open Source: owner can access display-gated pages; others are denied
     if (isOpenSource) {
-        return !display ? children : <Navigate to='/unauthorized' replace />
+        if (display) {
+            return isGlobal ? children : <Navigate to='/unauthorized' replace />
+        }
+        return children
     }
 
     // Cloud & Enterprise: Check both permissions and feature flags
     if (isCloud || isEnterpriseLicensed) {
         // Routes with display property - check feature flags
         if (display) {
-            // Check if user has any permissions
-            if (permissions.length === 0) {
-                return <Navigate to='/unauthorized' replace state={{ path: location.pathname }} />
-            }
-
             // Organization admins bypass permission checks
             if (isGlobal) {
                 return checkFeatureFlag(features, display, children)
+            }
+
+            // Check if user has any permissions
+            if (!Array.isArray(permissions) || permissions.length === 0) {
+                return <Navigate to='/unauthorized' replace state={{ path: location.pathname }} />
             }
 
             // Check user permissions and feature flags

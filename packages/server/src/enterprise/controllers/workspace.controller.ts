@@ -14,6 +14,7 @@ import { OrganizationErrorMessage, OrganizationService } from '../services/organ
 import { RoleErrorMessage, RoleService } from '../services/role.service'
 import { UserErrorMessage, UserService } from '../services/user.service'
 import { WorkspaceUserErrorMessage, WorkspaceUserService } from '../services/workspace-user.service'
+import { WorkspaceCreditService } from '../services/workspace-credit.service'
 import { WorkspaceErrorMessage, WorkspaceService } from '../services/workspace.service'
 
 export class WorkspaceController {
@@ -128,6 +129,7 @@ export class WorkspaceController {
                 isOrganizationAdmin: organizationUser.roleId === ownerRole.id,
                 activeWorkspaceId: workspace.id,
                 activeWorkspace: workspace.name,
+                activeWorkspaceCredit: workspaceUser.credit ?? 0,
                 assignedWorkspaces,
                 isSSO: req.user.ssoProvider ? true : false,
                 permissions: [...JSON.parse(role.permissions)],
@@ -232,6 +234,51 @@ export class WorkspaceController {
             }
             const workspaceService = new WorkspaceService()
             return res.json(await workspaceService.setSharedWorkspacesForItem(req.params.id, req.body))
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    public async getCredit(req: Request, res: Response, next: NextFunction) {
+        try {
+            if (!req.user?.id || !req.user?.activeWorkspaceId) {
+                throw new InternalFlowiseError(StatusCodes.UNAUTHORIZED, `Unauthorized: User not found`)
+            }
+
+            const workspaceCreditService = new WorkspaceCreditService()
+            const data = await workspaceCreditService.getCreditSummary(req.user.activeWorkspaceId, req.user.id)
+            return res.status(StatusCodes.OK).json(data)
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    public async getCreditTransactions(req: Request, res: Response, next: NextFunction) {
+        try {
+            if (!req.user?.id || !req.user?.activeWorkspaceId) {
+                throw new InternalFlowiseError(StatusCodes.UNAUTHORIZED, `Unauthorized: User not found`)
+            }
+
+            const limit = req.query.limit ? Number(req.query.limit) : 100
+            const workspaceCreditService = new WorkspaceCreditService()
+            const data = await workspaceCreditService.getTransactions(req.user.activeWorkspaceId, req.user.id, limit)
+            return res.status(StatusCodes.OK).json(data)
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    public async topupCredit(req: Request, res: Response, next: NextFunction) {
+        try {
+            if (!req.user?.id || !req.user?.activeWorkspaceId) {
+                throw new InternalFlowiseError(StatusCodes.UNAUTHORIZED, `Unauthorized: User not found`)
+            }
+
+            const amount = Number(req.body?.amount)
+            const description = req.body?.description
+            const workspaceCreditService = new WorkspaceCreditService()
+            const data = await workspaceCreditService.topupCredit(req.user.activeWorkspaceId, req.user.id, amount, description)
+            return res.status(StatusCodes.OK).json(data)
         } catch (error) {
             next(error)
         }

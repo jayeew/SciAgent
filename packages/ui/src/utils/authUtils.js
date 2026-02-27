@@ -46,6 +46,7 @@ const extractUser = (payload) => {
         activeOrganizationProductId: payload.activeOrganizationProductId,
         activeWorkspaceId: payload.activeWorkspaceId,
         activeWorkspace: payload.activeWorkspace,
+        activeWorkspaceCredit: payload.activeWorkspaceCredit ?? 0,
         lastLogin: payload.lastLogin,
         isOrganizationAdmin: payload.isOrganizationAdmin,
         assignedWorkspaces: payload.assignedWorkspaces,

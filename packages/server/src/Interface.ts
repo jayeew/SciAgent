@@ -133,6 +133,7 @@ export interface ICredential {
     name: string
     credentialName: string
     encryptedData: string
+    creditConsumptionMultiplier: number
     updatedDate: Date
     createdDate: Date
     workspaceId: string
@@ -334,6 +335,7 @@ export interface ICredentialReqBody {
     credentialName: string
     plainDataObj: ICredentialDataDecrypted
     workspaceId: string
+    creditConsumptionMultiplier?: number
 }
 
 // Decrypted credential object sent back to client

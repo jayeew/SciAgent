@@ -32,6 +32,9 @@ export class WorkspaceUser {
     @Column({ type: 'varchar', length: 20, default: WorkspaceUserStatus.INVITED })
     status?: string
 
+    @Column({ type: 'int', default: 0 })
+    credit: number
+
     @CreateDateColumn()
     lastLogin?: string
 

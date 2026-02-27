@@ -55,7 +55,8 @@ const getAllCredentials = async (
     paramCredentialName: any,
     workspaceId: string,
     organizationId?: string,
-    canManageCredentials?: boolean
+    canManageCredentials?: boolean,
+    isOwner?: boolean
 ) => {
     try {
         const appServer = getRunningExpressApp()
@@ -74,13 +75,19 @@ const getAllCredentials = async (
                     const credentials = await appServer.AppDataSource.getRepository(Credential).find({
                         where: { credentialName: name, workspaceId: In(workspaceIds) }
                     })
-                    dbResponse.push(...credentials)
+                    dbResponse.push(
+                        ...credentials.map((credential) =>
+                            omit(credential, ['encryptedData', ...(isOwner ? [] : ['creditConsumptionMultiplier'])])
+                        )
+                    )
                 }
             } else {
                 const credentials = await appServer.AppDataSource.getRepository(Credential).find({
                     where: { credentialName: paramCredentialName, workspaceId: In(workspaceIds) }
                 })
-                dbResponse = [...credentials]
+                dbResponse = credentials.map((credential) =>
+                    omit(credential, ['encryptedData', ...(isOwner ? [] : ['creditConsumptionMultiplier'])])
+                )
             }
             if (workspaceId) {
                 const sharedItems = (await workspaceService.getSharedItemsForWorkspace(workspaceId, 'credential')) as Credential[]
@@ -91,7 +98,9 @@ const getAllCredentials = async (
                                 if (sharedItem.credentialName === paramCredentialName[i]) {
                                     // @ts-ignore
                                     sharedItem.shared = true
-                                    dbResponse.push(omit(sharedItem, ['encryptedData']))
+                                    dbResponse.push(
+                                        omit(sharedItem, ['encryptedData', ...(isOwner ? [] : ['creditConsumptionMultiplier'])])
+                                    )
                                     break
                                 }
                             }
@@ -99,7 +108,7 @@ const getAllCredentials = async (
                             if (sharedItem.credentialName === paramCredentialName) {
                                 // @ts-ignore
                                 sharedItem.shared = true
-                                dbResponse.push(omit(sharedItem, ['encryptedData']))
+                                dbResponse.push(omit(sharedItem, ['encryptedData', ...(isOwner ? [] : ['creditConsumptionMultiplier'])]))
                             }
                         }
                     }
@@ -110,7 +119,7 @@ const getAllCredentials = async (
                 where: { workspaceId: In(workspaceIds) }
             })
             for (const credential of credentials) {
-                const item = omit(credential, ['encryptedData'])
+                const item = omit(credential, ['encryptedData', ...(isOwner ? [] : ['creditConsumptionMultiplier'])])
                 if (sharedCredsWorkspaceId && credential.workspaceId === sharedCredsWorkspaceId && !canManageCredentials) {
                     // Only mark as shared for non-owners so they see "Shared Credential" and no edit/delete; owner can manage
                     // @ts-ignore
@@ -124,7 +133,7 @@ const getAllCredentials = async (
                     for (const sharedItem of sharedItems) {
                         // @ts-ignore
                         sharedItem.shared = true
-                        dbResponse.push(omit(sharedItem, ['encryptedData']))
+                        dbResponse.push(omit(sharedItem, ['encryptedData', ...(isOwner ? [] : ['creditConsumptionMultiplier'])]))
                     }
                 }
             }
@@ -138,7 +147,12 @@ const getAllCredentials = async (
     }
 }
 
-const getCredentialById = async (credentialId: string, workspaceIds: string[], canViewPlainData: boolean): Promise<any> => {
+const getCredentialById = async (
+    credentialId: string,
+    workspaceIds: string[],
+    canViewPlainData: boolean,
+    isOwner: boolean
+): Promise<any> => {
     try {
         const appServer = getRunningExpressApp()
         const credential = await appServer.AppDataSource.getRepository(Credential).findOne({
@@ -159,7 +173,7 @@ const getCredentialById = async (credentialId: string, workspaceIds: string[], c
             ...credential,
             ...(plainDataObj !== undefined && { plainDataObj })
         }
-        const dbResponse: any = omit(returnCredential, ['encryptedData'])
+        const dbResponse: any = omit(returnCredential, ['encryptedData', ...(isOwner ? [] : ['creditConsumptionMultiplier'])])
         const primaryWorkspaceId = workspaceIds[0]
         if (primaryWorkspaceId) {
             const shared = await appServer.AppDataSource.getRepository(WorkspaceShared).count({
@@ -209,10 +223,36 @@ const updateCredential = async (credentialId: string, requestBody: any, workspac
     }
 }
 
+const updateCredentialMultiplier = async (credentialId: string, multiplier: number, workspaceIds: string[]): Promise<any> => {
+    try {
+        if (typeof multiplier !== 'number' || Number.isNaN(multiplier) || multiplier <= 0) {
+            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, `Invalid credit consumption multiplier`)
+        }
+        const appServer = getRunningExpressApp()
+        const credential = await appServer.AppDataSource.getRepository(Credential).findOne({
+            where: { id: credentialId, workspaceId: In(workspaceIds) }
+        })
+        if (!credential) {
+            throw new InternalFlowiseError(StatusCodes.NOT_FOUND, `Credential ${credentialId} not found`)
+        }
+
+        credential.creditConsumptionMultiplier = multiplier
+        const dbResponse = await appServer.AppDataSource.getRepository(Credential).save(credential)
+        return omit(dbResponse, ['encryptedData'])
+    } catch (error) {
+        if (error instanceof InternalFlowiseError) throw error
+        throw new InternalFlowiseError(
+            StatusCodes.INTERNAL_SERVER_ERROR,
+            `Error: credentialsService.updateCredentialMultiplier - ${getErrorMessage(error)}`
+        )
+    }
+}
+
 export default {
     createCredential,
     deleteCredentials,
     getAllCredentials,
     getCredentialById,
-    updateCredential
+    updateCredential,
+    updateCredentialMultiplier
 }

@@ -15,6 +15,9 @@ const createCredential = async (req: Request, res: Response, next: NextFunction)
         }
         const body = req.body
         const user = req.user as LoggedInUser | undefined
+        if (typeof body?.creditConsumptionMultiplier !== 'undefined' && !user?.isOrganizationAdmin) {
+            throw new InternalFlowiseError(StatusCodes.FORBIDDEN, `Only owner can set credit consumption multiplier`)
+        }
         const workspaceService = new WorkspaceService()
         const sharedCredsWorkspaceId = user?.activeOrganizationId
             ? await workspaceService.getSharedCredentialsWorkspaceId(user.activeOrganizationId)
@@ -68,11 +71,13 @@ const getAllCredentials = async (req: Request, res: Response, next: NextFunction
             !!user?.isOrganizationAdmin ||
             (Array.isArray(user?.permissions) &&
                 (user.permissions.includes('credentials:update') || user.permissions.includes('credentials:create')))
+        const isOwner = !!user?.isOrganizationAdmin
         const apiResponse = await credentialsService.getAllCredentials(
             req.query.credentialName,
             workspaceId,
             user?.activeOrganizationId,
-            canManageCredentials
+            canManageCredentials,
+            isOwner
         )
         return res.json(apiResponse)
     } catch (error) {
@@ -97,7 +102,8 @@ const getCredentialById = async (req: Request, res: Response, next: NextFunction
             !!user?.isOrganizationAdmin ||
             (Array.isArray(user?.permissions) &&
                 (user.permissions.includes('credentials:update') || user.permissions.includes('credentials:create')))
-        const apiResponse = await credentialsService.getCredentialById(req.params.id, workspaceIds, canViewPlainData)
+        const isOwner = !!user?.isOrganizationAdmin
+        const apiResponse = await credentialsService.getCredentialById(req.params.id, workspaceIds, canViewPlainData, isOwner)
         return res.json(apiResponse)
     } catch (error) {
         next(error)
@@ -122,7 +128,48 @@ const updateCredential = async (req: Request, res: Response, next: NextFunction)
         if (!workspaceIds.length) {
             throw new InternalFlowiseError(StatusCodes.NOT_FOUND, `Error: credentialsController.updateCredential - workspace not found!`)
         }
+        const user = req.user as LoggedInUser | undefined
+        // creditConsumptionMultiplier is owner-only
+        if (typeof req.body?.creditConsumptionMultiplier !== 'undefined' && !user?.isOrganizationAdmin) {
+            throw new InternalFlowiseError(StatusCodes.FORBIDDEN, `Only owner can update credit consumption multiplier`)
+        }
         const apiResponse = await credentialsService.updateCredential(req.params.id, req.body, workspaceIds)
+        return res.json(apiResponse)
+    } catch (error) {
+        next(error)
+    }
+}
+
+const updateCredentialMultiplier = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (typeof req.params === 'undefined' || !req.params.id) {
+            throw new InternalFlowiseError(
+                StatusCodes.PRECONDITION_FAILED,
+                `Error: credentialsController.updateCredentialMultiplier - id not provided!`
+            )
+        }
+        if (!req.body) {
+            throw new InternalFlowiseError(
+                StatusCodes.PRECONDITION_FAILED,
+                `Error: credentialsController.updateCredentialMultiplier - body not provided!`
+            )
+        }
+        const user = req.user as LoggedInUser | undefined
+        if (!user?.isOrganizationAdmin) {
+            throw new InternalFlowiseError(StatusCodes.FORBIDDEN, `Only owner can update credit consumption multiplier`)
+        }
+        const workspaceIds = await getCredentialWorkspaceIds(req)
+        if (!workspaceIds.length) {
+            throw new InternalFlowiseError(
+                StatusCodes.NOT_FOUND,
+                `Error: credentialsController.updateCredentialMultiplier - workspace not found!`
+            )
+        }
+        const apiResponse = await credentialsService.updateCredentialMultiplier(
+            req.params.id,
+            Number(req.body.creditConsumptionMultiplier),
+            workspaceIds
+        )
         return res.json(apiResponse)
     } catch (error) {
         next(error)
@@ -134,5 +181,6 @@ export default {
     deleteCredentials,
     getAllCredentials,
     getCredentialById,
-    updateCredential
+    updateCredential,
+    updateCredentialMultiplier
 }

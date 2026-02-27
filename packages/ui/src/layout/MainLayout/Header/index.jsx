@@ -22,7 +22,8 @@ import { store } from '@/store'
 import { SET_DARKMODE } from '@/store/actions'
 import { useConfig } from '@/store/context/ConfigContext'
 import { enqueueSnackbar as enqueueSnackbarAction, closeSnackbar as closeSnackbarAction } from '@/store/actions'
-import { logoutSuccess } from '@/store/reducers/authSlice'
+import { logoutSuccess, workspaceCreditUpdated } from '@/store/reducers/authSlice'
+import workspaceApi from '@/api/workspace'
 
 // API
 import accountApi from '@/api/account.api'
@@ -149,6 +150,7 @@ const Header = ({ handleLeftDrawerToggle }) => {
 
     const customization = useSelector((state) => state.customization)
     const logoutApi = useApi(accountApi.logout)
+    const getCreditSummaryApi = useApi(workspaceApi.getCreditSummary)
 
     const [isDark, setIsDark] = useState(customization.isDarkMode)
     const dispatch = useDispatch()
@@ -213,6 +215,19 @@ const Header = ({ handleLeftDrawerToggle }) => {
             fetchStarCount()
         }
     }, [isCloud, isOpenSource])
+
+    useEffect(() => {
+        if (isAuthenticated && currentUser?.activeWorkspaceId) {
+            getCreditSummaryApi.request()
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAuthenticated, currentUser?.activeWorkspaceId])
+
+    useEffect(() => {
+        if (getCreditSummaryApi.data) {
+            dispatch(workspaceCreditUpdated(getCreditSummaryApi.data.credit ?? 0))
+        }
+    }, [dispatch, getCreditSummaryApi.data])
 
     return (
         <>
@@ -309,6 +324,25 @@ const Header = ({ handleLeftDrawerToggle }) => {
                         }
                     }}
                 />
+            )}
+            {isAuthenticated && (
+                <Box
+                    sx={{
+                        mr: 1.5,
+                        px: 1.5,
+                        py: 0.8,
+                        borderRadius: 10,
+                        background: (theme) =>
+                            `linear-gradient(90deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                        color: (theme) => theme.palette.secondary.contrastText,
+                        fontWeight: 700,
+                        fontSize: '0.85rem',
+                        minWidth: 88,
+                        textAlign: 'center'
+                    }}
+                >
+                    Credit: {currentUser?.activeWorkspaceCredit ?? 0}
+                </Box>
             )}
             <MaterialUISwitch checked={isDark} onChange={changeDarkMode} />
             <Box sx={{ ml: 2 }}></Box>

@@ -1747,6 +1747,10 @@ export const transformToCredentialEntity = async (body: ICredentialReqBody): Pro
         credentialName: body.credentialName
     }
 
+    if (typeof body.creditConsumptionMultiplier === 'number' && !Number.isNaN(body.creditConsumptionMultiplier)) {
+        credentialBody.creditConsumptionMultiplier = body.creditConsumptionMultiplier
+    }
+
     if (body.plainDataObj) {
         const encryptedData = await encryptCredentialData(body.plainDataObj)
         credentialBody.encryptedData = encryptedData

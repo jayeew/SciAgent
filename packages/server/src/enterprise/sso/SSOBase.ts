@@ -140,6 +140,7 @@ abstract class SSOBase {
                 isOrganizationAdmin: organizationUser.roleId === ownerRole?.id,
                 activeWorkspaceId: workspaceUser.workspaceId,
                 activeWorkspace: workspaceUser.workspace.name,
+                activeWorkspaceCredit: workspaceUser.credit ?? 0,
                 assignedWorkspaces,
                 ssoToken: accessToken as string,
                 ssoRefreshToken: refreshToken,

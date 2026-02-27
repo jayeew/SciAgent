@@ -9,6 +9,7 @@ import { tableCellClasses } from '@mui/material/TableCell'
 import {
     Button,
     Box,
+    CircularProgress,
     Skeleton,
     Stack,
     Table,
@@ -18,6 +19,7 @@ import {
     TableHead,
     TableRow,
     Paper,
+    TextField,
     useTheme
 } from '@mui/material'
 
@@ -41,7 +43,7 @@ import useConfirm from '@/hooks/useConfirm'
 import useNotifier from '@/utils/useNotifier'
 
 // Icons
-import { IconTrash, IconEdit, IconX, IconPlus, IconShare } from '@tabler/icons-react'
+import { IconTrash, IconEdit, IconX, IconPlus, IconShare, IconDeviceFloppy } from '@tabler/icons-react'
 import CredentialEmptySVG from '@/assets/images/credential_empty.svg'
 import keySVG from '@/assets/images/key.svg'
 
@@ -76,6 +78,7 @@ const StyledTableRow = styled(TableRow)(() => ({
 const Credentials = () => {
     const theme = useTheme()
     const customization = useSelector((state) => state.customization)
+    const currentUser = useSelector((state) => state.auth.user)
     const dispatch = useDispatch()
     useNotifier()
     const { error, setError } = useError()
@@ -90,6 +93,8 @@ const Credentials = () => {
     const [specificCredentialDialogProps, setSpecificCredentialDialogProps] = useState({})
     const [credentials, setCredentials] = useState([])
     const [componentsCredentials, setComponentsCredentials] = useState([])
+    const [multiplierEdits, setMultiplierEdits] = useState({})
+    const [savingMultiplierId, setSavingMultiplierId] = useState('')
 
     const [showShareCredentialDialog, setShowShareCredentialDialog] = useState(false)
     const [shareCredentialDialogProps, setShareCredentialDialogProps] = useState({})
@@ -106,6 +111,8 @@ const Credentials = () => {
     function filterCredentials(data) {
         return data.name.toLowerCase().indexOf(search.toLowerCase()) > -1
     }
+
+    const isOwner = !!currentUser?.isOrganizationAdmin
 
     const listCredential = () => {
         const dialogProp = {
@@ -212,6 +219,47 @@ const Credentials = () => {
         getAllCredentialsApi.request()
     }
 
+    const onSaveMultiplier = async (credential) => {
+        const nextValue = Number(multiplierEdits[credential.id] ?? credential.creditConsumptionMultiplier ?? 1)
+        if (Number.isNaN(nextValue) || nextValue <= 0) return
+
+        try {
+            setSavingMultiplierId(credential.id)
+            await credentialsApi.updateCredentialMultiplier(credential.id, nextValue)
+            enqueueSnackbar({
+                message: 'Multiplier updated',
+                options: {
+                    key: new Date().getTime() + Math.random(),
+                    variant: 'success',
+                    action: (key) => (
+                        <Button style={{ color: 'white' }} onClick={() => closeSnackbar(key)}>
+                            <IconX />
+                        </Button>
+                    )
+                }
+            })
+            getAllCredentialsApi.request()
+        } catch (error) {
+            enqueueSnackbar({
+                message: `Failed to update multiplier: ${
+                    typeof error.response.data === 'object' ? error.response.data.message : error.response.data
+                }`,
+                options: {
+                    key: new Date().getTime() + Math.random(),
+                    variant: 'error',
+                    persist: true,
+                    action: (key) => (
+                        <Button style={{ color: 'white' }} onClick={() => closeSnackbar(key)}>
+                            <IconX />
+                        </Button>
+                    )
+                }
+            })
+        } finally {
+            setSavingMultiplierId('')
+        }
+    }
+
     useEffect(() => {
         getAllCredentialsApi.request()
         getAllComponentsCredentialsApi.request()
@@ -225,6 +273,11 @@ const Credentials = () => {
     useEffect(() => {
         if (getAllCredentialsApi.data) {
             setCredentials(getAllCredentialsApi.data)
+            const nextEdits = {}
+            getAllCredentialsApi.data.forEach((item) => {
+                nextEdits[item.id] = item.creditConsumptionMultiplier ?? 1
+            })
+            setMultiplierEdits(nextEdits)
         }
     }, [getAllCredentialsApi.data])
 
@@ -288,6 +341,7 @@ const Credentials = () => {
                                             <StyledTableCell>Name</StyledTableCell>
                                             <StyledTableCell>Last Updated</StyledTableCell>
                                             <StyledTableCell>Created</StyledTableCell>
+                                            {isOwner && <StyledTableCell>Multiplier</StyledTableCell>}
                                             <StyledTableCell style={{ width: '5%' }}> </StyledTableCell>
                                             <StyledTableCell style={{ width: '5%' }}> </StyledTableCell>
                                             <StyledTableCell style={{ width: '5%' }}> </StyledTableCell>
@@ -385,6 +439,43 @@ const Credentials = () => {
                                                         <StyledTableCell>
                                                             {moment(credential.createdDate).format('MMMM Do, YYYY HH:mm:ss')}
                                                         </StyledTableCell>
+                                                        {isOwner && (
+                                                            <StyledTableCell>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                    <TextField
+                                                                        size='small'
+                                                                        type='number'
+                                                                        value={multiplierEdits[credential.id] ?? 1}
+                                                                        onChange={(e) => {
+                                                                            const value = Number(e.target.value)
+                                                                            setMultiplierEdits((prev) => ({
+                                                                                ...prev,
+                                                                                [credential.id]: Number.isNaN(value) ? '' : value
+                                                                            }))
+                                                                        }}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === '-') {
+                                                                                e.preventDefault()
+                                                                            }
+                                                                        }}
+                                                                        inputProps={{ min: 0.000001, step: '0.1' }}
+                                                                        sx={{ width: 100 }}
+                                                                    />
+                                                                    <Button
+                                                                        variant='outlined'
+                                                                        size='small'
+                                                                        disabled={savingMultiplierId === credential.id || credential.shared}
+                                                                        onClick={() => onSaveMultiplier(credential)}
+                                                                    >
+                                                                        {savingMultiplierId === credential.id ? (
+                                                                            <CircularProgress size={14} />
+                                                                        ) : (
+                                                                            <IconDeviceFloppy size={14} />
+                                                                        )}
+                                                                    </Button>
+                                                                </Box>
+                                                            </StyledTableCell>
+                                                        )}
                                                         {!credential.shared && (
                                                             <>
                                                                 <StyledTableCell>

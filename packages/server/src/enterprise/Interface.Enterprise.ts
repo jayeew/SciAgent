@@ -71,6 +71,7 @@ export type LoggedInUser = {
     isOrganizationAdmin: boolean
     activeWorkspaceId: string
     activeWorkspace: string
+    activeWorkspaceCredit?: number
     assignedWorkspaces: IAssignedWorkspace[]
     permissions: string[]
     features?: Record<string, string>

@@ -13,6 +13,8 @@ const getSpecificComponentCredential = (name) => client.get(`/components-credent
 const createCredential = (body) => client.post(`/credentials`, body)
 
 const updateCredential = (id, body) => client.put(`/credentials/${id}`, body)
+const updateCredentialMultiplier = (id, creditConsumptionMultiplier) =>
+    client.patch(`/credentials/${id}/multiplier`, { creditConsumptionMultiplier })
 
 const deleteCredential = (id) => client.delete(`/credentials/${id}`)
 
@@ -24,5 +26,6 @@ export default {
     getSpecificComponentCredential,
     createCredential,
     updateCredential,
+    updateCredentialMultiplier,
     deleteCredential
 }

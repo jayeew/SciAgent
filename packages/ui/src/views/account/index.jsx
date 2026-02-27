@@ -38,6 +38,7 @@ import { IconAlertCircle, IconCreditCard, IconExternalLink, IconSparkles, IconX 
 import accountApi from '@/api/account.api'
 import pricingApi from '@/api/pricing'
 import userApi from '@/api/user'
+import workspaceApi from '@/api/workspace'
 
 // Hooks
 import useApi from '@/hooks/useApi'
@@ -48,6 +49,7 @@ import { closeSnackbar as closeSnackbarAction, enqueueSnackbar as enqueueSnackba
 import { gridSpacing } from '@/store/constant'
 import { useConfig } from '@/store/context/ConfigContext'
 import { logoutSuccess, userProfileUpdated } from '@/store/reducers/authSlice'
+import { workspaceCreditUpdated } from '@/store/reducers/authSlice'
 
 // ==============================|| ACCOUNT SETTINGS ||============================== //
 
@@ -84,6 +86,11 @@ const AccountSettings = () => {
     const [purchasedSeats, setPurchasedSeats] = useState(0)
     const [occupiedSeats, setOccupiedSeats] = useState(0)
     const [totalSeats, setTotalSeats] = useState(0)
+    const [credit, setCredit] = useState(0)
+    const [creditTransactions, setCreditTransactions] = useState([])
+    const [openTopupDialog, setOpenTopupDialog] = useState(false)
+    const [topupAmount, setTopupAmount] = useState(100)
+    const [isTopupLoading, setIsTopupLoading] = useState(false)
 
     const predictionsUsageInPercent = useMemo(() => {
         return usage ? calculatePercentage(usage.predictions?.usage, usage.predictions?.limit) : 0
@@ -102,6 +109,8 @@ const AccountSettings = () => {
     const getCustomerDefaultSourceApi = useApi(userApi.getCustomerDefaultSource)
     const updateAdditionalSeatsApi = useApi(userApi.updateAdditionalSeats)
     const getCurrentUsageApi = useApi(userApi.getCurrentUsage)
+    const getCreditSummaryApi = useApi(workspaceApi.getCreditSummary)
+    const getCreditTransactionsApi = useApi(workspaceApi.getCreditTransactions)
     const logoutApi = useApi(accountApi.logout)
 
     useEffect(() => {
@@ -123,6 +132,14 @@ const AccountSettings = () => {
     }, [isCloud])
 
     useEffect(() => {
+        if (currentUser?.activeWorkspaceId) {
+            getCreditSummaryApi.request()
+            getCreditTransactionsApi.request(100)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentUser?.activeWorkspaceId])
+
+    useEffect(() => {
         setLoading(getUserByIdApi.loading)
     }, [getUserByIdApi.loading])
 
@@ -142,6 +159,20 @@ const AccountSettings = () => {
             setUsage(getCurrentUsageApi.data)
         }
     }, [getCurrentUsageApi.data])
+
+    useEffect(() => {
+        if (getCreditSummaryApi.data) {
+            const currentCredit = getCreditSummaryApi.data.credit ?? 0
+            setCredit(currentCredit)
+            dispatch(workspaceCreditUpdated(currentCredit))
+        }
+    }, [dispatch, getCreditSummaryApi.data])
+
+    useEffect(() => {
+        if (getCreditTransactionsApi.data?.transactions) {
+            setCreditTransactions(getCreditTransactionsApi.data.transactions)
+        }
+    }, [getCreditTransactionsApi.data])
 
     useEffect(() => {
         try {
@@ -405,6 +436,50 @@ const AccountSettings = () => {
             setProrationInfo(null)
             setOpenAddSeatsDialog(false)
             setSeatsQuantity(0)
+        }
+    }
+
+    const handleTopupCredit = async () => {
+        if (!Number.isInteger(topupAmount) || topupAmount <= 0) return
+        setIsTopupLoading(true)
+        try {
+            const resp = await workspaceApi.topupCredit({
+                amount: topupAmount
+            })
+            const currentCredit = resp.data?.credit ?? 0
+            setCredit(currentCredit)
+            dispatch(workspaceCreditUpdated(currentCredit))
+            setOpenTopupDialog(false)
+            getCreditTransactionsApi.request(100)
+            enqueueSnackbar({
+                message: `Top up successful: +${topupAmount}`,
+                options: {
+                    key: new Date().getTime() + Math.random(),
+                    variant: 'success',
+                    action: (key) => (
+                        <Button style={{ color: 'white' }} onClick={() => closeSnackbar(key)}>
+                            <IconX />
+                        </Button>
+                    )
+                }
+            })
+        } catch (error) {
+            const message =
+                typeof error?.response?.data === 'object' ? error?.response?.data?.message : error?.response?.data || 'Top up failed'
+            enqueueSnackbar({
+                message,
+                options: {
+                    key: new Date().getTime() + Math.random(),
+                    variant: 'error',
+                    action: (key) => (
+                        <Button style={{ color: 'white' }} onClick={() => closeSnackbar(key)}>
+                            <IconX />
+                        </Button>
+                    )
+                }
+            })
+        } finally {
+            setIsTopupLoading(false)
         }
     }
 
@@ -698,6 +773,103 @@ const AccountSettings = () => {
                         )}
                         <SettingsSection
                             action={
+                                <StyledButton
+                                    onClick={() => setOpenTopupDialog(true)}
+                                    sx={{ borderRadius: 2, height: 40 }}
+                                    variant='contained'
+                                >
+                                    Recharge
+                                </StyledButton>
+                            }
+                            title='Credits'
+                        >
+                            <Box
+                                sx={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 2,
+                                    px: 2.5,
+                                    py: 2
+                                }}
+                            >
+                                <Box
+                                    sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        p: 2,
+                                        borderRadius: 2,
+                                        backgroundColor: theme.palette.background.default
+                                    }}
+                                >
+                                    <Typography variant='body1'>Current Credit</Typography>
+                                    <Typography variant='h2'>{credit}</Typography>
+                                </Box>
+                                <Box
+                                    sx={{
+                                        border: 1,
+                                        borderColor: theme.palette.divider,
+                                        borderRadius: 2,
+                                        overflow: 'hidden'
+                                    }}
+                                >
+                                    <Box
+                                        sx={{
+                                            display: 'grid',
+                                            gridTemplateColumns: '1.1fr 1.2fr 1.4fr 0.8fr 0.8fr 1.6fr',
+                                            gap: 1,
+                                            px: 2,
+                                            py: 1.2,
+                                            backgroundColor: theme.palette.background.default
+                                        }}
+                                    >
+                                        <Typography variant='caption'>Type</Typography>
+                                        <Typography variant='caption'>Date</Typography>
+                                        <Typography variant='caption'>Credential</Typography>
+                                        <Typography variant='caption'>Amount</Typography>
+                                        <Typography variant='caption'>Balance</Typography>
+                                        <Typography variant='caption'>Description</Typography>
+                                    </Box>
+                                    {(creditTransactions || []).length === 0 ? (
+                                        <Box sx={{ p: 2 }}>
+                                            <Typography variant='body2' color='text.secondary'>
+                                                No credit records yet.
+                                            </Typography>
+                                        </Box>
+                                    ) : (
+                                        (creditTransactions || []).map((item) => (
+                                            <Box
+                                                key={item.id}
+                                                sx={{
+                                                    display: 'grid',
+                                                    gridTemplateColumns: '1.1fr 1.2fr 1.4fr 0.8fr 0.8fr 1.6fr',
+                                                    gap: 1,
+                                                    px: 2,
+                                                    py: 1.2,
+                                                    borderTop: 1,
+                                                    borderColor: theme.palette.divider
+                                                }}
+                                            >
+                                                <Typography variant='body2'>
+                                                    {item.type === 'topup' ? 'Gain' : item.type === 'consume' ? 'Consume' : 'Adjust'}
+                                                </Typography>
+                                                <Typography variant='body2'>
+                                                    {item.createdDate ? new Date(item.createdDate).toLocaleString() : '-'}
+                                                </Typography>
+                                                <Typography variant='body2'>{item.credentialName || '-'}</Typography>
+                                                <Typography variant='body2' color={item.amount >= 0 ? 'success.main' : 'error.main'}>{`${
+                                                    item.amount >= 0 ? '+' : ''
+                                                }${item.amount}`}</Typography>
+                                                <Typography variant='body2'>{item.balance}</Typography>
+                                                <Typography variant='body2'>{item.description || '-'}</Typography>
+                                            </Box>
+                                        ))
+                                    )}
+                                </Box>
+                            </Box>
+                        </SettingsSection>
+                        <SettingsSection
+                            action={
                                 <StyledButton onClick={saveProfileData} sx={{ borderRadius: 2, height: 40 }} variant='contained'>
                                     Save
                                 </StyledButton>
@@ -843,6 +1015,52 @@ const AccountSettings = () => {
                     }}
                 />
             )}
+            <Dialog fullWidth maxWidth='xs' open={openTopupDialog} onClose={() => !isTopupLoading && setOpenTopupDialog(false)}>
+                <DialogTitle variant='h4'>Recharge Credits</DialogTitle>
+                <DialogContent>
+                    <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Typography variant='body2' color='text.secondary'>
+                            Enter any positive integer for testing.
+                        </Typography>
+                        <TextField
+                            label='Amount'
+                            size='small'
+                            type='number'
+                            value={topupAmount}
+                            onChange={(e) => {
+                                const value = Math.max(1, parseInt(e.target.value) || 1)
+                                setTopupAmount(value)
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === '-' || e.key === 'e') {
+                                    e.preventDefault()
+                                }
+                            }}
+                            InputProps={{
+                                inputProps: {
+                                    min: 1,
+                                    step: 1
+                                }
+                            }}
+                        />
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setOpenTopupDialog(false)} disabled={isTopupLoading}>
+                        Cancel
+                    </Button>
+                    <Button variant='contained' onClick={handleTopupCredit} disabled={isTopupLoading || topupAmount <= 0}>
+                        {isTopupLoading ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <CircularProgress size={16} color='inherit' />
+                                Processing...
+                            </Box>
+                        ) : (
+                            'Recharge'
+                        )}
+                    </Button>
+                </DialogActions>
+            </Dialog>
             {/* Remove Seats Dialog */}
             <Dialog fullWidth maxWidth='sm' open={openRemoveSeatsDialog} onClose={handleRemoveSeatsDialogClose}>
                 <DialogTitle variant='h4'>Remove Additional Seats</DialogTitle>

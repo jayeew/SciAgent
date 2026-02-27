@@ -59,10 +59,22 @@ const authSlice = createSlice({
             })
             state.user.assignedWorkspaces = assignedWorkspaces
             AuthUtils.updateCurrentUser(state.user)
+        },
+        workspaceCreditUpdated: (state, action) => {
+            if (!state.user) return
+            state.user.activeWorkspaceCredit = action.payload
+            AuthUtils.updateCurrentUser(state.user)
         }
     }
 })
 
-export const { loginSuccess, logoutSuccess, workspaceSwitchSuccess, upgradePlanSuccess, userProfileUpdated, workspaceNameUpdated } =
-    authSlice.actions
+export const {
+    loginSuccess,
+    logoutSuccess,
+    workspaceSwitchSuccess,
+    upgradePlanSuccess,
+    userProfileUpdated,
+    workspaceNameUpdated,
+    workspaceCreditUpdated
+} = authSlice.actions
 export default authSlice.reducer

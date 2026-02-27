@@ -184,6 +184,7 @@ export const initializeJwtCookieMiddleware = async (app: express.Application, id
                         isOrganizationAdmin: organizationUser.roleId === ownerRole.id,
                         activeWorkspaceId: workspaceUser.workspaceId,
                         activeWorkspace: workspaceUser.workspace.name,
+                        activeWorkspaceCredit: workspaceUser.credit ?? 0,
                         assignedWorkspaces,
                         permissions: [...JSON.parse(role.permissions)],
                         features

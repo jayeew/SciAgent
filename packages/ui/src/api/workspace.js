@@ -8,6 +8,9 @@ const unlinkUsers = (id, body) => client.post(`/workspace/unlink-users/${id}`, b
 const linkUsers = (id, body) => client.post(`/workspace/link-users/${id}`, body)
 
 const switchWorkspace = (id) => client.post(`/workspace/switch?id=${id}`)
+const getCreditSummary = () => client.get('/workspace/credit')
+const getCreditTransactions = (limit = 100) => client.get(`/workspace/credit/transactions?limit=${limit}`)
+const topupCredit = (body) => client.post('/workspace/credit/topup', body)
 
 const createWorkspace = (body) => client.post(`/workspace`, body)
 const updateWorkspace = (body) => client.put(`/workspace`, body)
@@ -27,6 +30,9 @@ export default {
     unlinkUsers,
     linkUsers,
     switchWorkspace,
+    getCreditSummary,
+    getCreditTransactions,
+    topupCredit,
     getSharedWorkspacesForItem,
     setSharedWorkspacesForItem,
 

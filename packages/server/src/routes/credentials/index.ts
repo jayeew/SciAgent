@@ -12,6 +12,11 @@ router.get(['/', '/:id'], checkPermission('credentials:view'), credentialsContro
 
 // UPDATE
 router.put(['/', '/:id'], checkAnyPermission('credentials:create,credentials:update'), credentialsController.updateCredential)
+router.patch(
+    '/:id/multiplier',
+    checkAnyPermission('credentials:create,credentials:update'),
+    credentialsController.updateCredentialMultiplier
+)
 
 // DELETE
 router.delete(['/', '/:id'], checkPermission('credentials:delete'), credentialsController.deleteCredentials)

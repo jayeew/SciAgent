@@ -13,6 +13,10 @@ router.post('/', IdentityManager.checkFeatureByPlan('feat:workspaces'), checkPer
 // no feature flag because user with lower plan can switch to invited workspaces with higher plan
 router.post('/switch', workspaceController.switchWorkspace)
 
+router.get('/credit', workspaceController.getCredit)
+router.get('/credit/transactions', workspaceController.getCreditTransactions)
+router.post('/credit/topup', workspaceController.topupCredit)
+
 router.put('/', IdentityManager.checkFeatureByPlan('feat:workspaces'), checkPermission('workspace:update'), workspaceController.update)
 
 router.delete(

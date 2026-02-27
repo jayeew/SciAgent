@@ -16,6 +16,9 @@ export class Credential implements ICredential {
     @Column({ type: 'text' })
     encryptedData: string
 
+    @Column({ type: 'float', default: 1 })
+    creditConsumptionMultiplier: number
+
     @Column({ type: 'timestamp' })
     @CreateDateColumn()
     createdDate: Date

@@ -24,6 +24,7 @@ import { Role } from '../../enterprise/database/entities/role.entity'
 import { OrganizationUser } from '../../enterprise/database/entities/organization-user.entity'
 import { Workspace } from '../../enterprise/database/entities/workspace.entity'
 import { WorkspaceUser } from '../../enterprise/database/entities/workspace-user.entity'
+import { WorkspaceCreditTransaction } from '../../enterprise/database/entities/workspace-credit-transaction.entity'
 import { LoginMethod } from '../../enterprise/database/entities/login-method.entity'
 import { LoginSession } from '../../enterprise/database/entities/login-session.entity'
 
@@ -56,6 +57,7 @@ export const entities = {
     OrganizationUser,
     Workspace,
     WorkspaceUser,
+    WorkspaceCreditTransaction,
     LoginMethod,
     LoginSession
 }

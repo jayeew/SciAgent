@@ -39,6 +39,7 @@ import { ModifyChatflowType1755066758601 } from './1755066758601-ModifyChatflowT
 import { AddTextToSpeechToChatFlow1759419136055 } from './1759419136055-AddTextToSpeechToChatFlow'
 import { AddChatFlowNameIndex1759424923093 } from './1759424923093-AddChatFlowNameIndex'
 import { AddApiKeyPermission1765360298674 } from './1765360298674-AddApiKeyPermission'
+import { AddCredentialConsumptionMultiplier1765700000000 } from './1765700000000-AddCredentialConsumptionMultiplier'
 
 import { AddAuthTables1720230151482 } from '../../../enterprise/database/migrations/sqlite/1720230151482-AddAuthTables'
 import { AddWorkspace1720230151484 } from '../../../enterprise/database/migrations/sqlite/1720230151484-AddWorkspace'
@@ -53,6 +54,7 @@ import { RefactorEnterpriseDatabase1737076223692 } from '../../../enterprise/dat
 import { ExecutionLinkWorkspaceId1746862866554 } from '../../../enterprise/database/migrations/sqlite/1746862866554-ExecutionLinkWorkspaceId'
 import { OwnerRoleFullPermissions1765400000000 } from '../../../enterprise/database/migrations/sqlite/1765400000000-OwnerRoleFullPermissions'
 import { CredentialOwnerOnlyAndSharedWorkspace1765500000000 } from '../../../enterprise/database/migrations/sqlite/1765500000000-CredentialOwnerOnlyAndSharedWorkspace'
+import { AddWorkspaceCredit1765600000000 } from '../../../enterprise/database/migrations/sqlite/1765600000000-AddWorkspaceCredit'
 
 export const sqliteMigrations = [
     Init1693835579790,
@@ -107,6 +109,8 @@ export const sqliteMigrations = [
     AddTextToSpeechToChatFlow1759419136055,
     AddChatFlowNameIndex1759424923093,
     AddApiKeyPermission1765360298674,
+    AddCredentialConsumptionMultiplier1765700000000,
     OwnerRoleFullPermissions1765400000000,
-    CredentialOwnerOnlyAndSharedWorkspace1765500000000
+    CredentialOwnerOnlyAndSharedWorkspace1765500000000,
+    AddWorkspaceCredit1765600000000
 ]
