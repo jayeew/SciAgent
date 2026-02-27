@@ -68,6 +68,7 @@ import { buildAgentGraph } from './buildAgentGraph'
 import { getErrorMessage } from '../errors/utils'
 import { FLOWISE_METRIC_COUNTERS, FLOWISE_COUNTER_STATUS, IMetricsProvider } from '../Interface.Metrics'
 import { getWorkspaceSearchOptions } from '../enterprise/utils/ControllerServiceUtils'
+import { TokenUsageService } from '../enterprise/services/token-usage.service'
 import { OMIT_QUEUE_JOB_DATA } from './constants'
 import { executeAgentFlow } from './buildAgentflow'
 import { Workspace } from '../enterprise/database/entities/workspace.entity'
@@ -295,6 +296,72 @@ const getSetVariableNodesOutput = (reactFlowNodes: IReactFlowNode[]) => {
     return flowVariables
 }
 
+const mergeAndDedupePayloads = (payloads: any[], tokenAuditContext?: ICommonObject): any[] => {
+    const merged = [...payloads, ...(((tokenAuditContext?.tokenUsagePayloads as any[]) || []) as any[])]
+    const seen = new Set<string>()
+    const deduped: any[] = []
+
+    for (const payload of merged) {
+        if (payload === null || payload === undefined) continue
+        try {
+            const key = JSON.stringify(payload)
+            if (seen.has(key)) continue
+            seen.add(key)
+            deduped.push(payload)
+        } catch {
+            deduped.push(payload)
+        }
+    }
+
+    return deduped
+}
+
+const recordTokenUsage = async ({
+    workspaceId,
+    organizationId,
+    userId,
+    flowType,
+    flowId,
+    executionId,
+    chatId,
+    chatMessageId,
+    sessionId,
+    tokenAuditContext,
+    usagePayloads
+}: {
+    workspaceId: string
+    organizationId: string
+    userId?: string
+    flowType: 'CHATFLOW' | 'AGENTFLOW' | 'ASSISTANT' | 'MULTIAGENT'
+    flowId?: string
+    executionId?: string
+    chatId?: string
+    chatMessageId?: string
+    sessionId?: string
+    tokenAuditContext?: ICommonObject
+    usagePayloads: any[]
+}) => {
+    try {
+        const mergedPayloads = mergeAndDedupePayloads(usagePayloads, tokenAuditContext)
+        const tokenUsageService = new TokenUsageService()
+        await tokenUsageService.recordTokenUsage({
+            workspaceId,
+            organizationId,
+            userId,
+            flowType,
+            flowId,
+            executionId,
+            chatId,
+            chatMessageId,
+            sessionId,
+            usagePayloads: mergedPayloads,
+            credentialAccesses: (tokenAuditContext?.credentialAccesses as any[]) || []
+        })
+    } catch (error) {
+        logger.warn(`[server]: Failed to record token usage: ${getErrorMessage(error)}`)
+    }
+}
+
 /*
  * Function to traverse the flow graph and execute the nodes
  */
@@ -315,10 +382,12 @@ export const executeFlow = async ({
     files,
     signal,
     isTool,
+    userId,
     orgId,
     workspaceId,
     subscriptionId,
-    productId
+    productId,
+    tokenAuditContext
 }: IExecuteFlowParams) => {
     // Ensure incomingInput has all required properties with default values
     incomingInput = {
@@ -496,10 +565,12 @@ export const executeFlow = async ({
             fileUploads,
             signal,
             isTool,
+            userId,
             orgId,
             workspaceId,
             subscriptionId,
-            productId
+            productId,
+            tokenAuditContext
         })
     }
 
@@ -589,6 +660,7 @@ export const executeFlow = async ({
         variableOverrides,
         cachePool,
         usageCacheManager,
+        tokenAuditContext,
         isUpsert: false,
         uploads,
         baseURL,
@@ -727,6 +799,20 @@ export const executeFlow = async ({
             if (finalAction && Object.keys(finalAction).length) result.action = finalAction
             if (Object.keys(setVariableNodesOutput).length) result.flowVariables = setVariableNodesOutput
             result.followUpPrompts = JSON.stringify(apiMessage.followUpPrompts)
+
+            await recordTokenUsage({
+                workspaceId,
+                organizationId: orgId,
+                userId,
+                flowType: 'MULTIAGENT',
+                flowId: agentflow.id,
+                chatId,
+                chatMessageId: chatMessage?.id,
+                sessionId,
+                tokenAuditContext,
+                usagePayloads: [streamResults || {}, result || {}]
+            })
+
             return result
         }
         return undefined
@@ -777,6 +863,7 @@ export const executeFlow = async ({
             analytic: chatflow.analytic,
             uploads,
             prependMessages,
+            tokenAuditContext,
             ...(isStreamValid && { sseStreamer, shouldStreamResponse: isStreamValid }),
             evaluationRunId,
             updateStorageUsage,
@@ -927,6 +1014,19 @@ export const executeFlow = async ({
             await generateTTSForResponseStream(result.text, chatflow.textToSpeech, options, chatId, chatMessage?.id, sseStreamer, signal)
         }
 
+        await recordTokenUsage({
+            workspaceId,
+            organizationId: orgId,
+            userId,
+            flowType: chatflow.type === 'ASSISTANT' ? 'ASSISTANT' : 'CHATFLOW',
+            flowId: chatflowid,
+            chatId,
+            chatMessageId: chatMessage?.id,
+            sessionId,
+            tokenAuditContext,
+            usagePayloads: [result || {}]
+        })
+
         return result
     }
 }
@@ -1004,6 +1104,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
     const incomingInput: IncomingInput = req.body || {} // Ensure incomingInput is never undefined
     const chatId = incomingInput.chatId ?? incomingInput.overrideConfig?.sessionId ?? uuidv4()
     const files = (req.files as Express.Multer.File[]) || []
+    const userId = req.user?.id
     const abortControllerId = `${chatflow.id}_${chatId}`
     const isTool = req.get('flowise-tool') === 'true'
     const isEvaluation: boolean = req.headers['X-Flowise-Evaluation'] || req.body.evaluation
@@ -1060,6 +1161,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
             incomingInput, // Use the defensively created incomingInput variable
             chatflow,
             chatId,
+            userId,
             baseURL,
             isInternal,
             files,
@@ -1075,7 +1177,8 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
             orgId,
             workspaceId,
             subscriptionId,
-            productId
+            productId,
+            tokenAuditContext: { credentialAccesses: [], tokenUsagePayloads: [] }
         }
 
         if (process.env.MODE === MODE.QUEUE) {

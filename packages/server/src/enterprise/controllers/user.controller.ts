@@ -4,6 +4,7 @@ import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import { GeneralErrorMessage } from '../../utils/constants'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import { User } from '../database/entities/user.entity'
+import { TokenUsageService } from '../services/token-usage.service'
 import { UserErrorMessage, UserService } from '../services/user.service'
 
 export class UserController {
@@ -70,6 +71,25 @@ export class UserController {
     public async test(req: Request, res: Response, next: NextFunction) {
         try {
             return res.status(StatusCodes.OK).json({ message: 'Hello World' })
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    public async getTokenUsageSummary(req: Request, res: Response, next: NextFunction) {
+        try {
+            const organizationId = req.user?.activeOrganizationId
+            if (!organizationId) {
+                throw new InternalFlowiseError(StatusCodes.UNAUTHORIZED, UserErrorMessage.USER_NOT_FOUND)
+            }
+
+            const tokenUsageService = new TokenUsageService()
+            const data = await tokenUsageService.getUsageSummaryByOrganization(
+                organizationId,
+                req.query.startDate as string,
+                req.query.endDate as string
+            )
+            return res.status(StatusCodes.OK).json(data)
         } catch (error) {
             next(error)
         }

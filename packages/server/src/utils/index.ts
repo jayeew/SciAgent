@@ -504,6 +504,7 @@ type BuildFlowParams = {
     workspaceId?: string
     subscriptionId?: string
     usageCacheManager?: any
+    tokenAuditContext?: ICommonObject
     uploadedFilesContent?: string
     updateStorageUsage?: (orgId: string, workspaceId: string, totalSize: number, usageCacheManager?: any) => void
     checkStorage?: (orgId: string, subscriptionId: string, usageCacheManager: any) => Promise<any>
@@ -542,6 +543,7 @@ export const buildFlow = async ({
     workspaceId,
     subscriptionId,
     usageCacheManager,
+    tokenAuditContext,
     updateStorageUsage,
     checkStorage
 }: BuildFlowParams) => {
@@ -621,6 +623,7 @@ export const buildFlow = async ({
                     databaseEntities,
                     cachePool,
                     usageCacheManager,
+                    tokenAuditContext,
                     dynamicVariables,
                     uploads,
                     baseURL
@@ -650,6 +653,7 @@ export const buildFlow = async ({
                     databaseEntities,
                     cachePool,
                     usageCacheManager,
+                    tokenAuditContext,
                     isUpsert,
                     dynamicVariables,
                     uploads,

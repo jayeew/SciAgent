@@ -79,6 +79,7 @@ function ShowUserRow(props) {
     }, [open])
 
     const currentUser = useSelector((state) => state.auth.user)
+    const tokenUsage = props.tokenUsage || {}
 
     return (
         <React.Fragment>
@@ -156,6 +157,11 @@ function ShowUserRow(props) {
                     {'INACTIVE' === props.row.status.toUpperCase() && <Chip color={'error'} label={props.row.status.toUpperCase()} />}
                 </StyledTableCell>
                 <StyledTableCell>{!props.row.lastLogin ? 'Never' : moment(props.row.lastLogin).format('DD/MM/YYYY HH:mm')}</StyledTableCell>
+                <StyledTableCell>{tokenUsage.totalTokens || 0}</StyledTableCell>
+                <StyledTableCell>{tokenUsage.inputTokens || 0}</StyledTableCell>
+                <StyledTableCell>{tokenUsage.outputTokens || 0}</StyledTableCell>
+                <StyledTableCell>{tokenUsage.cacheReadTokens || 0}</StyledTableCell>
+                <StyledTableCell>{tokenUsage.cacheWriteTokens || 0}</StyledTableCell>
                 <StyledTableCell>
                     {props.row.status.toUpperCase() === 'INVITED' && (
                         <PermissionIconButton
@@ -230,7 +236,8 @@ ShowUserRow.propTypes = {
     onEditClick: PropTypes.func,
     open: PropTypes.bool,
     theme: PropTypes.any,
-    deletingUserId: PropTypes.string
+    deletingUserId: PropTypes.string,
+    tokenUsage: PropTypes.any
 }
 
 // ==============================|| Users ||============================== //
@@ -253,10 +260,12 @@ const Users = () => {
     const [users, setUsers] = useState([])
     const [search, setSearch] = useState('')
     const [deletingUserId, setDeletingUserId] = useState(null)
+    const [tokenUsageSummary, setTokenUsageSummary] = useState({})
 
     const { confirm } = useConfirm()
 
     const getAllUsersByOrganizationIdApi = useApi(userApi.getAllUsersByOrganizationId)
+    const getTokenUsageSummaryApi = useApi(userApi.getTokenUsageSummary)
 
     const onSearchChange = (event) => {
         setSearch(event.target.value)
@@ -364,10 +373,21 @@ const Users = () => {
         setShowInviteDialog(false)
         setShowEditDialog(false)
         getAllUsersByOrganizationIdApi.request(currentUser.activeOrganizationId)
+        getTokenUsageSummaryApi.request()
     }
 
     useEffect(() => {
         getAllUsersByOrganizationIdApi.request(currentUser.activeOrganizationId)
+        getTokenUsageSummaryApi.request()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            getTokenUsageSummaryApi.request()
+        }, 30000)
+
+        return () => clearInterval(interval)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
@@ -382,6 +402,12 @@ const Users = () => {
     }, [getAllUsersByOrganizationIdApi.error, setError])
 
     useEffect(() => {
+        if (getTokenUsageSummaryApi.error) {
+            setError(getTokenUsageSummaryApi.error)
+        }
+    }, [getTokenUsageSummaryApi.error, setError])
+
+    useEffect(() => {
         if (getAllUsersByOrganizationIdApi.data) {
             const users = getAllUsersByOrganizationIdApi.data || []
             const orgAdmin = users.find((user) => user.isOrgOwner === true)
@@ -392,6 +418,16 @@ const Users = () => {
             setUsers(users)
         }
     }, [getAllUsersByOrganizationIdApi.data])
+
+    useEffect(() => {
+        if (getTokenUsageSummaryApi.data?.users) {
+            const usageMap = {}
+            for (const usage of getTokenUsageSummaryApi.data.users) {
+                usageMap[usage.userId] = usage
+            }
+            setTokenUsageSummary(usageMap)
+        }
+    }, [getTokenUsageSummaryApi.data])
 
     return (
         <>
@@ -447,6 +483,11 @@ const Users = () => {
                                                         <StyledTableCell>Assigned Roles</StyledTableCell>
                                                         <StyledTableCell>Status</StyledTableCell>
                                                         <StyledTableCell>Last Login</StyledTableCell>
+                                                        <StyledTableCell>Total Tokens</StyledTableCell>
+                                                        <StyledTableCell>Input</StyledTableCell>
+                                                        <StyledTableCell>Output</StyledTableCell>
+                                                        <StyledTableCell>Cache Hit</StyledTableCell>
+                                                        <StyledTableCell>Cache Miss</StyledTableCell>
                                                         <StyledTableCell> </StyledTableCell>
                                                     </TableRow>
                                                 </TableHead>
@@ -500,6 +541,7 @@ const Users = () => {
                                                                     onDeleteClick={deleteUser}
                                                                     onEditClick={edit}
                                                                     deletingUserId={deletingUserId}
+                                                                    tokenUsage={tokenUsageSummary[item.userId]}
                                                                 />
                                                             ))}
                                                         </>

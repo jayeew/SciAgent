@@ -59,6 +59,7 @@ import { Telemetry } from './telemetry'
 import { getWorkspaceSearchOptions } from '../enterprise/utils/ControllerServiceUtils'
 import { UsageCacheManager } from '../UsageCacheManager'
 import { generateTTSForResponseStream, shouldAutoPlayTTS } from './buildChatflow'
+import { TokenUsageService } from '../enterprise/services/token-usage.service'
 
 interface IWaitingNode {
     nodeId: string
@@ -135,10 +136,12 @@ interface IExecuteNodeParams {
     isRecursive?: boolean
     iterationContext?: ICommonObject
     loopCounts?: Map<string, number>
+    userId?: string
     orgId: string
     workspaceId: string
     subscriptionId: string
     productId: string
+    tokenAuditContext?: ICommonObject
 }
 
 interface IExecuteAgentFlowParams extends Omit<IExecuteFlowParams, 'incomingInput'> {
@@ -146,6 +149,26 @@ interface IExecuteAgentFlowParams extends Omit<IExecuteFlowParams, 'incomingInpu
 }
 
 const MAX_LOOP_COUNT = process.env.MAX_LOOP_COUNT ? parseInt(process.env.MAX_LOOP_COUNT) : 10
+
+const mergeAndDedupeTokenPayloads = (payloads: any[], tokenAuditContext?: ICommonObject): any[] => {
+    const merged = [...payloads, ...(((tokenAuditContext?.tokenUsagePayloads as any[]) || []) as any[])]
+    const seen = new Set<string>()
+    const deduped: any[] = []
+
+    for (const payload of merged) {
+        if (payload === null || payload === undefined) continue
+        try {
+            const key = JSON.stringify(payload)
+            if (seen.has(key)) continue
+            seen.add(key)
+            deduped.push(payload)
+        } catch {
+            deduped.push(payload)
+        }
+    }
+
+    return deduped
+}
 
 /**
  * Add execution to database
@@ -1035,10 +1058,12 @@ const executeNode = async ({
     isRecursive,
     iterationContext,
     loopCounts,
+    userId,
     orgId,
     workspaceId,
     subscriptionId,
-    productId
+    productId,
+    tokenAuditContext
 }: IExecuteNodeParams): Promise<{
     result: any
     shouldStop?: boolean
@@ -1185,6 +1210,7 @@ const executeNode = async ({
             parentTraceIds,
             humanInputAction,
             iterationContext,
+            tokenAuditContext,
             evaluationRunId
         }
 
@@ -1263,10 +1289,12 @@ const executeNode = async ({
                                 ...iterationContext,
                                 agentflowRuntime
                             },
+                            userId,
                             orgId,
                             workspaceId,
                             subscriptionId,
-                            productId
+                            productId,
+                            tokenAuditContext
                         })
 
                         // Store the result
@@ -1491,10 +1519,12 @@ export const executeAgentFlow = async ({
     parentExecutionId,
     iterationContext,
     isTool = false,
+    userId,
     orgId,
     workspaceId,
     subscriptionId,
-    productId
+    productId,
+    tokenAuditContext
 }: IExecuteAgentFlowParams) => {
     logger.debug('\n🚀 Starting flow execution')
 
@@ -1966,10 +1996,12 @@ export const executeAgentFlow = async ({
                 isRecursive,
                 iterationContext,
                 loopCounts,
+                userId,
                 orgId,
                 workspaceId,
                 subscriptionId,
-                productId
+                productId,
+                tokenAuditContext
             })
 
             if (executionResult.agentFlowExecutedData) {
@@ -2176,6 +2208,26 @@ export const executeAgentFlow = async ({
             }
         } catch (e) {
             logger.error('[server]: Post Processing Error:', e)
+        }
+    }
+
+    if (!isRecursive) {
+        try {
+            const tokenUsageService = new TokenUsageService()
+            await tokenUsageService.recordTokenUsage({
+                workspaceId,
+                organizationId: orgId,
+                userId,
+                flowType: 'AGENTFLOW',
+                flowId: chatflow.id,
+                executionId: newExecution.id,
+                chatId,
+                sessionId,
+                usagePayloads: mergeAndDedupeTokenPayloads([agentFlowExecutedData, lastNodeOutput || {}], tokenAuditContext),
+                credentialAccesses: (tokenAuditContext?.credentialAccesses as any[]) || []
+            })
+        } catch (error) {
+            logger.warn(`[server]: Failed to record agentflow token usage: ${getErrorMessage(error)}`)
         }
     }
 

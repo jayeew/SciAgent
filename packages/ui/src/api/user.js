@@ -25,6 +25,13 @@ const getPlanProration = (subscriptionId, newPlanId) =>
 const updateSubscriptionPlan = (subscriptionId, newPlanId, prorationDate) =>
     client.post(`/organization/update-subscription-plan`, { subscriptionId, newPlanId, prorationDate })
 const getCurrentUsage = () => client.get(`/organization/get-current-usage`)
+const getTokenUsageSummary = (startDate, endDate) =>
+    client.get(`/user/token-usage/summary`, {
+        params: {
+            ...(startDate ? { startDate } : {}),
+            ...(endDate ? { endDate } : {})
+        }
+    })
 
 // workspace users
 const getAllUsersByWorkspaceId = (workspaceId) => client.get(`/workspaceuser?workspaceId=${workspaceId}`)
@@ -55,5 +62,6 @@ export default {
     getPlanProration,
     updateSubscriptionPlan,
     getCurrentUsage,
+    getTokenUsageSummary,
     deleteOrganizationUser
 }

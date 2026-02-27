@@ -42,6 +42,7 @@ import { AddTextToSpeechToChatFlow1759419194331 } from './1759419194331-AddTextT
 import { AddChatFlowNameIndex1759424903973 } from './1759424903973-AddChatFlowNameIndex'
 import { AddApiKeyPermission1765360298674 } from './1765360298674-AddApiKeyPermission'
 import { AddCredentialConsumptionMultiplier1765700000000 } from './1765700000000-AddCredentialConsumptionMultiplier'
+import { AddTokenUsageAudit1765800000000 } from '../../../enterprise/database/migrations/postgres/1765800000000-AddTokenUsageAudit'
 
 import { AddAuthTables1720230151482 } from '../../../enterprise/database/migrations/postgres/1720230151482-AddAuthTables'
 import { AddWorkspace1720230151484 } from '../../../enterprise/database/migrations/postgres/1720230151484-AddWorkspace'
@@ -116,5 +117,6 @@ export const postgresMigrations = [
     AddCredentialConsumptionMultiplier1765700000000,
     OwnerRoleFullPermissions1765400000000,
     CredentialOwnerOnlyAndSharedWorkspace1765500000000,
-    AddWorkspaceCredit1765600000000
+    AddWorkspaceCredit1765600000000,
+    AddTokenUsageAudit1765800000000
 ]

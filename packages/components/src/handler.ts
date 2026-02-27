@@ -433,6 +433,26 @@ export class CustomChainHandler extends BaseCallbackHandler {
     }
 }
 
+class TokenUsageAuditHandler extends BaseCallbackHandler {
+    name = 'token_usage_audit_handler'
+    tokenAuditContext?: ICommonObject
+
+    constructor(tokenAuditContext?: ICommonObject) {
+        super()
+        this.tokenAuditContext = tokenAuditContext
+    }
+
+    handleLLMEnd(output: any): void | Promise<void> {
+        if (!this.tokenAuditContext || !output || typeof output !== 'object') return
+
+        if (!Array.isArray(this.tokenAuditContext.tokenUsagePayloads)) {
+            this.tokenAuditContext.tokenUsagePayloads = []
+        }
+
+        this.tokenAuditContext.tokenUsagePayloads.push(output)
+    }
+}
+
 /*TODO - Add llamaIndex tracer to non evaluation runs*/
 class ExtendedLunaryHandler extends LunaryHandler {
     chatId: string
@@ -515,10 +535,14 @@ class ExtendedLunaryHandler extends LunaryHandler {
 
 export const additionalCallbacks = async (nodeData: INodeData, options: ICommonObject) => {
     try {
-        if (!options.analytic) return []
+        const callbacks: any = []
+        if (options.tokenAuditContext) {
+            callbacks.push(new TokenUsageAuditHandler(options.tokenAuditContext))
+        }
+
+        if (!options.analytic) return callbacks
 
         const analytic = JSON.parse(options.analytic)
-        const callbacks: any = []
 
         for (const provider in analytic) {
             const providerStatus = analytic[provider].status as boolean

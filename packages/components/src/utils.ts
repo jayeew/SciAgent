@@ -619,6 +619,18 @@ export const getCredentialData = async (selectedCredentialId: string, options: I
 
         if (!credential) return {}
 
+        const tokenAuditContext = options.tokenAuditContext as ICommonObject | undefined
+        if (tokenAuditContext) {
+            if (!Array.isArray(tokenAuditContext.credentialAccesses)) {
+                tokenAuditContext.credentialAccesses = []
+            }
+
+            tokenAuditContext.credentialAccesses.push({
+                credentialId: selectedCredentialId,
+                credentialName: credential.name
+            })
+        }
+
         // Decrypt credentialData
         const decryptedCredentialData = await decryptCredentialData(credential.encryptedData)
 
