@@ -4,6 +4,7 @@ import { TokenUsageCredential } from '../database/entities/token-usage-credentia
 import { TokenUsageExecution } from '../database/entities/token-usage-execution.entity'
 import { User } from '../database/entities/user.entity'
 import logger from '../../utils/logger'
+import { WorkspaceCreditService } from './workspace-credit.service'
 
 type TokenUsageMetricKeys =
     | 'inputTokens'
@@ -562,8 +563,27 @@ export class TokenUsageService {
             })
         })
 
-        await this.dataSource.getRepository(TokenUsageCredential).save(credentialRows)
+        const savedCredentialRows = await this.dataSource.getRepository(TokenUsageCredential).save(credentialRows)
         logger.info(`[token-usage] credential rows inserted count=${credentialRows.length} executionId=${savedExecution.id}`)
+
+        if (!input.userId) {
+            logger.info(`[token-usage] skip credit consumption: missing userId executionId=${savedExecution.id}`)
+            return
+        }
+
+        const workspaceCreditService = new WorkspaceCreditService()
+        const creditResult = await workspaceCreditService.consumeCreditByCredentialUsages(
+            input.workspaceId,
+            input.userId,
+            savedCredentialRows.map((row) => ({
+                credentialId: row.credentialId,
+                credentialName: row.credentialName,
+                totalTokens: row.totalTokens || 0
+            }))
+        )
+        logger.info(
+            `[token-usage] credit consumed=${creditResult.creditConsumed} balance=${creditResult.creditBalance} executionId=${savedExecution.id}`
+        )
     }
 
     public async getUsageSummaryByOrganization(organizationId: string, startDate?: string, endDate?: string) {
