@@ -327,6 +327,7 @@ const Header = ({ handleLeftDrawerToggle }) => {
             )}
             {isAuthenticated && (
                 <Box
+                    onClick={() => navigate('/account?openTopup=true')}
                     sx={{
                         mr: 1.5,
                         px: 1.5,
@@ -338,7 +339,12 @@ const Header = ({ handleLeftDrawerToggle }) => {
                         fontWeight: 700,
                         fontSize: '0.85rem',
                         minWidth: 88,
-                        textAlign: 'center'
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        transition: 'opacity 0.2s ease',
+                        '&:hover': {
+                            opacity: 0.9
+                        }
                     }}
                 >
                     Credit: {currentUser?.activeWorkspaceCredit ?? 0}

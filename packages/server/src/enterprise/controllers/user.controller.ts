@@ -94,4 +94,31 @@ export class UserController {
             next(error)
         }
     }
+
+    public async getTokenUsageDetails(req: Request, res: Response, next: NextFunction) {
+        try {
+            const organizationId = req.user?.activeOrganizationId
+            if (!organizationId) {
+                throw new InternalFlowiseError(StatusCodes.UNAUTHORIZED, UserErrorMessage.USER_NOT_FOUND)
+            }
+
+            const userId = req.query.userId as string
+            if (!userId) {
+                throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Missing required query param: userId')
+            }
+
+            const tokenUsageService = new TokenUsageService()
+            const data = await tokenUsageService.getUsageDetailsByUser(
+                organizationId,
+                userId,
+                req.query.startDate as string,
+                req.query.endDate as string,
+                req.query.page ? Number(req.query.page) : undefined,
+                req.query.limit ? Number(req.query.limit) : undefined
+            )
+            return res.status(StatusCodes.OK).json(data)
+        } catch (error) {
+            next(error)
+        }
+    }
 }

@@ -19,7 +19,8 @@ import {
     Chip,
     Drawer,
     Typography,
-    CircularProgress
+    CircularProgress,
+    TextField
 } from '@mui/material'
 
 // project imports
@@ -49,6 +50,34 @@ import users_emptySVG from '@/assets/images/users_empty.svg'
 // store
 import { useError } from '@/store/context/ErrorContext'
 import { enqueueSnackbar as enqueueSnackbarAction, closeSnackbar as closeSnackbarAction } from '@/store/actions'
+
+const TOKEN_STAT_FIELDS = [
+    { key: 'totalTokens', label: 'Total Tokens' },
+    { key: 'inputTokens', label: 'Input Tokens' },
+    { key: 'outputTokens', label: 'Output Tokens' },
+    { key: 'cacheReadTokens', label: 'Cache Read Tokens' },
+    { key: 'cacheWriteTokens', label: 'Cache Write Tokens' },
+    { key: 'reasoningTokens', label: 'Reasoning Tokens' },
+    { key: 'acceptedPredictionTokens', label: 'Accepted Prediction Tokens' },
+    { key: 'rejectedPredictionTokens', label: 'Rejected Prediction Tokens' },
+    { key: 'audioInputTokens', label: 'Audio Input Tokens' },
+    { key: 'audioOutputTokens', label: 'Audio Output Tokens' }
+]
+
+const toInputDateTimeValue = (value) => {
+    if (!value) return ''
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    return localDate.toISOString().slice(0, 16)
+}
+
+const toIsoDate = (value) => {
+    if (!value) return undefined
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return undefined
+    return date.toISOString()
+}
 
 function ShowUserRow(props) {
     const customization = useSelector((state) => state.customization)
@@ -80,10 +109,15 @@ function ShowUserRow(props) {
 
     const currentUser = useSelector((state) => state.auth.user)
     const tokenUsage = props.tokenUsage || {}
+    const handleOpenTokenUsageDetails = () => props.onViewTokenUsageClick?.(props.row)
 
     return (
         <React.Fragment>
-            <StyledTableRow hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+            <StyledTableRow
+                hover
+                onClick={handleOpenTokenUsageDetails}
+                sx={{ '&:last-child td, &:last-child th': { border: 0 }, cursor: 'pointer' }}
+            >
                 <StyledTableCell component='th' scope='row'>
                     <div
                         style={{
@@ -146,7 +180,10 @@ function ShowUserRow(props) {
                         aria-label='expand row'
                         size='small'
                         color='inherit'
-                        onClick={() => handleViewUserRoles(props.row.userId, props.row.organizationId)}
+                        onClick={(event) => {
+                            event.stopPropagation()
+                            handleViewUserRoles(props.row.userId, props.row.organizationId)
+                        }}
                     >
                         {props.row.roleCount > 0 && open ? <IconEyeOff /> : <IconEye />}
                     </PermissionIconButton>
@@ -168,7 +205,10 @@ function ShowUserRow(props) {
                             permissionId={'workspace:add-user,users:manage'}
                             title='Edit'
                             color='primary'
-                            onClick={() => props.onEditClick(props.row)}
+                            onClick={(event) => {
+                                event.stopPropagation()
+                                props.onEditClick(props.row)
+                            }}
                         >
                             <IconEdit />
                         </PermissionIconButton>
@@ -182,7 +222,10 @@ function ShowUserRow(props) {
                                 permissionId={'workspace:unlink-user,users:manage'}
                                 title='Delete'
                                 color='error'
-                                onClick={() => props.onDeleteClick(props.row.user)}
+                                onClick={(event) => {
+                                    event.stopPropagation()
+                                    props.onDeleteClick(props.row.user)
+                                }}
                             >
                                 <IconTrash />
                             </PermissionIconButton>
@@ -234,8 +277,7 @@ ShowUserRow.propTypes = {
     row: PropTypes.any,
     onDeleteClick: PropTypes.func,
     onEditClick: PropTypes.func,
-    open: PropTypes.bool,
-    theme: PropTypes.any,
+    onViewTokenUsageClick: PropTypes.func,
     deletingUserId: PropTypes.string,
     tokenUsage: PropTypes.any
 }
@@ -261,14 +303,56 @@ const Users = () => {
     const [search, setSearch] = useState('')
     const [deletingUserId, setDeletingUserId] = useState(null)
     const [tokenUsageSummary, setTokenUsageSummary] = useState({})
+    const [openTokenUsageDrawer, setOpenTokenUsageDrawer] = useState(false)
+    const [selectedUsageUser, setSelectedUsageUser] = useState(null)
+    const [usageStartDate, setUsageStartDate] = useState('')
+    const [usageEndDate, setUsageEndDate] = useState('')
+    const [usagePage, setUsagePage] = useState(1)
+    const [usageLimit] = useState(10)
 
     const { confirm } = useConfirm()
 
     const getAllUsersByOrganizationIdApi = useApi(userApi.getAllUsersByOrganizationId)
     const getTokenUsageSummaryApi = useApi(userApi.getTokenUsageSummary)
+    const getTokenUsageDetailsApi = useApi(userApi.getTokenUsageDetails)
 
     const onSearchChange = (event) => {
         setSearch(event.target.value)
+    }
+
+    const requestTokenUsageDetails = (userId, page = 1) => {
+        getTokenUsageDetailsApi.request(userId, toIsoDate(usageStartDate), toIsoDate(usageEndDate), page, usageLimit)
+    }
+
+    const onViewTokenUsageDetails = (user) => {
+        setSelectedUsageUser(user)
+        setUsagePage(1)
+        setOpenTokenUsageDrawer(true)
+        requestTokenUsageDetails(user.userId, 1)
+    }
+
+    const applyUsageFilters = () => {
+        if (!selectedUsageUser?.userId) return
+        setUsagePage(1)
+        requestTokenUsageDetails(selectedUsageUser.userId, 1)
+    }
+
+    const resetUsageFilters = () => {
+        if (!selectedUsageUser?.userId) return
+        setUsageStartDate('')
+        setUsageEndDate('')
+        setUsagePage(1)
+        getTokenUsageDetailsApi.request(selectedUsageUser.userId, undefined, undefined, 1, usageLimit)
+    }
+
+    const handleUsagePageChange = (nextPage) => {
+        if (!selectedUsageUser?.userId) return
+        setUsagePage(nextPage)
+        requestTokenUsageDetails(selectedUsageUser.userId, nextPage)
+    }
+
+    const closeTokenUsageDrawer = () => {
+        setOpenTokenUsageDrawer(false)
     }
 
     function filterUsers(data) {
@@ -408,6 +492,12 @@ const Users = () => {
     }, [getTokenUsageSummaryApi.error, setError])
 
     useEffect(() => {
+        if (getTokenUsageDetailsApi.error) {
+            setError(getTokenUsageDetailsApi.error)
+        }
+    }, [getTokenUsageDetailsApi.error, setError])
+
+    useEffect(() => {
         if (getAllUsersByOrganizationIdApi.data) {
             const users = getAllUsersByOrganizationIdApi.data || []
             const orgAdmin = users.find((user) => user.isOrgOwner === true)
@@ -428,6 +518,10 @@ const Users = () => {
             setTokenUsageSummary(usageMap)
         }
     }, [getTokenUsageSummaryApi.data])
+
+    const tokenUsageDetails = getTokenUsageDetailsApi.data
+    const tokenUsageRecords = tokenUsageDetails?.records || []
+    const usagePagination = tokenUsageDetails?.pagination || { page: usagePage, totalPages: 1, total: 0, limit: usageLimit }
 
     return (
         <>
@@ -540,6 +634,7 @@ const Users = () => {
                                                                     row={item}
                                                                     onDeleteClick={deleteUser}
                                                                     onEditClick={edit}
+                                                                    onViewTokenUsageClick={onViewTokenUsageDetails}
                                                                     deletingUserId={deletingUserId}
                                                                     tokenUsage={tokenUsageSummary[item.userId]}
                                                                 />
@@ -556,6 +651,188 @@ const Users = () => {
                     </Stack>
                 )}
             </MainCard>
+            <Drawer
+                anchor='right'
+                open={openTokenUsageDrawer}
+                onClose={closeTokenUsageDrawer}
+                slotProps={{
+                    backdrop: {
+                        sx: { backgroundColor: 'rgba(0, 0, 0, 0.45)' }
+                    }
+                }}
+            >
+                <Box sx={{ p: 3, width: { xs: '100vw', sm: '90vw', md: 1080 }, height: '100%', overflowY: 'auto' }}>
+                    <Stack direction='row' alignItems='center' justifyContent='space-between' sx={{ mb: 2 }}>
+                        <Box>
+                            <Typography variant='h3'>Token Usage Details</Typography>
+                            <Typography variant='body2' sx={{ mt: 0.5 }}>
+                                {selectedUsageUser?.user?.name || selectedUsageUser?.user?.email || 'User'}
+                            </Typography>
+                        </Box>
+                        <Button color='inherit' onClick={closeTokenUsageDrawer} startIcon={<IconX size={16} />}>
+                            Close
+                        </Button>
+                    </Stack>
+                    <Stack direction={{ xs: 'column', md: 'row' }} sx={{ gap: 1.5, mb: 2 }} alignItems={{ md: 'center' }}>
+                        <TextField
+                            size='small'
+                            type='datetime-local'
+                            label='Start Date'
+                            value={usageStartDate}
+                            onChange={(event) => setUsageStartDate(event.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                        />
+                        <TextField
+                            size='small'
+                            type='datetime-local'
+                            label='End Date'
+                            value={usageEndDate}
+                            onChange={(event) => setUsageEndDate(event.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                        />
+                        <Button variant='contained' onClick={applyUsageFilters} disabled={getTokenUsageDetailsApi.loading}>
+                            Apply
+                        </Button>
+                        <Button variant='outlined' onClick={resetUsageFilters} disabled={getTokenUsageDetailsApi.loading}>
+                            Reset
+                        </Button>
+                    </Stack>
+                    {(usageStartDate || usageEndDate) && (
+                        <Typography variant='caption' sx={{ display: 'block', mb: 2 }}>
+                            Applied Range: {usageStartDate ? toInputDateTimeValue(usageStartDate) : '-'} ~{' '}
+                            {usageEndDate ? toInputDateTimeValue(usageEndDate) : '-'}
+                        </Typography>
+                    )}
+                    {getTokenUsageDetailsApi.loading ? (
+                        <Stack sx={{ py: 6 }} justifyContent='center' alignItems='center'>
+                            <CircularProgress />
+                        </Stack>
+                    ) : tokenUsageRecords.length === 0 ? (
+                        <Typography variant='body1'>No token usage records found for this user.</Typography>
+                    ) : (
+                        <Stack sx={{ gap: 2 }}>
+                            {tokenUsageRecords.map((record) => (
+                                <Paper key={record.id} sx={{ p: 2, border: 1, borderColor: theme.palette.grey[900] + 25 }}>
+                                    <Stack direction='row' justifyContent='space-between' sx={{ mb: 1 }}>
+                                        <Typography variant='h5'>{record.flowName || 'Unknown Flow'}</Typography>
+                                        <Typography variant='body2'>
+                                            {record.createdDate ? moment(record.createdDate).format('DD/MM/YYYY HH:mm:ss') : '-'}
+                                        </Typography>
+                                    </Stack>
+                                    <Stack direction='row' flexWrap='wrap' sx={{ gap: 2, mb: 2 }}>
+                                        <Typography variant='body2'>flowType: {record.flowType || '-'}</Typography>
+                                        <Typography variant='body2'>flowId: {record.flowId || '-'}</Typography>
+                                        <Typography variant='body2'>flowName: {record.flowName || '-'}</Typography>
+                                        <Typography variant='body2'>executionId: {record.executionId || '-'}</Typography>
+                                        <Typography variant='body2'>sessionId: {record.sessionId || '-'}</Typography>
+                                    </Stack>
+                                    <TableContainer component={Paper} sx={{ mb: 2 }}>
+                                        <Table size='small'>
+                                            <TableHead
+                                                sx={{
+                                                    backgroundColor: customization.isDarkMode
+                                                        ? theme.palette.common.black
+                                                        : theme.palette.grey[100]
+                                                }}
+                                            >
+                                                <TableRow>
+                                                    {TOKEN_STAT_FIELDS.map((item) => (
+                                                        <StyledTableCell key={item.key}>{item.label}</StyledTableCell>
+                                                    ))}
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                <TableRow>
+                                                    {TOKEN_STAT_FIELDS.map((item) => (
+                                                        <StyledTableCell key={item.key}>{record[item.key] || 0}</StyledTableCell>
+                                                    ))}
+                                                </TableRow>
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                    <Typography variant='subtitle1' sx={{ mb: 1 }}>
+                                        Credentials
+                                    </Typography>
+                                    <TableContainer component={Paper}>
+                                        <Table size='small'>
+                                            <TableHead
+                                                sx={{
+                                                    backgroundColor: customization.isDarkMode
+                                                        ? theme.palette.common.black
+                                                        : theme.palette.grey[100]
+                                                }}
+                                            >
+                                                <TableRow>
+                                                    <StyledTableCell>credentialId</StyledTableCell>
+                                                    <StyledTableCell>credentialName</StyledTableCell>
+                                                    <StyledTableCell>usageCount</StyledTableCell>
+                                                    {TOKEN_STAT_FIELDS.map((item) => (
+                                                        <StyledTableCell key={item.key}>{item.label}</StyledTableCell>
+                                                    ))}
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {record.credentials?.length ? (
+                                                    record.credentials.map((credential) => (
+                                                        <TableRow key={credential.id}>
+                                                            <StyledTableCell>{credential.credentialId || '-'}</StyledTableCell>
+                                                            <StyledTableCell>{credential.credentialName || '-'}</StyledTableCell>
+                                                            <StyledTableCell>{credential.usageCount || 0}</StyledTableCell>
+                                                            {TOKEN_STAT_FIELDS.map((item) => (
+                                                                <StyledTableCell key={item.key}>
+                                                                    {credential[item.key] || 0}
+                                                                </StyledTableCell>
+                                                            ))}
+                                                        </TableRow>
+                                                    ))
+                                                ) : (
+                                                    <TableRow>
+                                                        <StyledTableCell colSpan={13}>No credential usage details.</StyledTableCell>
+                                                    </TableRow>
+                                                )}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                    <Box sx={{ mt: 2 }}>
+                                        <Typography variant='caption' sx={{ display: 'block', whiteSpace: 'pre-wrap' }}>
+                                            modelBreakdown: {JSON.stringify(record.modelBreakdown || {})}
+                                        </Typography>
+                                        <Typography variant='caption' sx={{ display: 'block', whiteSpace: 'pre-wrap' }}>
+                                            usageBreakdown: {JSON.stringify(record.usageBreakdown || {})}
+                                        </Typography>
+                                    </Box>
+                                </Paper>
+                            ))}
+                        </Stack>
+                    )}
+                    <Stack direction='row' justifyContent='space-between' alignItems='center' sx={{ mt: 2 }}>
+                        <Typography variant='body2'>
+                            Total Records: {usagePagination.total || 0} | Page {usagePagination.page || 1} /{' '}
+                            {usagePagination.totalPages || 1}
+                        </Typography>
+                        <Stack direction='row' sx={{ gap: 1 }}>
+                            <Button
+                                variant='outlined'
+                                size='small'
+                                disabled={(usagePagination.page || 1) <= 1 || getTokenUsageDetailsApi.loading}
+                                onClick={() => handleUsagePageChange((usagePagination.page || 1) - 1)}
+                            >
+                                Previous
+                            </Button>
+                            <Button
+                                variant='outlined'
+                                size='small'
+                                disabled={
+                                    (usagePagination.page || 1) >= (usagePagination.totalPages || 1) || getTokenUsageDetailsApi.loading
+                                }
+                                onClick={() => handleUsagePageChange((usagePagination.page || 1) + 1)}
+                            >
+                                Next
+                            </Button>
+                        </Stack>
+                    </Stack>
+                </Box>
+            </Drawer>
             {showInviteDialog && (
                 <InviteUsersDialog
                     show={showInviteDialog}

@@ -8,6 +8,7 @@ const userController = new UserController()
 router.get('/', userController.read)
 router.get('/test', userController.test)
 router.get('/token-usage/summary', checkPermission('users:manage'), userController.getTokenUsageSummary)
+router.get('/token-usage/details', checkPermission('users:manage'), userController.getTokenUsageDetails)
 
 router.post('/', userController.create)
 

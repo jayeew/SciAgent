@@ -5,6 +5,8 @@ import { TokenUsageExecution } from '../database/entities/token-usage-execution.
 import { User } from '../database/entities/user.entity'
 import logger from '../../utils/logger'
 import { WorkspaceCreditService } from './workspace-credit.service'
+import { ChatFlow } from '../../database/entities/ChatFlow'
+import { Assistant } from '../../database/entities/Assistant'
 
 type TokenUsageMetricKeys =
     | 'inputTokens'
@@ -257,6 +259,16 @@ const getCandidatePriority = (normalizedKey: string): number => {
     return 3
 }
 
+const isActualUsageSource = (source?: string): boolean => {
+    if (!source) return false
+    return actualUsageContainerKeys.has(source)
+}
+
+const isEstimatedUsageSource = (source?: string): boolean => {
+    if (!source) return false
+    return estimatedUsageContainerKeys.has(source)
+}
+
 const pickPreferredUsageEntry = (obj: Record<string, any>, model?: string): IUsageEntry | undefined => {
     type UsageCandidate = {
         usage: Record<string, any>
@@ -390,6 +402,31 @@ const hasAnyUsage = (metrics: ITokenUsageMetrics): boolean => {
     )
 }
 
+const parseJsonRecord = (value?: string): Record<string, any> => {
+    if (!value) return {}
+    try {
+        const parsed = JSON.parse(value)
+        if (parsed && typeof parsed === 'object') return parsed
+        return {}
+    } catch {
+        return {}
+    }
+}
+
+const getAssistantName = (assistant?: Assistant): string | undefined => {
+    if (!assistant?.details) return undefined
+    try {
+        const parsed = JSON.parse(assistant.details)
+        if (!parsed || typeof parsed !== 'object') return undefined
+        if (typeof parsed.name === 'string' && parsed.name) return parsed.name
+        if (typeof parsed.title === 'string' && parsed.title) return parsed.title
+        if (typeof parsed.assistantName === 'string' && parsed.assistantName) return parsed.assistantName
+        return undefined
+    } catch {
+        return undefined
+    }
+}
+
 export class TokenUsageService {
     private dataSource: DataSource
 
@@ -424,7 +461,29 @@ export class TokenUsageService {
             return
         }
 
-        const sourceCounts = usageEntries.reduce((acc, entry) => {
+        const hasActualUsageEntry = usageEntries.some((entry) => isActualUsageSource(entry.source))
+        const selectedUsageEntries = hasActualUsageEntry
+            ? usageEntries.filter((entry) => !isEstimatedUsageSource(entry.source))
+            : usageEntries
+
+        if (!selectedUsageEntries.length) {
+            logger.warn(
+                `[token-usage] skip: usage entries extracted=${usageEntries.length}, but all entries were filtered out. flowType=${
+                    input.flowType
+                } chatId=${input.chatId || '-'}`
+            )
+            return
+        }
+
+        if (hasActualUsageEntry && selectedUsageEntries.length !== usageEntries.length) {
+            logger.info(
+                `[token-usage] filtered estimated usage entries: before=${usageEntries.length} after=${
+                    selectedUsageEntries.length
+                } flowType=${input.flowType} chatId=${input.chatId || '-'}`
+            )
+        }
+
+        const sourceCounts = selectedUsageEntries.reduce((acc, entry) => {
             const key = entry.source || 'unknown_source'
             acc[key] = (acc[key] || 0) + 1
             return acc
@@ -434,7 +493,7 @@ export class TokenUsageService {
         const aggregatedMetrics = createEmptyMetrics()
         const modelTotals: Record<string, number> = {}
 
-        for (const entry of usageEntries) {
+        for (const entry of selectedUsageEntries) {
             const usageMetrics = deriveMetricsFromUsage(entry.usage)
             addMetrics(aggregatedMetrics, usageMetrics)
             const modelKey = entry.model || 'unknown'
@@ -443,7 +502,7 @@ export class TokenUsageService {
 
         if (!hasAnyUsage(aggregatedMetrics)) {
             logger.warn(
-                `[token-usage] skip: extracted usage entries=${usageEntries.length} but aggregated metrics are zero. flowType=${
+                `[token-usage] skip: extracted usage entries=${selectedUsageEntries.length} but aggregated metrics are zero. flowType=${
                     input.flowType
                 } chatId=${input.chatId || '-'}`
             )
@@ -451,7 +510,7 @@ export class TokenUsageService {
         }
 
         logger.info(
-            `[token-usage] extracted entries=${usageEntries.length} total=${aggregatedMetrics.totalTokens} input=${
+            `[token-usage] extracted entries=${selectedUsageEntries.length} total=${aggregatedMetrics.totalTokens} input=${
                 aggregatedMetrics.inputTokens
             } output=${aggregatedMetrics.outputTokens} models=${JSON.stringify(modelTotals)}`
         )
@@ -705,6 +764,167 @@ export class TokenUsageService {
             },
             users: usersSummary,
             recentExecutions: executions.slice(0, 30)
+        }
+    }
+
+    public async getUsageDetailsByUser(organizationId: string, userId: string, startDate?: string, endDate?: string, page = 1, limit = 10) {
+        const { startDate: start, endDate: end } = parseDateRange(startDate, endDate)
+        const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1
+        const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 100) : 10
+
+        const executionRepo = this.dataSource.getRepository(TokenUsageExecution)
+        const executionBaseQuery = executionRepo
+            .createQueryBuilder('usage')
+            .where('usage.organizationId = :organizationId', { organizationId })
+            .andWhere('usage.userId = :userId', { userId })
+            .andWhere('usage.createdDate BETWEEN :startDate AND :endDate', { startDate: start, endDate: end })
+
+        const totalCount = await executionBaseQuery.clone().getCount()
+
+        const executions = await executionBaseQuery
+            .clone()
+            .orderBy('usage.createdDate', 'DESC')
+            .skip((safePage - 1) * safeLimit)
+            .take(safeLimit)
+            .getMany()
+
+        const totalsRaw = await executionBaseQuery
+            .clone()
+            .select('COALESCE(SUM(usage.inputTokens), 0)', 'inputTokens')
+            .addSelect('COALESCE(SUM(usage.outputTokens), 0)', 'outputTokens')
+            .addSelect('COALESCE(SUM(usage.totalTokens), 0)', 'totalTokens')
+            .addSelect('COALESCE(SUM(usage.cacheReadTokens), 0)', 'cacheReadTokens')
+            .addSelect('COALESCE(SUM(usage.cacheWriteTokens), 0)', 'cacheWriteTokens')
+            .addSelect('COALESCE(SUM(usage.reasoningTokens), 0)', 'reasoningTokens')
+            .addSelect('COALESCE(SUM(usage.acceptedPredictionTokens), 0)', 'acceptedPredictionTokens')
+            .addSelect('COALESCE(SUM(usage.rejectedPredictionTokens), 0)', 'rejectedPredictionTokens')
+            .addSelect('COALESCE(SUM(usage.audioInputTokens), 0)', 'audioInputTokens')
+            .addSelect('COALESCE(SUM(usage.audioOutputTokens), 0)', 'audioOutputTokens')
+            .getRawOne()
+
+        const executionIds = executions.map((execution) => execution.id)
+        const credentials = executionIds.length
+            ? await this.dataSource
+                  .getRepository(TokenUsageCredential)
+                  .createQueryBuilder('usage')
+                  .where('usage.organizationId = :organizationId', { organizationId })
+                  .andWhere('usage.userId = :userId', { userId })
+                  .andWhere('usage.usageExecutionId IN (:...executionIds)', { executionIds })
+                  .orderBy('usage.createdDate', 'DESC')
+                  .getMany()
+            : []
+
+        const chatflowIds = Array.from(
+            new Set(executions.filter((execution) => execution.flowId).map((execution) => execution.flowId as string))
+        )
+        const assistantIds = Array.from(
+            new Set(
+                executions
+                    .filter((execution) => execution.flowId && execution.flowType === 'ASSISTANT')
+                    .map((execution) => execution.flowId as string)
+            )
+        )
+
+        const chatflows = chatflowIds.length ? await this.dataSource.getRepository(ChatFlow).findBy({ id: In(chatflowIds) }) : []
+        const assistants = assistantIds.length ? await this.dataSource.getRepository(Assistant).findBy({ id: In(assistantIds) }) : []
+        const flowNameMap = new Map(chatflows.map((flow) => [flow.id, flow.name]))
+        const assistantNameMap = new Map(assistants.map((assistant) => [assistant.id, getAssistantName(assistant) || 'Unknown Assistant']))
+
+        const user = await this.dataSource.getRepository(User).findOneBy({ id: userId })
+
+        const credentialByExecution = new Map<string, any[]>()
+        for (const credential of credentials) {
+            const credentialDetails = {
+                id: credential.id,
+                createdDate: credential.createdDate,
+                credentialId: credential.credentialId,
+                credentialName: credential.credentialName,
+                model: credential.model,
+                usageCount: credential.usageCount,
+                inputTokens: credential.inputTokens,
+                outputTokens: credential.outputTokens,
+                totalTokens: credential.totalTokens,
+                cacheReadTokens: credential.cacheReadTokens,
+                cacheWriteTokens: credential.cacheWriteTokens,
+                reasoningTokens: credential.reasoningTokens,
+                acceptedPredictionTokens: credential.acceptedPredictionTokens,
+                rejectedPredictionTokens: credential.rejectedPredictionTokens,
+                audioInputTokens: credential.audioInputTokens,
+                audioOutputTokens: credential.audioOutputTokens,
+                usageBreakdown: parseJsonRecord(credential.usageBreakdown)
+            }
+            if (!credentialByExecution.has(credential.usageExecutionId)) {
+                credentialByExecution.set(credential.usageExecutionId, [])
+            }
+            credentialByExecution.get(credential.usageExecutionId)?.push(credentialDetails)
+        }
+
+        const records = executions.map((execution) => {
+            const flowName =
+                execution.flowType === 'ASSISTANT'
+                    ? execution.flowId
+                        ? flowNameMap.get(execution.flowId) || assistantNameMap.get(execution.flowId) || 'Unknown Assistant'
+                        : undefined
+                    : execution.flowId
+                    ? flowNameMap.get(execution.flowId) || 'Unknown Flow'
+                    : undefined
+
+            return {
+                id: execution.id,
+                createdDate: execution.createdDate,
+                workspaceId: execution.workspaceId,
+                flowType: execution.flowType,
+                flowId: execution.flowId,
+                flowName,
+                executionId: execution.executionId,
+                chatId: execution.chatId,
+                chatMessageId: execution.chatMessageId,
+                sessionId: execution.sessionId,
+                inputTokens: execution.inputTokens,
+                outputTokens: execution.outputTokens,
+                totalTokens: execution.totalTokens,
+                cacheReadTokens: execution.cacheReadTokens,
+                cacheWriteTokens: execution.cacheWriteTokens,
+                reasoningTokens: execution.reasoningTokens,
+                acceptedPredictionTokens: execution.acceptedPredictionTokens,
+                rejectedPredictionTokens: execution.rejectedPredictionTokens,
+                audioInputTokens: execution.audioInputTokens,
+                audioOutputTokens: execution.audioOutputTokens,
+                usageBreakdown: parseJsonRecord(execution.usageBreakdown),
+                modelBreakdown: parseJsonRecord(execution.modelBreakdown),
+                credentials: credentialByExecution.get(execution.id) || []
+            }
+        })
+
+        return {
+            startDate: start,
+            endDate: end,
+            user: {
+                id: userId,
+                name: user?.name || 'Unknown',
+                email: user?.email || ''
+            },
+            executionCount: totalCount,
+            pagination: {
+                page: safePage,
+                limit: safeLimit,
+                total: totalCount,
+                totalPages: Math.max(1, Math.ceil(totalCount / safeLimit))
+            },
+            total: {
+                inputTokens: safeToNumber(totalsRaw?.inputTokens),
+                outputTokens: safeToNumber(totalsRaw?.outputTokens),
+                totalTokens: safeToNumber(totalsRaw?.totalTokens),
+                cacheReadTokens: safeToNumber(totalsRaw?.cacheReadTokens),
+                cacheWriteTokens: safeToNumber(totalsRaw?.cacheWriteTokens),
+                reasoningTokens: safeToNumber(totalsRaw?.reasoningTokens),
+                acceptedPredictionTokens: safeToNumber(totalsRaw?.acceptedPredictionTokens),
+                rejectedPredictionTokens: safeToNumber(totalsRaw?.rejectedPredictionTokens),
+                audioInputTokens: safeToNumber(totalsRaw?.audioInputTokens),
+                audioOutputTokens: safeToNumber(totalsRaw?.audioOutputTokens),
+                additionalBreakdown: {}
+            },
+            records
         }
     }
 }

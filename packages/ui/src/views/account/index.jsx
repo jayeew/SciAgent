@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 // utils
 import useNotifier from '@/utils/useNotifier'
@@ -62,6 +62,7 @@ const AccountSettings = () => {
     const dispatch = useDispatch()
     useNotifier()
     const navigate = useNavigate()
+    const location = useLocation()
 
     const currentUser = useSelector((state) => state.auth.user)
     const customization = useSelector((state) => state.customization)
@@ -121,6 +122,14 @@ const AccountSettings = () => {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentUser])
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search)
+        if (params.get('openTopup') === 'true') {
+            setOpenTopupDialog(true)
+            navigate('/account', { replace: true })
+        }
+    }, [location.search, navigate])
 
     useEffect(() => {
         if (isCloud) {

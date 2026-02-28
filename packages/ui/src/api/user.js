@@ -32,6 +32,16 @@ const getTokenUsageSummary = (startDate, endDate) =>
             ...(endDate ? { endDate } : {})
         }
     })
+const getTokenUsageDetails = (userId, startDate, endDate, page, limit) =>
+    client.get(`/user/token-usage/details`, {
+        params: {
+            userId,
+            ...(startDate ? { startDate } : {}),
+            ...(endDate ? { endDate } : {}),
+            ...(page ? { page } : {}),
+            ...(limit ? { limit } : {})
+        }
+    })
 
 // workspace users
 const getAllUsersByWorkspaceId = (workspaceId) => client.get(`/workspaceuser?workspaceId=${workspaceId}`)
@@ -63,5 +73,6 @@ export default {
     updateSubscriptionPlan,
     getCurrentUsage,
     getTokenUsageSummary,
+    getTokenUsageDetails,
     deleteOrganizationUser
 }
