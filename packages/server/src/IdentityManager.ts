@@ -281,7 +281,6 @@ export class IdentityManager {
                 // Open Source: owner has access to all feature-gated routes (features are not populated by plan)
                 const app = getRunningExpressApp()
                 if (user.isOrganizationAdmin && app.identityManager.getPlatformType() === Platform.OPEN_SOURCE) {
-                    console.log('user.isOrganizationAdmin', user.isOrganizationAdmin)
                     return next()
                 }
                 if (!user.features || Object.keys(user.features).length === 0) {

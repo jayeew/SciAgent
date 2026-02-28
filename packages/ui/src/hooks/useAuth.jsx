@@ -32,8 +32,14 @@ export const useAuth = () => {
             return true
         }
 
-        // Owner (isGlobal) can see all display-gated items (e.g. User & Workspace Management in Open Source)
-        if (isGlobal) {
+        // SSO Config is Enterprise-only. Backend blocks it in Open Source.
+        if (isOpenSource && display === 'feat:sso-config') {
+            return false
+        }
+
+        // In Open Source, global owner can access display-gated features.
+        // In Cloud/Enterprise, display flags must still follow backend plan features.
+        if (isGlobal && isOpenSource) {
             return true
         }
 
