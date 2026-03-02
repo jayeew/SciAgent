@@ -29,6 +29,7 @@ import ViewHeader from '@/layout/MainLayout/ViewHeader'
 import { StyledButton } from '@/ui-component/button/StyledButton'
 import MainCard from '@/ui-component/cards/MainCard'
 import SettingsSection from '@/ui-component/form/settings'
+import TablePagination, { DEFAULT_ITEMS_PER_PAGE } from '@/ui-component/pagination/TablePagination'
 import PricingDialog from '@/ui-component/subscription/PricingDialog'
 
 // Icons
@@ -55,6 +56,23 @@ import { workspaceCreditUpdated } from '@/store/reducers/authSlice'
 
 const calculatePercentage = (count, total) => {
     return Math.min((count / total) * 100, 100)
+}
+
+const buildCreditTransactionsParams = (page, pageSize, dateFilter) => {
+    const params = {
+        page,
+        pageSize
+    }
+
+    if (dateFilter?.startDate) {
+        params.startDate = dateFilter.startDate
+    }
+
+    if (dateFilter?.endDate) {
+        params.endDate = dateFilter.endDate
+    }
+
+    return params
 }
 
 const AccountSettings = () => {
@@ -89,6 +107,11 @@ const AccountSettings = () => {
     const [totalSeats, setTotalSeats] = useState(0)
     const [credit, setCredit] = useState(0)
     const [creditTransactions, setCreditTransactions] = useState([])
+    const [creditCurrentPage, setCreditCurrentPage] = useState(1)
+    const [creditPageLimit, setCreditPageLimit] = useState(DEFAULT_ITEMS_PER_PAGE)
+    const [creditTotalRecords, setCreditTotalRecords] = useState(0)
+    const [creditDateFilter, setCreditDateFilter] = useState({ startDate: '', endDate: '' })
+    const [appliedCreditDateFilter, setAppliedCreditDateFilter] = useState({ startDate: '', endDate: '' })
     const [openTopupDialog, setOpenTopupDialog] = useState(false)
     const [topupAmount, setTopupAmount] = useState(100)
     const [isTopupLoading, setIsTopupLoading] = useState(false)
@@ -113,6 +136,11 @@ const AccountSettings = () => {
     const getCreditSummaryApi = useApi(workspaceApi.getCreditSummary)
     const getCreditTransactionsApi = useApi(workspaceApi.getCreditTransactions)
     const logoutApi = useApi(accountApi.logout)
+
+    const requestCreditTransactions = (page = creditCurrentPage, pageSize = creditPageLimit, dateFilter = appliedCreditDateFilter) => {
+        const params = buildCreditTransactionsParams(page, pageSize, dateFilter)
+        getCreditTransactionsApi.request(params)
+    }
 
     useEffect(() => {
         if (currentUser) {
@@ -143,10 +171,17 @@ const AccountSettings = () => {
     useEffect(() => {
         if (currentUser?.activeWorkspaceId) {
             getCreditSummaryApi.request()
-            getCreditTransactionsApi.request(100)
+            requestCreditTransactions(creditCurrentPage, creditPageLimit, appliedCreditDateFilter)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentUser?.activeWorkspaceId])
+
+    useEffect(() => {
+        if (currentUser?.activeWorkspaceId) {
+            requestCreditTransactions(creditCurrentPage, creditPageLimit, appliedCreditDateFilter)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [creditCurrentPage, creditPageLimit, appliedCreditDateFilter.startDate, appliedCreditDateFilter.endDate])
 
     useEffect(() => {
         setLoading(getUserByIdApi.loading)
@@ -178,8 +213,11 @@ const AccountSettings = () => {
     }, [dispatch, getCreditSummaryApi.data])
 
     useEffect(() => {
-        if (getCreditTransactionsApi.data?.transactions) {
-            setCreditTransactions(getCreditTransactionsApi.data.transactions)
+        if (getCreditTransactionsApi.data) {
+            const transactions = getCreditTransactionsApi.data.transactions || []
+            const total = Number(getCreditTransactionsApi.data.pagination?.total ?? transactions.length ?? 0)
+            setCreditTransactions(transactions)
+            setCreditTotalRecords(total)
         }
     }, [getCreditTransactionsApi.data])
 
@@ -257,8 +295,7 @@ const AccountSettings = () => {
         try {
             const obj = {
                 id: currentUser.id,
-                name: profileName,
-                email: email
+                name: profileName
             }
             const saveProfileResp = await userApi.updateUser(obj)
             if (saveProfileResp.data) {
@@ -459,7 +496,8 @@ const AccountSettings = () => {
             setCredit(currentCredit)
             dispatch(workspaceCreditUpdated(currentCredit))
             setOpenTopupDialog(false)
-            getCreditTransactionsApi.request(100)
+            setCreditCurrentPage(1)
+            requestCreditTransactions(1, creditPageLimit, appliedCreditDateFilter)
             enqueueSnackbar({
                 message: `Top up successful: +${topupAmount}`,
                 options: {
@@ -490,6 +528,39 @@ const AccountSettings = () => {
         } finally {
             setIsTopupLoading(false)
         }
+    }
+
+    const onCreditDateFilterChange = (key, value) => {
+        setCreditDateFilter((prev) => ({
+            ...prev,
+            [key]: value
+        }))
+    }
+
+    const onApplyCreditDateFilter = () => {
+        if (creditDateFilter.startDate && creditDateFilter.endDate && creditDateFilter.startDate > creditDateFilter.endDate) {
+            enqueueSnackbar({
+                message: 'Start date cannot be later than end date',
+                options: {
+                    key: new Date().getTime() + Math.random(),
+                    variant: 'error'
+                }
+            })
+            return
+        }
+        setCreditCurrentPage(1)
+        setAppliedCreditDateFilter({ ...creditDateFilter })
+    }
+
+    const onResetCreditDateFilter = () => {
+        setCreditCurrentPage(1)
+        setCreditDateFilter({ startDate: '', endDate: '' })
+        setAppliedCreditDateFilter({ startDate: '', endDate: '' })
+    }
+
+    const onCreditPaginationChange = (page, limit) => {
+        setCreditCurrentPage(page)
+        setCreditPageLimit(limit)
     }
 
     // Calculate empty seats
@@ -780,18 +851,7 @@ const AccountSettings = () => {
                                 </SettingsSection>
                             </>
                         )}
-                        <SettingsSection
-                            action={
-                                <StyledButton
-                                    onClick={() => setOpenTopupDialog(true)}
-                                    sx={{ borderRadius: 2, height: 40 }}
-                                    variant='contained'
-                                >
-                                    Recharge
-                                </StyledButton>
-                            }
-                            title='Credits'
-                        >
+                        <SettingsSection title='Credits'>
                             <Box
                                 sx={{
                                     display: 'flex',
@@ -801,19 +861,82 @@ const AccountSettings = () => {
                                     py: 2
                                 }}
                             >
-                                <Box
+                                <Stack
+                                    direction={{ xs: 'column', sm: 'row' }}
                                     sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
+                                        alignItems: { xs: 'stretch', sm: 'center' },
                                         justifyContent: 'space-between',
+                                        gap: 2,
                                         p: 2,
                                         borderRadius: 2,
                                         backgroundColor: theme.palette.background.default
                                     }}
                                 >
-                                    <Typography variant='body1'>Current Credit</Typography>
-                                    <Typography variant='h2'>{credit}</Typography>
-                                </Box>
+                                    <Box>
+                                        <Typography variant='body2' color='text.secondary'>
+                                            Available Credits
+                                        </Typography>
+                                        <Typography variant='h2' sx={{ mt: 0.5 }}>
+                                            {credit}
+                                        </Typography>
+                                    </Box>
+                                    <Button
+                                        variant='contained'
+                                        size='large'
+                                        onClick={() => setOpenTopupDialog(true)}
+                                        startIcon={<IconCreditCard size={18} />}
+                                        sx={{
+                                            minWidth: { xs: '100%', sm: 180 },
+                                            height: 46,
+                                            borderRadius: 2.5,
+                                            fontWeight: 700
+                                        }}
+                                    >
+                                        Recharge
+                                    </Button>
+                                </Stack>
+                                <Stack
+                                    direction={{ xs: 'column', md: 'row' }}
+                                    sx={{
+                                        gap: 1.5,
+                                        alignItems: { xs: 'stretch', md: 'center' }
+                                    }}
+                                >
+                                    <TextField
+                                        size='small'
+                                        type='date'
+                                        label='Start Date'
+                                        value={creditDateFilter.startDate}
+                                        InputLabelProps={{ shrink: true }}
+                                        inputProps={{
+                                            max: creditDateFilter.endDate || undefined
+                                        }}
+                                        onChange={(e) => onCreditDateFilterChange('startDate', e.target.value)}
+                                        sx={{ minWidth: { xs: '100%', md: 180 } }}
+                                    />
+                                    <TextField
+                                        size='small'
+                                        type='date'
+                                        label='End Date'
+                                        value={creditDateFilter.endDate}
+                                        InputLabelProps={{ shrink: true }}
+                                        inputProps={{
+                                            min: creditDateFilter.startDate || undefined
+                                        }}
+                                        onChange={(e) => onCreditDateFilterChange('endDate', e.target.value)}
+                                        sx={{ minWidth: { xs: '100%', md: 180 } }}
+                                    />
+                                    <Button
+                                        variant='outlined'
+                                        onClick={onApplyCreditDateFilter}
+                                        disabled={getCreditTransactionsApi.loading}
+                                    >
+                                        Filter
+                                    </Button>
+                                    <Button variant='text' onClick={onResetCreditDateFilter} disabled={getCreditTransactionsApi.loading}>
+                                        Reset
+                                    </Button>
+                                </Stack>
                                 <Box
                                     sx={{
                                         border: 1,
@@ -825,18 +948,25 @@ const AccountSettings = () => {
                                     <Box
                                         sx={{
                                             display: 'grid',
-                                            gridTemplateColumns: '1.1fr 1.2fr 1.4fr 0.8fr 0.8fr 1.6fr',
+                                            gridTemplateColumns: '110px 160px minmax(0, 1.3fr) 100px 100px minmax(0, 1.8fr)',
                                             gap: 1,
                                             px: 2,
                                             py: 1.2,
-                                            backgroundColor: theme.palette.background.default
+                                            backgroundColor: theme.palette.background.default,
+                                            '& > *': {
+                                                minWidth: 0
+                                            }
                                         }}
                                     >
                                         <Typography variant='caption'>Type</Typography>
                                         <Typography variant='caption'>Date</Typography>
                                         <Typography variant='caption'>Credential</Typography>
-                                        <Typography variant='caption'>Amount</Typography>
-                                        <Typography variant='caption'>Balance</Typography>
+                                        <Typography variant='caption' sx={{ textAlign: 'right' }}>
+                                            Amount
+                                        </Typography>
+                                        <Typography variant='caption' sx={{ textAlign: 'right' }}>
+                                            Balance
+                                        </Typography>
                                         <Typography variant='caption'>Description</Typography>
                                     </Box>
                                     {(creditTransactions || []).length === 0 ? (
@@ -850,31 +980,78 @@ const AccountSettings = () => {
                                             <Box
                                                 key={item.id}
                                                 sx={{
-                                                    display: 'grid',
-                                                    gridTemplateColumns: '1.1fr 1.2fr 1.4fr 0.8fr 0.8fr 1.6fr',
-                                                    gap: 1,
-                                                    px: 2,
-                                                    py: 1.2,
                                                     borderTop: 1,
                                                     borderColor: theme.palette.divider
                                                 }}
                                             >
-                                                <Typography variant='body2'>
-                                                    {item.type === 'topup' ? 'Gain' : item.type === 'consume' ? 'Consume' : 'Adjust'}
-                                                </Typography>
-                                                <Typography variant='body2'>
-                                                    {item.createdDate ? new Date(item.createdDate).toLocaleString() : '-'}
-                                                </Typography>
-                                                <Typography variant='body2'>{item.credentialName || '-'}</Typography>
-                                                <Typography variant='body2' color={item.amount >= 0 ? 'success.main' : 'error.main'}>{`${
-                                                    item.amount >= 0 ? '+' : ''
-                                                }${item.amount}`}</Typography>
-                                                <Typography variant='body2'>{item.balance}</Typography>
-                                                <Typography variant='body2'>{item.description || '-'}</Typography>
+                                                <Box
+                                                    sx={{
+                                                        display: 'grid',
+                                                        gridTemplateColumns: '110px 160px minmax(0, 1.3fr) 100px 100px minmax(0, 1.8fr)',
+                                                        gap: 1,
+                                                        px: 2,
+                                                        py: 1.2,
+                                                        '& > *': {
+                                                            minWidth: 0
+                                                        }
+                                                    }}
+                                                >
+                                                    <Typography variant='body2'>
+                                                        {item.type === 'topup'
+                                                            ? 'Gain'
+                                                            : item.type === 'consume'
+                                                            ? 'Consume'
+                                                            : item.type === 'checkin'
+                                                            ? 'Check-in'
+                                                            : 'Adjust'}
+                                                    </Typography>
+                                                    <Typography variant='body2'>
+                                                        {item.createdDate ? new Date(item.createdDate).toLocaleString() : '-'}
+                                                    </Typography>
+                                                    <Typography
+                                                        variant='body2'
+                                                        sx={{
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap'
+                                                        }}
+                                                        title={item.credentialName || '-'}
+                                                    >
+                                                        {item.credentialName || '-'}
+                                                    </Typography>
+                                                    <Typography
+                                                        variant='body2'
+                                                        color={item.amount >= 0 ? 'success.main' : 'error.main'}
+                                                        sx={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+                                                    >{`${item.amount >= 0 ? '+' : ''}${item.amount}`}</Typography>
+                                                    <Typography
+                                                        variant='body2'
+                                                        sx={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+                                                    >
+                                                        {item.balance}
+                                                    </Typography>
+                                                    <Typography
+                                                        variant='body2'
+                                                        sx={{
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap'
+                                                        }}
+                                                        title={item.description || '-'}
+                                                    >
+                                                        {item.description || '-'}
+                                                    </Typography>
+                                                </Box>
                                             </Box>
                                         ))
                                     )}
                                 </Box>
+                                <TablePagination
+                                    currentPage={creditCurrentPage}
+                                    limit={creditPageLimit}
+                                    total={creditTotalRecords}
+                                    onChange={onCreditPaginationChange}
+                                />
                             </Box>
                         </SettingsSection>
                         <SettingsSection
@@ -914,8 +1091,9 @@ const AccountSettings = () => {
                                         fullWidth
                                         placeholder='Email Address'
                                         name='email'
-                                        onChange={(e) => setEmail(e.target.value)}
                                         value={email}
+                                        readOnly
+                                        disabled
                                     />
                                 </Box>
                             </Box>

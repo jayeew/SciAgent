@@ -16,6 +16,7 @@ router.post('/switch', workspaceController.switchWorkspace)
 router.get('/credit', workspaceController.getCredit)
 router.get('/credit/transactions', workspaceController.getCreditTransactions)
 router.post('/credit/topup', workspaceController.topupCredit)
+router.post('/credit/checkin', workspaceController.dailyCheckIn)
 
 router.put('/', IdentityManager.checkFeatureByPlan('feat:workspaces'), checkPermission('workspace:update'), workspaceController.update)
 

@@ -282,8 +282,7 @@ const dashboard = {
                     type: 'item',
                     url: '/account',
                     icon: icons.IconSettings,
-                    breadcrumbs: true,
-                    display: 'feat:account'
+                    breadcrumbs: true
                 }
             ]
         }

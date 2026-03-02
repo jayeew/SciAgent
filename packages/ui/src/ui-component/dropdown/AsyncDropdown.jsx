@@ -45,19 +45,12 @@ const fetchList = async ({ name, nodeData, previousNodes, currentNode }) => {
         withCredentials: true
     }
 
-    let lists = await axios
-        .post(
-            `${baseURL}/api/v1/node-load-method/${nodeData.name}`,
-            { ...nodeData, loadMethod, previousNodes, currentNode, credential: credentialId },
-            config
-        )
-        .then(async function (response) {
-            return response.data
-        })
-        .catch(function (error) {
-            console.error(error)
-        })
-    return lists
+    const response = await axios.post(
+        `${baseURL}/api/v1/node-load-method/${nodeData.name}`,
+        { ...nodeData, loadMethod, previousNodes, currentNode, credential: credentialId },
+        config
+    )
+    return Array.isArray(response.data) ? response.data : []
 }
 
 export const AsyncDropdown = ({
@@ -117,15 +110,18 @@ export const AsyncDropdown = ({
                 }
                 return returnList
             }
+            return []
         } catch (error) {
             console.error(error)
+            return []
         }
     }
 
     useEffect(() => {
-        setLoading(true)
+        let isCancelled = false
         ;(async () => {
-            const fetchData = async () => {
+            setLoading(true)
+            try {
                 let response = []
                 if (credentialNames.length) {
                     response = await fetchCredentialList()
@@ -159,18 +155,28 @@ export const AsyncDropdown = ({
 
                     response = await fetchList(body)
                 }
-                for (let j = 0; j < response.length; j += 1) {
-                    if (response[j].imageSrc) {
-                        const imageSrc = `${baseURL}/api/v1/node-icon/${response[j].name}`
-                        response[j].imageSrc = imageSrc
-                    }
+                const normalizedResponse = Array.isArray(response) ? response : []
+                const normalizedOptions = normalizedResponse.map((option) =>
+                    option?.imageSrc ? { ...option, imageSrc: `${baseURL}/api/v1/node-icon/${option.name}` } : option
+                )
+                if (!isCancelled) {
+                    if (isCreateNewOption) setOptions([...normalizedOptions, ...addNewOption])
+                    else setOptions([...normalizedOptions])
                 }
-                if (isCreateNewOption) setOptions([...response, ...addNewOption])
-                else setOptions([...response])
-                setLoading(false)
+            } catch (error) {
+                console.error('Failed to load async dropdown options:', error)
+                if (!isCancelled) {
+                    if (isCreateNewOption) setOptions([...addNewOption])
+                    else setOptions([])
+                }
+            } finally {
+                if (!isCancelled) setLoading(false)
             }
-            fetchData()
         })()
+
+        return () => {
+            isCancelled = true
+        }
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])

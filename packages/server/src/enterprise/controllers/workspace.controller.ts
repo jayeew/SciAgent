@@ -259,9 +259,17 @@ export class WorkspaceController {
                 throw new InternalFlowiseError(StatusCodes.UNAUTHORIZED, `Unauthorized: User not found`)
             }
 
-            const limit = req.query.limit ? Number(req.query.limit) : 100
+            const page = req.query.page ? Number(req.query.page) : 1
+            const pageSize = req.query.pageSize ? Number(req.query.pageSize) : req.query.limit ? Number(req.query.limit) : 100
+            const startDate = req.query.startDate ? String(req.query.startDate) : undefined
+            const endDate = req.query.endDate ? String(req.query.endDate) : undefined
             const workspaceCreditService = new WorkspaceCreditService()
-            const data = await workspaceCreditService.getTransactions(req.user.activeWorkspaceId, req.user.id, limit)
+            const data = await workspaceCreditService.getTransactions(req.user.activeWorkspaceId, req.user.id, {
+                page,
+                pageSize,
+                startDate,
+                endDate
+            })
             return res.status(StatusCodes.OK).json(data)
         } catch (error) {
             next(error)
@@ -278,6 +286,20 @@ export class WorkspaceController {
             const description = req.body?.description
             const workspaceCreditService = new WorkspaceCreditService()
             const data = await workspaceCreditService.topupCredit(req.user.activeWorkspaceId, req.user.id, amount, description)
+            return res.status(StatusCodes.OK).json(data)
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    public async dailyCheckIn(req: Request, res: Response, next: NextFunction) {
+        try {
+            if (!req.user?.id || !req.user?.activeWorkspaceId) {
+                throw new InternalFlowiseError(StatusCodes.UNAUTHORIZED, `Unauthorized: User not found`)
+            }
+
+            const workspaceCreditService = new WorkspaceCreditService()
+            const data = await workspaceCreditService.dailyCheckIn(req.user.activeWorkspaceId, req.user.id)
             return res.status(StatusCodes.OK).json(data)
         } catch (error) {
             next(error)

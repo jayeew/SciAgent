@@ -8,6 +8,7 @@ router.post('/', checkPermission('credentials:create'), credentialsController.cr
 
 // READ
 router.get('/', checkPermission('credentials:view'), credentialsController.getAllCredentials)
+router.get('/:id/models', checkPermission('credentials:view'), credentialsController.getCredentialModels)
 router.get(['/', '/:id'], checkPermission('credentials:view'), credentialsController.getCredentialById)
 
 // UPDATE
@@ -16,6 +17,11 @@ router.patch(
     '/:id/multiplier',
     checkAnyPermission('credentials:create,credentials:update'),
     credentialsController.updateCredentialMultiplier
+)
+router.patch(
+    '/:id/model-multipliers',
+    checkAnyPermission('credentials:create,credentials:update'),
+    credentialsController.updateCredentialModelMultipliers
 )
 
 // DELETE

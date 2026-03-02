@@ -4,6 +4,7 @@ import { WorkspaceService } from '../../enterprise/services/workspace.service'
 import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import { StatusCodes } from 'http-status-codes'
 import { LoggedInUser } from '../../enterprise/Interface.Enterprise'
+import { getWorkspaceSearchOptionsFromReq } from '../../enterprise/utils/ControllerServiceUtils'
 
 const createCredential = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -15,7 +16,10 @@ const createCredential = async (req: Request, res: Response, next: NextFunction)
         }
         const body = req.body
         const user = req.user as LoggedInUser | undefined
-        if (typeof body?.creditConsumptionMultiplier !== 'undefined' && !user?.isOrganizationAdmin) {
+        if (
+            (typeof body?.creditConsumptionMultiplier !== 'undefined' || typeof body?.creditConsumptionMultiplierByModel !== 'undefined') &&
+            !user?.isOrganizationAdmin
+        ) {
             throw new InternalFlowiseError(StatusCodes.FORBIDDEN, `Only owner can set credit consumption multiplier`)
         }
         const workspaceService = new WorkspaceService()
@@ -129,8 +133,12 @@ const updateCredential = async (req: Request, res: Response, next: NextFunction)
             throw new InternalFlowiseError(StatusCodes.NOT_FOUND, `Error: credentialsController.updateCredential - workspace not found!`)
         }
         const user = req.user as LoggedInUser | undefined
-        // creditConsumptionMultiplier is owner-only
-        if (typeof req.body?.creditConsumptionMultiplier !== 'undefined' && !user?.isOrganizationAdmin) {
+        // creditConsumptionMultiplier and creditConsumptionMultiplierByModel are owner-only
+        if (
+            (typeof req.body?.creditConsumptionMultiplier !== 'undefined' ||
+                typeof req.body?.creditConsumptionMultiplierByModel !== 'undefined') &&
+            !user?.isOrganizationAdmin
+        ) {
             throw new InternalFlowiseError(StatusCodes.FORBIDDEN, `Only owner can update credit consumption multiplier`)
         }
         const apiResponse = await credentialsService.updateCredential(req.params.id, req.body, workspaceIds)
@@ -176,11 +184,70 @@ const updateCredentialMultiplier = async (req: Request, res: Response, next: Nex
     }
 }
 
+const updateCredentialModelMultipliers = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (typeof req.params === 'undefined' || !req.params.id) {
+            throw new InternalFlowiseError(
+                StatusCodes.PRECONDITION_FAILED,
+                `Error: credentialsController.updateCredentialModelMultipliers - id not provided!`
+            )
+        }
+        if (!req.body || typeof req.body.modelMultipliers === 'undefined') {
+            throw new InternalFlowiseError(
+                StatusCodes.PRECONDITION_FAILED,
+                `Error: credentialsController.updateCredentialModelMultipliers - modelMultipliers not provided!`
+            )
+        }
+        const user = req.user as LoggedInUser | undefined
+        if (!user?.isOrganizationAdmin) {
+            throw new InternalFlowiseError(StatusCodes.FORBIDDEN, `Only owner can update credit consumption multiplier`)
+        }
+        const workspaceIds = await getCredentialWorkspaceIds(req)
+        if (!workspaceIds.length) {
+            throw new InternalFlowiseError(
+                StatusCodes.NOT_FOUND,
+                `Error: credentialsController.updateCredentialModelMultipliers - workspace not found!`
+            )
+        }
+        const apiResponse = await credentialsService.updateCredentialModelMultipliers(
+            req.params.id,
+            req.body.modelMultipliers,
+            workspaceIds
+        )
+        return res.json(apiResponse)
+    } catch (error) {
+        next(error)
+    }
+}
+
+const getCredentialModels = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (typeof req.params === 'undefined' || !req.params.id) {
+            throw new InternalFlowiseError(
+                StatusCodes.PRECONDITION_FAILED,
+                `Error: credentialsController.getCredentialModels - id not provided!`
+            )
+        }
+        const workspaceIds = await getCredentialWorkspaceIds(req)
+        if (!workspaceIds.length) {
+            throw new InternalFlowiseError(StatusCodes.NOT_FOUND, `Error: credentialsController.getCredentialModels - workspace not found!`)
+        }
+
+        const searchOptions = getWorkspaceSearchOptionsFromReq(req) as Record<string, unknown>
+        const apiResponse = await credentialsService.getCredentialModels(req.params.id, workspaceIds, searchOptions)
+        return res.json(apiResponse)
+    } catch (error) {
+        next(error)
+    }
+}
+
 export default {
     createCredential,
     deleteCredentials,
     getAllCredentials,
     getCredentialById,
     updateCredential,
-    updateCredentialMultiplier
+    updateCredentialMultiplier,
+    updateCredentialModelMultipliers,
+    getCredentialModels
 }

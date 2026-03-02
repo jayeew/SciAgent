@@ -82,6 +82,9 @@ const MaterialUISwitch = styled(Switch)(({ theme }) => ({
 }))
 
 const SHOW_GITHUB_BUTTON = false
+const CHECKIN_COOLDOWN_STORAGE_KEY = 'workspace_daily_checkin_next_available_at'
+const DEFAULT_MIN_CREDIT_TO_INTERACT = 1
+
 const GitHubStarButton = ({ starCount, isDark }) => {
     const theme = useTheme()
 
@@ -157,8 +160,16 @@ const Header = ({ handleLeftDrawerToggle }) => {
     const { isEnterpriseLicensed, isCloud, isOpenSource } = useConfig()
     const currentUser = useSelector((state) => state.auth.user)
     const isAuthenticated = useSelector((state) => state.auth.isAuthenticated)
+    const checkInCooldownStorageKey = `${CHECKIN_COOLDOWN_STORAGE_KEY}:${currentUser?.id || 'anonymous'}:${
+        currentUser?.activeWorkspaceId || 'default'
+    }`
     const [isPricingOpen, setIsPricingOpen] = useState(false)
     const [starCount, setStarCount] = useState(0)
+    const [isCheckInLoading, setIsCheckInLoading] = useState(false)
+    const [checkInReward, setCheckInReward] = useState(0)
+    const [showCheckInReward, setShowCheckInReward] = useState(false)
+    const [nextCheckInAvailableAt, setNextCheckInAvailableAt] = useState('')
+    const [cooldownNow, setCooldownNow] = useState(Date.now())
 
     useNotifier()
 
@@ -186,6 +197,156 @@ const Header = ({ handleLeftDrawerToggle }) => {
             }
         })
     }
+
+    const getMinCreditToInteract = () => {
+        const rawValue = import.meta.env.VITE_WORKSPACE_MIN_CREDIT_TO_INTERACT
+        if (rawValue === undefined || rawValue === null || rawValue === '') return DEFAULT_MIN_CREDIT_TO_INTERACT
+        const parsed = Number(rawValue)
+        if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_MIN_CREDIT_TO_INTERACT
+        return parsed
+    }
+
+    const parseNextAvailableAtFromMessage = (message) => {
+        if (!message || typeof message !== 'string') return ''
+        const match = message.match(/nextAvailableAt=([^)\s]+)/)
+        if (!match?.[1]) return ''
+        const parsedDate = new Date(match[1])
+        if (Number.isNaN(parsedDate.getTime())) return ''
+        return parsedDate.toISOString()
+    }
+
+    const persistNextCheckInAvailableAt = (isoDateTime) => {
+        if (!isoDateTime) {
+            setNextCheckInAvailableAt('')
+            localStorage.removeItem(checkInCooldownStorageKey)
+            return
+        }
+
+        setNextCheckInAvailableAt(isoDateTime)
+        localStorage.setItem(checkInCooldownStorageKey, isoDateTime)
+    }
+
+    const getCheckInCooldownText = () => {
+        if (!nextCheckInAvailableAt) return ''
+        const nextAvailableTimestamp = new Date(nextCheckInAvailableAt).getTime()
+        if (Number.isNaN(nextAvailableTimestamp) || nextAvailableTimestamp <= cooldownNow) return ''
+
+        const remainingMs = nextAvailableTimestamp - cooldownNow
+        const totalMinutes = Math.ceil(remainingMs / (60 * 1000))
+        const hours = Math.floor(totalMinutes / 60)
+        const minutes = totalMinutes % 60
+        return `剩余签到冷却时间（${hours}小时${minutes}分）`
+    }
+
+    const minCreditToInteract = getMinCreditToInteract()
+    const currentCredit = Number(currentUser?.activeWorkspaceCredit ?? 0)
+    const checkInCooldownText = getCheckInCooldownText()
+    const isCheckInCoolingDown = !!checkInCooldownText
+
+    const handleDailyCheckIn = async () => {
+        if (isCheckInLoading) return
+
+        if (isCheckInCoolingDown) return
+
+        if (currentCredit < minCreditToInteract) {
+            enqueueSnackbar({
+                message: `当前积分小于 ${minCreditToInteract}，无法签到`,
+                options: {
+                    key: new Date().getTime() + Math.random(),
+                    variant: 'error',
+                    action: (key) => (
+                        <Button style={{ color: 'white' }} onClick={() => closeSnackbar(key)}>
+                            <IconX />
+                        </Button>
+                    )
+                }
+            })
+            return
+        }
+
+        try {
+            setIsCheckInLoading(true)
+            const response = await workspaceApi.dailyCheckIn()
+            const reward = Number(response?.data?.reward ?? 0)
+            const credit = response?.data?.credit
+            const nextAvailableAt = response?.data?.nextAvailableAt
+
+            if (typeof credit === 'number') {
+                dispatch(workspaceCreditUpdated(credit))
+            }
+            if (nextAvailableAt) {
+                persistNextCheckInAvailableAt(nextAvailableAt)
+            }
+
+            if (reward > 0) {
+                setCheckInReward(reward)
+                setShowCheckInReward(true)
+                setTimeout(() => setShowCheckInReward(false), 1200)
+            }
+
+            enqueueSnackbar({
+                message: `签到成功，获得 ${reward} 积分`,
+                options: {
+                    key: new Date().getTime() + Math.random(),
+                    variant: 'success',
+                    action: (key) => (
+                        <Button style={{ color: 'white' }} onClick={() => closeSnackbar(key)}>
+                            <IconX />
+                        </Button>
+                    )
+                }
+            })
+        } catch (error) {
+            const errorMessage = error?.response?.data?.message || '签到失败，请稍后重试'
+            const nextAvailableAt = parseNextAvailableAtFromMessage(errorMessage)
+            if (nextAvailableAt) {
+                persistNextCheckInAvailableAt(nextAvailableAt)
+            }
+            enqueueSnackbar({
+                message: errorMessage,
+                options: {
+                    key: new Date().getTime() + Math.random(),
+                    variant: 'error',
+                    action: (key) => (
+                        <Button style={{ color: 'white' }} onClick={() => closeSnackbar(key)}>
+                            <IconX />
+                        </Button>
+                    )
+                }
+            })
+        } finally {
+            setIsCheckInLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        setNextCheckInAvailableAt('')
+        const savedNextAvailableAt = localStorage.getItem(checkInCooldownStorageKey)
+        if (!savedNextAvailableAt) return
+        const parsedDate = new Date(savedNextAvailableAt)
+        if (Number.isNaN(parsedDate.getTime()) || parsedDate.getTime() <= Date.now()) {
+            localStorage.removeItem(checkInCooldownStorageKey)
+            return
+        }
+        setNextCheckInAvailableAt(parsedDate.toISOString())
+    }, [checkInCooldownStorageKey])
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setCooldownNow(Date.now())
+        }, 30 * 1000)
+
+        return () => clearInterval(timer)
+    }, [])
+
+    useEffect(() => {
+        if (!nextCheckInAvailableAt) return
+        const nextAvailableTimestamp = new Date(nextCheckInAvailableAt).getTime()
+        if (Number.isNaN(nextAvailableTimestamp) || nextAvailableTimestamp <= cooldownNow) {
+            persistNextCheckInAvailableAt('')
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cooldownNow, nextCheckInAvailableAt])
 
     useEffect(() => {
         try {
@@ -324,6 +485,73 @@ const Header = ({ handleLeftDrawerToggle }) => {
                         }
                     }}
                 />
+            )}
+            {isAuthenticated && (
+                <Box sx={{ position: 'relative', mr: 1 }}>
+                    <Button
+                        variant='contained'
+                        disabled={isCheckInLoading || currentCredit < minCreditToInteract || isCheckInCoolingDown}
+                        onClick={handleDailyCheckIn}
+                        sx={{
+                            borderRadius: 10,
+                            minWidth: 96,
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            background: (theme) =>
+                                `linear-gradient(90deg, ${theme.palette.success.main} 0%, ${theme.palette.info.main} 100%)`,
+                            color: (theme) => theme.palette.common.white,
+                            transition: 'transform 0.2s ease, opacity 0.2s ease',
+                            '@keyframes checkinPulse': {
+                                '0%': { transform: 'scale(1)' },
+                                '40%': { transform: 'scale(1.08)' },
+                                '100%': { transform: 'scale(1)' }
+                            },
+                            animation: showCheckInReward ? 'checkinPulse 0.5s ease' : 'none',
+                            '&:hover': {
+                                opacity: 0.9
+                            }
+                        }}
+                        startIcon={<IconSparkles size={16} />}
+                    >
+                        {isCheckInLoading ? '签到中...' : '每日签到'}
+                    </Button>
+                    {showCheckInReward && (
+                        <Typography
+                            sx={{
+                                position: 'absolute',
+                                right: 8,
+                                top: -16,
+                                fontSize: '0.85rem',
+                                fontWeight: 800,
+                                color: 'success.main',
+                                pointerEvents: 'none',
+                                '@keyframes rewardFloat': {
+                                    '0%': { opacity: 0, transform: 'translateY(6px)' },
+                                    '20%': { opacity: 1, transform: 'translateY(0px)' },
+                                    '100%': { opacity: 0, transform: 'translateY(-16px)' }
+                                },
+                                animation: 'rewardFloat 1.2s ease forwards'
+                            }}
+                        >
+                            +{checkInReward}
+                        </Typography>
+                    )}
+                    {isCheckInCoolingDown && (
+                        <Typography
+                            sx={{
+                                position: 'absolute',
+                                left: 0,
+                                top: '100%',
+                                mt: 0.5,
+                                fontSize: '0.72rem',
+                                color: 'text.secondary',
+                                whiteSpace: 'nowrap'
+                            }}
+                        >
+                            {checkInCooldownText}
+                        </Typography>
+                    )}
+                </Box>
             )}
             {isAuthenticated && (
                 <Box

@@ -69,6 +69,7 @@ import { getErrorMessage } from '../errors/utils'
 import { FLOWISE_METRIC_COUNTERS, FLOWISE_COUNTER_STATUS, IMetricsProvider } from '../Interface.Metrics'
 import { getWorkspaceSearchOptions } from '../enterprise/utils/ControllerServiceUtils'
 import { TokenUsageService } from '../enterprise/services/token-usage.service'
+import { WorkspaceCreditService } from '../enterprise/services/workspace-credit.service'
 import { OMIT_QUEUE_JOB_DATA } from './constants'
 import { executeAgentFlow } from './buildAgentflow'
 import { Workspace } from '../enterprise/database/entities/workspace.entity'
@@ -1155,6 +1156,12 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
         const subscriptionId = org.subscriptionId as string
         const productId = await appServer.identityManager.getProductIdFromSubscription(subscriptionId)
 
+        // Enforce minimum credit before model execution for authenticated workspace users.
+        if (userId) {
+            const workspaceCreditService = new WorkspaceCreditService()
+            await workspaceCreditService.assertSufficientCreditForModelInteraction(workspaceId, userId)
+        }
+
         await checkPredictions(orgId, subscriptionId, appServer.usageCacheManager)
 
         const executeData: IExecuteFlowParams = {
@@ -1212,7 +1219,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
         logger.error(`[server]:${organizationId}/${chatflow.id}/${chatId} Error:`, e)
         appServer.abortControllerPool.remove(`${chatflow.id}_${chatId}`)
         incrementFailedMetricCounter(appServer.metricsProvider, isInternal, isAgentFlow)
-        if (e instanceof InternalFlowiseError && e.statusCode === StatusCodes.UNAUTHORIZED) {
+        if (e instanceof InternalFlowiseError) {
             throw e
         } else {
             throw new InternalFlowiseError(StatusCodes.INTERNAL_SERVER_ERROR, getErrorMessage(e))

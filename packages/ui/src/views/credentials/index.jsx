@@ -7,9 +7,14 @@ import moment from 'moment'
 import { styled } from '@mui/material/styles'
 import { tableCellClasses } from '@mui/material/TableCell'
 import {
+    Autocomplete,
     Button,
     Box,
     CircularProgress,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogTitle,
     Skeleton,
     Stack,
     Table,
@@ -20,6 +25,7 @@ import {
     TableRow,
     Paper,
     TextField,
+    Typography,
     useTheme
 } from '@mui/material'
 
@@ -43,7 +49,7 @@ import useConfirm from '@/hooks/useConfirm'
 import useNotifier from '@/utils/useNotifier'
 
 // Icons
-import { IconTrash, IconEdit, IconX, IconPlus, IconShare, IconDeviceFloppy } from '@tabler/icons-react'
+import { IconTrash, IconEdit, IconX, IconPlus, IconShare, IconDeviceFloppy, IconAdjustments } from '@tabler/icons-react'
 import CredentialEmptySVG from '@/assets/images/credential_empty.svg'
 import keySVG from '@/assets/images/key.svg'
 
@@ -73,6 +79,12 @@ const StyledTableRow = styled(TableRow)(() => ({
     }
 }))
 
+const EMPTY_MODEL_MULTIPLIER_ROW = {
+    model: '',
+    multiplier: 1,
+    rmbPerMTok: ''
+}
+
 // ==============================|| Credentials ||============================== //
 
 const Credentials = () => {
@@ -95,6 +107,12 @@ const Credentials = () => {
     const [componentsCredentials, setComponentsCredentials] = useState([])
     const [multiplierEdits, setMultiplierEdits] = useState({})
     const [savingMultiplierId, setSavingMultiplierId] = useState('')
+    const [showModelMultipliersDialog, setShowModelMultipliersDialog] = useState(false)
+    const [activeModelMultiplierCredential, setActiveModelMultiplierCredential] = useState(null)
+    const [modelMultiplierRows, setModelMultiplierRows] = useState([])
+    const [availableModelOptions, setAvailableModelOptions] = useState([])
+    const [loadingModelOptions, setLoadingModelOptions] = useState(false)
+    const [savingModelMultipliers, setSavingModelMultipliers] = useState(false)
 
     const [showShareCredentialDialog, setShowShareCredentialDialog] = useState(false)
     const [shareCredentialDialogProps, setShareCredentialDialogProps] = useState({})
@@ -260,6 +278,181 @@ const Credentials = () => {
         }
     }
 
+    const openModelMultipliersDialog = async (credential) => {
+        setActiveModelMultiplierCredential(credential)
+        const existingModelMultipliers = credential.creditConsumptionMultiplierByModel || {}
+        const rows = Object.entries(existingModelMultipliers).map(([model, config]) => {
+            if (config && typeof config === 'object' && !Array.isArray(config)) {
+                const multiplier = Number(config.multiplier)
+                const rmbPerMTok = Number(config.rmbPerMTok)
+
+                return {
+                    model,
+                    multiplier: Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1,
+                    rmbPerMTok: Number.isFinite(rmbPerMTok) && rmbPerMTok >= 0 ? rmbPerMTok : ''
+                }
+            }
+
+            const legacyMultiplier = Number(config)
+            return {
+                model,
+                multiplier: Number.isFinite(legacyMultiplier) && legacyMultiplier > 0 ? legacyMultiplier : 1,
+                rmbPerMTok: ''
+            }
+        })
+        setModelMultiplierRows(rows)
+        setShowModelMultipliersDialog(true)
+        setAvailableModelOptions([])
+
+        try {
+            setLoadingModelOptions(true)
+            const resp = await credentialsApi.getCredentialModels(credential.id)
+            const options = Array.isArray(resp?.data)
+                ? resp.data.map((item) => (typeof item?.name === 'string' ? item.name.trim() : '')).filter((item) => item)
+                : []
+            setAvailableModelOptions(Array.from(new Set(options)))
+        } catch (error) {
+            enqueueSnackbar({
+                message: `Failed to load model list: ${
+                    typeof error.response?.data === 'object' ? error.response.data.message : error.message
+                }`,
+                options: {
+                    key: new Date().getTime() + Math.random(),
+                    variant: 'error',
+                    persist: true,
+                    action: (key) => (
+                        <Button style={{ color: 'white' }} onClick={() => closeSnackbar(key)}>
+                            <IconX />
+                        </Button>
+                    )
+                }
+            })
+        } finally {
+            setLoadingModelOptions(false)
+        }
+    }
+
+    const closeModelMultipliersDialog = () => {
+        setShowModelMultipliersDialog(false)
+        setActiveModelMultiplierCredential(null)
+        setModelMultiplierRows([])
+        setAvailableModelOptions([])
+        setLoadingModelOptions(false)
+        setSavingModelMultipliers(false)
+    }
+
+    const onAddModelMultiplierRow = () => {
+        setModelMultiplierRows((prev) => [...prev, { ...EMPTY_MODEL_MULTIPLIER_ROW }])
+    }
+
+    const onRemoveModelMultiplierRow = (indexToRemove) => {
+        setModelMultiplierRows((prev) => prev.filter((_, index) => index !== indexToRemove))
+    }
+
+    const onUpdateModelMultiplierRow = (indexToUpdate, partialRow) => {
+        setModelMultiplierRows((prev) => prev.map((row, index) => (index === indexToUpdate ? { ...row, ...partialRow } : row)))
+    }
+
+    const onSaveModelMultipliers = async () => {
+        if (!activeModelMultiplierCredential) return
+
+        const normalizedModelMultipliers = {}
+        const seenModels = new Set()
+
+        for (const row of modelMultiplierRows) {
+            const modelName = String(row.model || '').trim()
+            const multiplier = Number(row.multiplier)
+            const rmbPerMTok = Number(row.rmbPerMTok)
+
+            if (!modelName) {
+                enqueueSnackbar({
+                    message: 'Model name cannot be empty',
+                    options: {
+                        key: new Date().getTime() + Math.random(),
+                        variant: 'error'
+                    }
+                })
+                return
+            }
+
+            if (seenModels.has(modelName)) {
+                enqueueSnackbar({
+                    message: `Duplicate model name: ${modelName}`,
+                    options: {
+                        key: new Date().getTime() + Math.random(),
+                        variant: 'error'
+                    }
+                })
+                return
+            }
+            seenModels.add(modelName)
+
+            if (!Number.isFinite(multiplier) || multiplier <= 0) {
+                enqueueSnackbar({
+                    message: `Invalid multiplier for model: ${modelName}`,
+                    options: {
+                        key: new Date().getTime() + Math.random(),
+                        variant: 'error'
+                    }
+                })
+                return
+            }
+
+            if (!Number.isFinite(rmbPerMTok) || rmbPerMTok < 0) {
+                enqueueSnackbar({
+                    message: `Invalid RMB/MTok for model: ${modelName}`,
+                    options: {
+                        key: new Date().getTime() + Math.random(),
+                        variant: 'error'
+                    }
+                })
+                return
+            }
+
+            normalizedModelMultipliers[modelName] = {
+                multiplier,
+                rmbPerMTok
+            }
+        }
+
+        try {
+            setSavingModelMultipliers(true)
+            await credentialsApi.updateCredentialModelMultipliers(activeModelMultiplierCredential.id, normalizedModelMultipliers)
+            enqueueSnackbar({
+                message: 'Model billing configuration updated',
+                options: {
+                    key: new Date().getTime() + Math.random(),
+                    variant: 'success',
+                    action: (key) => (
+                        <Button style={{ color: 'white' }} onClick={() => closeSnackbar(key)}>
+                            <IconX />
+                        </Button>
+                    )
+                }
+            })
+            closeModelMultipliersDialog()
+            getAllCredentialsApi.request()
+        } catch (error) {
+            enqueueSnackbar({
+                message: `Failed to update model billing configuration: ${
+                    typeof error.response?.data === 'object' ? error.response.data.message : error.message
+                }`,
+                options: {
+                    key: new Date().getTime() + Math.random(),
+                    variant: 'error',
+                    persist: true,
+                    action: (key) => (
+                        <Button style={{ color: 'white' }} onClick={() => closeSnackbar(key)}>
+                            <IconX />
+                        </Button>
+                    )
+                }
+            })
+        } finally {
+            setSavingModelMultipliers(false)
+        }
+    }
+
     useEffect(() => {
         getAllCredentialsApi.request()
         getAllComponentsCredentialsApi.request()
@@ -342,6 +535,7 @@ const Credentials = () => {
                                             <StyledTableCell>Last Updated</StyledTableCell>
                                             <StyledTableCell>Created</StyledTableCell>
                                             {isOwner && <StyledTableCell>Multiplier</StyledTableCell>}
+                                            {isOwner && <StyledTableCell>Model Billing</StyledTableCell>}
                                             <StyledTableCell style={{ width: '5%' }}> </StyledTableCell>
                                             <StyledTableCell style={{ width: '5%' }}> </StyledTableCell>
                                             <StyledTableCell style={{ width: '5%' }}> </StyledTableCell>
@@ -354,6 +548,11 @@ const Credentials = () => {
                                                     <StyledTableCell>
                                                         <Skeleton variant='text' />
                                                     </StyledTableCell>
+                                                    {isOwner && (
+                                                        <StyledTableCell>
+                                                            <Skeleton variant='text' />
+                                                        </StyledTableCell>
+                                                    )}
                                                     <StyledTableCell>
                                                         <Skeleton variant='text' />
                                                     </StyledTableCell>
@@ -363,6 +562,11 @@ const Credentials = () => {
                                                     <StyledTableCell>
                                                         <Skeleton variant='text' />
                                                     </StyledTableCell>
+                                                    {isOwner && (
+                                                        <StyledTableCell>
+                                                            <Skeleton variant='text' />
+                                                        </StyledTableCell>
+                                                    )}
                                                     <StyledTableCell>
                                                         <Skeleton variant='text' />
                                                     </StyledTableCell>
@@ -476,6 +680,19 @@ const Credentials = () => {
                                                                 </Box>
                                                             </StyledTableCell>
                                                         )}
+                                                        {isOwner && (
+                                                            <StyledTableCell>
+                                                                <Button
+                                                                    variant='outlined'
+                                                                    size='small'
+                                                                    disabled={credential.shared}
+                                                                    onClick={() => openModelMultipliersDialog(credential)}
+                                                                    startIcon={<IconAdjustments size={14} />}
+                                                                >
+                                                                    Configure
+                                                                </Button>
+                                                            </StyledTableCell>
+                                                        )}
                                                         {!credential.shared && (
                                                             <>
                                                                 <StyledTableCell>
@@ -550,6 +767,99 @@ const Credentials = () => {
                     setError={setError}
                 ></ShareWithWorkspaceDialog>
             )}
+            <Dialog fullWidth maxWidth='md' open={showModelMultipliersDialog} onClose={closeModelMultipliersDialog}>
+                <DialogTitle>
+                    Model Billing Configuration{activeModelMultiplierCredential ? ` - ${activeModelMultiplierCredential.name}` : ''}
+                </DialogTitle>
+                <DialogContent>
+                    <Stack sx={{ mt: 1, gap: 2 }}>
+                        <Typography variant='body2' color='text.secondary'>
+                            Exact model name matching. Final credit cost = baseCost * model multiplier * credential multiplier.
+                        </Typography>
+
+                        {!modelMultiplierRows.length && (
+                            <Typography variant='body2' color='text.secondary'>
+                                No model overrides configured.
+                            </Typography>
+                        )}
+
+                        {modelMultiplierRows.map((row, index) => (
+                            <Stack key={`${row.model}_${index}`} direction='row' sx={{ gap: 1, alignItems: 'center' }}>
+                                <Autocomplete
+                                    freeSolo
+                                    fullWidth
+                                    options={availableModelOptions}
+                                    loading={loadingModelOptions}
+                                    value={row.model}
+                                    onChange={(_, value) => {
+                                        onUpdateModelMultiplierRow(index, {
+                                            model: typeof value === 'string' ? value : value || ''
+                                        })
+                                    }}
+                                    onInputChange={(_, value) => {
+                                        onUpdateModelMultiplierRow(index, {
+                                            model: value
+                                        })
+                                    }}
+                                    renderInput={(params) => <TextField {...params} size='small' label='Model' placeholder='gpt-5-mini' />}
+                                />
+                                <TextField
+                                    size='small'
+                                    type='number'
+                                    label='Multiplier'
+                                    value={row.multiplier}
+                                    inputProps={{ min: 0.000001, step: '0.1' }}
+                                    sx={{ width: 160 }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === '-') {
+                                            e.preventDefault()
+                                        }
+                                    }}
+                                    onChange={(e) => {
+                                        const value = Number(e.target.value)
+                                        onUpdateModelMultiplierRow(index, {
+                                            multiplier: Number.isNaN(value) ? '' : value
+                                        })
+                                    }}
+                                />
+                                <TextField
+                                    size='small'
+                                    type='number'
+                                    label='RMB/MTok'
+                                    value={row.rmbPerMTok}
+                                    inputProps={{ min: 0, step: '0.01' }}
+                                    sx={{ width: 160 }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === '-') {
+                                            e.preventDefault()
+                                        }
+                                    }}
+                                    onChange={(e) => {
+                                        const value = Number(e.target.value)
+                                        onUpdateModelMultiplierRow(index, {
+                                            rmbPerMTok: Number.isNaN(value) ? '' : value
+                                        })
+                                    }}
+                                />
+                                <Button color='error' onClick={() => onRemoveModelMultiplierRow(index)}>
+                                    <IconTrash size={16} />
+                                </Button>
+                            </Stack>
+                        ))}
+                        <Box>
+                            <Button variant='outlined' size='small' onClick={onAddModelMultiplierRow} startIcon={<IconPlus size={14} />}>
+                                Add Row
+                            </Button>
+                        </Box>
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={closeModelMultipliersDialog}>Cancel</Button>
+                    <Button variant='contained' onClick={onSaveModelMultipliers} disabled={savingModelMultipliers}>
+                        {savingModelMultipliers ? <CircularProgress size={18} /> : 'Save'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
             <ConfirmDialog />
         </>
     )

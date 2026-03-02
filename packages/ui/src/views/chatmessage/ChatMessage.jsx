@@ -5,6 +5,7 @@ import { cloneDeep } from 'lodash'
 import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source'
+import { useNavigate } from 'react-router-dom'
 
 import {
     Box,
@@ -96,6 +97,8 @@ const messageImageStyle = {
     height: '128px',
     objectFit: 'cover'
 }
+const DEFAULT_MIN_CREDIT_TO_INTERACT = 1
+const INSUFFICIENT_CREDIT_ERROR_PREFIX = 'Insufficient credit for model interaction'
 
 // Extension must match recording MIME so server validation and STT work (audio/webm, audio/mp4, audio/ogg).
 const getRecordingExtensionForMime = (mime) => {
@@ -187,6 +190,8 @@ CardWithDeleteOverlay.propTypes = {
 const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setPreviews }) => {
     const theme = useTheme()
     const customization = useSelector((state) => state.customization)
+    const currentUser = useSelector((state) => state.auth.user)
+    const navigate = useNavigate()
 
     const ps = useRef()
 
@@ -260,6 +265,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
     const [isLoadingRecording, setIsLoadingRecording] = useState(false)
 
     const [openFeedbackDialog, setOpenFeedbackDialog] = useState(false)
+    const [insufficientCreditDialogOpen, setInsufficientCreditDialogOpen] = useState(false)
     const [feedback, setFeedback] = useState('')
     const [pendingActionData, setPendingActionData] = useState(null)
     const [feedbackType, setFeedbackType] = useState('')
@@ -602,6 +608,44 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
     }
 
     const onChange = useCallback((e) => setUserInput(e.target.value), [setUserInput])
+
+    const getMinCreditToInteract = () => {
+        const rawValue = import.meta.env.VITE_WORKSPACE_MIN_CREDIT_TO_INTERACT
+        if (rawValue === undefined || rawValue === null || rawValue === '') return DEFAULT_MIN_CREDIT_TO_INTERACT
+        const parsed = Number(rawValue)
+        if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_MIN_CREDIT_TO_INTERACT
+        return parsed
+    }
+
+    const isInsufficientCreditError = ({ message, statusCode }) => {
+        const normalizedMessage = typeof message === 'string' ? message : ''
+        if (statusCode === 402) return true
+        return normalizedMessage.includes(INSUFFICIENT_CREDIT_ERROR_PREFIX)
+    }
+
+    const rollbackPendingUserMessage = () => {
+        setMessages((prevMessages) => {
+            const allMessages = [...prevMessages]
+            if (allMessages[allMessages.length - 1]?.type === 'userMessage') {
+                allMessages.pop()
+            }
+            return allMessages
+        })
+    }
+
+    const handleInsufficientCreditBlock = () => {
+        rollbackPendingUserMessage()
+        setLoading(false)
+        setInsufficientCreditDialogOpen(true)
+    }
+
+    const shouldBlockForInsufficientCredit = () => {
+        if (!currentUser || typeof currentUser.activeWorkspaceCredit === 'undefined') return false
+        const minCreditToInteract = getMinCreditToInteract()
+        const currentCredit = Number(currentUser.activeWorkspaceCredit)
+        if (!Number.isFinite(currentCredit)) return false
+        return currentCredit < minCreditToInteract
+    }
 
     const updateLastMessage = (text) => {
         setMessages((prevMessages) => {
@@ -988,6 +1032,11 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                 .join('\n')
         }
 
+        if (shouldBlockForInsufficientCredit()) {
+            setInsufficientCreditDialogOpen(true)
+            return
+        }
+
         setLoading(true)
         clearAgentflowNodeStatus()
 
@@ -1069,7 +1118,14 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                 }
             }
         } catch (error) {
-            handleError(error.response.data.message)
+            const responseStatus = error?.response?.status
+            const responseMessage =
+                error?.response?.data?.message || error?.message || 'Oops! There seems to be an error. Please try again.'
+            if (isInsufficientCreditError({ message: responseMessage, statusCode: responseStatus })) {
+                handleInsufficientCreditBlock()
+                return
+            }
+            handleError(responseMessage)
             return
         }
     }
@@ -1137,7 +1193,11 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                         updateMetadata(payload.data, input)
                         break
                     case 'error':
-                        updateErrorMessage(payload.data)
+                        if (isInsufficientCreditError({ message: payload.data })) {
+                            handleInsufficientCreditBlock()
+                        } else {
+                            updateErrorMessage(payload.data)
+                        }
                         break
                     case 'abort':
                         abortMessage(payload.data)
@@ -3167,6 +3227,30 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                     <Button onClick={handleSubmitFeedback}>Cancel</Button>
                     <Button onClick={handleSubmitFeedback} variant='contained'>
                         Submit
+                    </Button>
+                </DialogActions>
+            </Dialog>
+            <Dialog
+                open={insufficientCreditDialogOpen}
+                disableEscapeKeyDown
+                onClose={(_, reason) => {
+                    // This dialog can only be closed by clicking the top-up button.
+                    if (reason === 'backdropClick' || reason === 'escapeKeyDown') return
+                }}
+            >
+                <DialogTitle>积分不足</DialogTitle>
+                <DialogContent>
+                    <Typography>当前积分不足，无法继续与第三方大模型交互，请先充值。</Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        variant='contained'
+                        onClick={() => {
+                            setInsufficientCreditDialogOpen(false)
+                            navigate('/account?openTopup=true')
+                        }}
+                    >
+                        去充值
                     </Button>
                 </DialogActions>
             </Dialog>

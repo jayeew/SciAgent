@@ -3,7 +3,8 @@ import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeor
 export enum WorkspaceCreditTransactionType {
     TOPUP = 'topup',
     CONSUME = 'consume',
-    ADJUST = 'adjust'
+    ADJUST = 'adjust',
+    CHECKIN = 'checkin'
 }
 
 @Entity({ name: 'workspace_credit_transaction' })

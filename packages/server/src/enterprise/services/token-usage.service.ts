@@ -637,6 +637,7 @@ export class TokenUsageService {
             savedCredentialRows.map((row) => ({
                 credentialId: row.credentialId,
                 credentialName: row.credentialName,
+                model: row.model,
                 totalTokens: row.totalTokens || 0
             }))
         )

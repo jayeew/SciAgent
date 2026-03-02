@@ -19,6 +19,9 @@ export class Credential implements ICredential {
     @Column({ type: 'float', default: 1 })
     creditConsumptionMultiplier: number
 
+    @Column({ nullable: true, type: 'text' })
+    creditConsumptionMultiplierByModel?: string
+
     @Column({ type: 'timestamp' })
     @CreateDateColumn()
     createdDate: Date

@@ -1755,6 +1755,16 @@ export const transformToCredentialEntity = async (body: ICredentialReqBody): Pro
         credentialBody.creditConsumptionMultiplier = body.creditConsumptionMultiplier
     }
 
+    if (typeof body.creditConsumptionMultiplierByModel !== 'undefined') {
+        if (typeof body.creditConsumptionMultiplierByModel === 'string') {
+            credentialBody.creditConsumptionMultiplierByModel = body.creditConsumptionMultiplierByModel
+        } else if (body.creditConsumptionMultiplierByModel && typeof body.creditConsumptionMultiplierByModel === 'object') {
+            credentialBody.creditConsumptionMultiplierByModel = JSON.stringify(body.creditConsumptionMultiplierByModel)
+        } else {
+            credentialBody.creditConsumptionMultiplierByModel = undefined
+        }
+    }
+
     if (body.plainDataObj) {
         const encryptedData = await encryptCredentialData(body.plainDataObj)
         credentialBody.encryptedData = encryptedData

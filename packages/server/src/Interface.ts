@@ -134,9 +134,15 @@ export interface ICredential {
     credentialName: string
     encryptedData: string
     creditConsumptionMultiplier: number
+    creditConsumptionMultiplierByModel?: Record<string, ICredentialModelBillingConfig> | Record<string, number> | string
     updatedDate: Date
     createdDate: Date
     workspaceId: string
+}
+
+export interface ICredentialModelBillingConfig {
+    multiplier: number
+    rmbPerMTok: number
 }
 
 export interface IVariable {
@@ -336,6 +342,7 @@ export interface ICredentialReqBody {
     plainDataObj: ICredentialDataDecrypted
     workspaceId: string
     creditConsumptionMultiplier?: number
+    creditConsumptionMultiplierByModel?: Record<string, ICredentialModelBillingConfig> | Record<string, number>
 }
 
 // Decrypted credential object sent back to client

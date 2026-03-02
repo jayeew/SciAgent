@@ -1,4 +1,5 @@
 import PropTypes from 'prop-types'
+import { Fragment } from 'react'
 
 // material-ui
 import { useTheme } from '@mui/material/styles'
@@ -89,22 +90,34 @@ const NavGroup = ({ item }) => {
             </List>
 
             {renderNonPrimaryGroups().map((group) => {
-                const groupPermissions = group.children.map((menu) => menu.permission).join(',')
+                const groupPermissions = group.children
+                    .map((menu) => menu.permission)
+                    .filter(Boolean)
+                    .join(',')
+                const groupContent = (
+                    <>
+                        <Divider sx={{ height: '1px', borderColor: theme.palette.grey[900] + 25, my: 0 }} />
+                        <List
+                            subheader={
+                                <Typography variant='caption' sx={{ ...theme.typography.subMenuCaption }} display='block' gutterBottom>
+                                    {group.title}
+                                </Typography>
+                            }
+                            sx={{ p: '16px', py: 2, display: 'flex', flexDirection: 'column', gap: 1 }}
+                        >
+                            {group.children.map((menu) => listItems(menu))}
+                        </List>
+                    </>
+                )
+
+                // Group with no explicit permission requirements should still be visible.
+                if (!groupPermissions) {
+                    return <Fragment key={group.id}>{groupContent}</Fragment>
+                }
+
                 return (
                     <Available key={group.id} permission={groupPermissions}>
-                        <>
-                            <Divider sx={{ height: '1px', borderColor: theme.palette.grey[900] + 25, my: 0 }} />
-                            <List
-                                subheader={
-                                    <Typography variant='caption' sx={{ ...theme.typography.subMenuCaption }} display='block' gutterBottom>
-                                        {group.title}
-                                    </Typography>
-                                }
-                                sx={{ p: '16px', py: 2, display: 'flex', flexDirection: 'column', gap: 1 }}
-                            >
-                                {group.children.map((menu) => listItems(menu))}
-                            </List>
-                        </>
+                        {groupContent}
                     </Available>
                 )
             })}

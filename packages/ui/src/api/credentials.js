@@ -15,6 +15,9 @@ const createCredential = (body) => client.post(`/credentials`, body)
 const updateCredential = (id, body) => client.put(`/credentials/${id}`, body)
 const updateCredentialMultiplier = (id, creditConsumptionMultiplier) =>
     client.patch(`/credentials/${id}/multiplier`, { creditConsumptionMultiplier })
+const updateCredentialModelMultipliers = (id, modelMultipliers) =>
+    client.patch(`/credentials/${id}/model-multipliers`, { modelMultipliers })
+const getCredentialModels = (id) => client.get(`/credentials/${id}/models`)
 
 const deleteCredential = (id) => client.delete(`/credentials/${id}`)
 
@@ -27,5 +30,7 @@ export default {
     createCredential,
     updateCredential,
     updateCredentialMultiplier,
+    updateCredentialModelMultipliers,
+    getCredentialModels,
     deleteCredential
 }
