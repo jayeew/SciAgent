@@ -747,6 +747,18 @@
                     "name": "qwen-plus",
                     "input_cost": 0.0016,
                     "output_cost": 0.0064
+                },
+                {
+                    "label": "qwen3.5-flash",
+                    "name": "qwen3.5-flash",
+                    "input_cost": 0.0016,
+                    "output_cost": 0.0064
+                },
+                {
+                    "label": "qwen3.5-plus",
+                    "name": "qwen3.5-plus",
+                    "input_cost": 0.0016,
+                    "output_cost": 0.0064
                 }
             ]
         },

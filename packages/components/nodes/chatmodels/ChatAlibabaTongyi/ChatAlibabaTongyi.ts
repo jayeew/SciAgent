@@ -1,10 +1,11 @@
 import { BaseCache } from '@langchain/core/caches'
-import { ChatAlibabaTongyi } from '@langchain/community/chat_models/alibaba_tongyi'
-import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
+import { ChatOpenAI, ChatOpenAIFields } from '@langchain/openai'
+import { ICommonObject, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
+import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
 import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
-import { BaseChatModelParams } from '@langchain/core/language_models/chat_models'
 
 class ChatAlibabaTongyi_ChatModels implements INode {
+    readonly baseURL: string = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
     label: string
     name: string
     version: number
@@ -24,7 +25,7 @@ class ChatAlibabaTongyi_ChatModels implements INode {
         this.icon = 'alibaba-svgrepo-com.svg'
         this.category = 'Chat Models'
         this.description = 'Wrapper around Alibaba Tongyi Chat Endpoints'
-        this.baseClasses = [this.type, ...getBaseClasses(ChatAlibabaTongyi)]
+        this.baseClasses = [this.type, ...getBaseClasses(ChatOpenAI)]
         this.credential = {
             label: 'Connect Credential',
             name: 'credential',
@@ -41,8 +42,9 @@ class ChatAlibabaTongyi_ChatModels implements INode {
             {
                 label: 'Model',
                 name: 'modelName',
-                type: 'string',
-                placeholder: 'qwen-plus'
+                type: 'asyncOptions',
+                loadMethod: 'listModels',
+                default: 'qwen-plus'
             },
             {
                 label: 'Temperature',
@@ -62,6 +64,12 @@ class ChatAlibabaTongyi_ChatModels implements INode {
         ]
     }
 
+    loadMethods = {
+        async listModels(): Promise<INodeOptionsValue[]> {
+            return await getModels(MODEL_TYPE.CHAT, 'chatAlibabaTongyi')
+        }
+    }
+
     async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
         const cache = nodeData.inputs?.cache as BaseCache
         const temperature = nodeData.inputs?.temperature as string
@@ -71,16 +79,19 @@ class ChatAlibabaTongyi_ChatModels implements INode {
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const alibabaApiKey = getCredentialParam('alibabaApiKey', credentialData, nodeData)
 
-        const obj: Partial<ChatAlibabaTongyi> & BaseChatModelParams = {
+        const obj: ChatOpenAIFields = {
             streaming: streaming ?? true,
-            alibabaApiKey,
-            model: modelName,
-            temperature: temperature ? parseFloat(temperature) : undefined
+            modelName,
+            openAIApiKey: alibabaApiKey,
+            apiKey: alibabaApiKey,
+            temperature: temperature ? parseFloat(temperature) : undefined,
+            configuration: {
+                baseURL: this.baseURL
+            }
         }
         if (cache) obj.cache = cache
 
-        const model = new ChatAlibabaTongyi(obj)
-        return model
+        return new ChatOpenAI(obj)
     }
 }
 
