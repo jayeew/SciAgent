@@ -490,14 +490,18 @@ export class TokenUsageService {
         }, {} as Record<string, number>)
         logger.info(`[token-usage] selected usage sources: ${JSON.stringify(sourceCounts)}`)
 
+        const usageEntryMetrics = selectedUsageEntries.map((entry) => ({
+            metrics: deriveMetricsFromUsage(entry.usage),
+            model: typeof entry.model === 'string' && entry.model.trim() ? entry.model.trim() : undefined
+        }))
+
         const aggregatedMetrics = createEmptyMetrics()
         const modelTotals: Record<string, number> = {}
 
-        for (const entry of selectedUsageEntries) {
-            const usageMetrics = deriveMetricsFromUsage(entry.usage)
-            addMetrics(aggregatedMetrics, usageMetrics)
+        for (const entry of usageEntryMetrics) {
+            addMetrics(aggregatedMetrics, entry.metrics)
             const modelKey = entry.model || 'unknown'
-            modelTotals[modelKey] = (modelTotals[modelKey] || 0) + usageMetrics.totalTokens
+            modelTotals[modelKey] = (modelTotals[modelKey] || 0) + entry.metrics.totalTokens
         }
 
         if (!hasAnyUsage(aggregatedMetrics)) {
@@ -544,83 +548,163 @@ export class TokenUsageService {
 
         if (!credentialAccesses.length) return
 
-        const groupedCredentialAccess = new Map<
-            string,
-            {
-                credentialId?: string
-                credentialName?: string
-                model?: string
-                usageCount: number
-            }
-        >()
-
-        for (const access of credentialAccesses) {
-            const groupKey = `${access.credentialId || ''}:${access.credentialName || 'Unknown Credential'}`
-            const existing = groupedCredentialAccess.get(groupKey)
-            if (existing) {
-                existing.usageCount += 1
-            } else {
-                groupedCredentialAccess.set(groupKey, {
-                    credentialId: access.credentialId,
-                    credentialName: access.credentialName || 'Unknown Credential',
-                    model: access.model,
-                    usageCount: 1
-                })
-            }
-        }
-
-        const groups = Array.from(groupedCredentialAccess.values())
-        const weights = groups.map((group) => group.usageCount)
-
-        const distributedMetrics = {
-            inputTokens: distributeIntegerByWeights(aggregatedMetrics.inputTokens, weights),
-            outputTokens: distributeIntegerByWeights(aggregatedMetrics.outputTokens, weights),
-            totalTokens: distributeIntegerByWeights(aggregatedMetrics.totalTokens, weights),
-            cacheReadTokens: distributeIntegerByWeights(aggregatedMetrics.cacheReadTokens, weights),
-            cacheWriteTokens: distributeIntegerByWeights(aggregatedMetrics.cacheWriteTokens, weights),
-            reasoningTokens: distributeIntegerByWeights(aggregatedMetrics.reasoningTokens, weights),
-            acceptedPredictionTokens: distributeIntegerByWeights(aggregatedMetrics.acceptedPredictionTokens, weights),
-            rejectedPredictionTokens: distributeIntegerByWeights(aggregatedMetrics.rejectedPredictionTokens, weights),
-            audioInputTokens: distributeIntegerByWeights(aggregatedMetrics.audioInputTokens, weights),
-            audioOutputTokens: distributeIntegerByWeights(aggregatedMetrics.audioOutputTokens, weights)
-        }
-
-        const additionalBreakdownKeys = Object.keys(aggregatedMetrics.additionalBreakdown)
-        const distributedAdditionalBreakdown: Record<string, number[]> = {}
-        for (const key of additionalBreakdownKeys) {
-            distributedAdditionalBreakdown[key] = distributeIntegerByWeights(aggregatedMetrics.additionalBreakdown[key], weights)
-        }
+        const normalizedCredentialAccesses = credentialAccesses.map((access) => ({
+            credentialId: access.credentialId,
+            credentialName: access.credentialName || 'Unknown Credential',
+            model: typeof access.model === 'string' && access.model.trim() ? access.model.trim() : undefined
+        }))
 
         const topModel = getTopModel(modelTotals)
+        const canAttributeByAccessOrder = normalizedCredentialAccesses.length === usageEntryMetrics.length && usageEntryMetrics.length > 0
 
-        const credentialRows = groups.map((group, index) => {
-            const usageBreakdown: Record<string, number> = {}
-            for (const key of additionalBreakdownKeys) {
-                usageBreakdown[key] = distributedAdditionalBreakdown[key][index] || 0
+        let credentialRows: TokenUsageCredential[] = []
+
+        if (canAttributeByAccessOrder) {
+            logger.info(
+                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length}`
+            )
+
+            const groupedCredentialAccess = new Map<
+                string,
+                {
+                    credentialId?: string
+                    credentialName: string
+                    model?: string
+                    usageCount: number
+                    metrics: ITokenUsageMetrics
+                }
+            >()
+
+            for (let index = 0; index < normalizedCredentialAccesses.length; index += 1) {
+                const access = normalizedCredentialAccesses[index]
+                const usageEntry = usageEntryMetrics[index]
+                const resolvedModel = access.model || usageEntry.model
+                const groupKey = `${access.credentialId || ''}:${access.credentialName}:${resolvedModel || '__unknown_model__'}`
+                const existing = groupedCredentialAccess.get(groupKey)
+
+                if (existing) {
+                    existing.usageCount += 1
+                    addMetrics(existing.metrics, usageEntry.metrics)
+                    continue
+                }
+
+                const metrics = createEmptyMetrics()
+                addMetrics(metrics, usageEntry.metrics)
+
+                groupedCredentialAccess.set(groupKey, {
+                    credentialId: access.credentialId,
+                    credentialName: access.credentialName,
+                    model: resolvedModel,
+                    usageCount: 1,
+                    metrics
+                })
             }
 
-            return this.dataSource.getRepository(TokenUsageCredential).create({
-                usageExecutionId: savedExecution.id,
-                workspaceId: input.workspaceId,
-                organizationId: input.organizationId,
-                userId: input.userId,
-                credentialId: group.credentialId,
-                credentialName: group.credentialName,
-                model: group.model || topModel,
-                usageCount: group.usageCount,
-                inputTokens: distributedMetrics.inputTokens[index] || 0,
-                outputTokens: distributedMetrics.outputTokens[index] || 0,
-                totalTokens: distributedMetrics.totalTokens[index] || 0,
-                cacheReadTokens: distributedMetrics.cacheReadTokens[index] || 0,
-                cacheWriteTokens: distributedMetrics.cacheWriteTokens[index] || 0,
-                reasoningTokens: distributedMetrics.reasoningTokens[index] || 0,
-                acceptedPredictionTokens: distributedMetrics.acceptedPredictionTokens[index] || 0,
-                rejectedPredictionTokens: distributedMetrics.rejectedPredictionTokens[index] || 0,
-                audioInputTokens: distributedMetrics.audioInputTokens[index] || 0,
-                audioOutputTokens: distributedMetrics.audioOutputTokens[index] || 0,
-                usageBreakdown: JSON.stringify(usageBreakdown)
+            const groups = Array.from(groupedCredentialAccess.values())
+            credentialRows = groups.map((group) =>
+                this.dataSource.getRepository(TokenUsageCredential).create({
+                    usageExecutionId: savedExecution.id,
+                    workspaceId: input.workspaceId,
+                    organizationId: input.organizationId,
+                    userId: input.userId,
+                    credentialId: group.credentialId,
+                    credentialName: group.credentialName,
+                    model: group.model || topModel,
+                    usageCount: group.usageCount,
+                    inputTokens: group.metrics.inputTokens,
+                    outputTokens: group.metrics.outputTokens,
+                    totalTokens: group.metrics.totalTokens,
+                    cacheReadTokens: group.metrics.cacheReadTokens,
+                    cacheWriteTokens: group.metrics.cacheWriteTokens,
+                    reasoningTokens: group.metrics.reasoningTokens,
+                    acceptedPredictionTokens: group.metrics.acceptedPredictionTokens,
+                    rejectedPredictionTokens: group.metrics.rejectedPredictionTokens,
+                    audioInputTokens: group.metrics.audioInputTokens,
+                    audioOutputTokens: group.metrics.audioOutputTokens,
+                    usageBreakdown: JSON.stringify(group.metrics.additionalBreakdown)
+                })
+            )
+        } else {
+            logger.info(
+                `[token-usage] attribution strategy=weighted flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length}`
+            )
+
+            const groupedCredentialAccess = new Map<
+                string,
+                {
+                    credentialId?: string
+                    credentialName: string
+                    model?: string
+                    usageCount: number
+                }
+            >()
+
+            for (const access of normalizedCredentialAccesses) {
+                const groupKey = `${access.credentialId || ''}:${access.credentialName}:${access.model || '__unknown_model__'}`
+                const existing = groupedCredentialAccess.get(groupKey)
+                if (existing) {
+                    existing.usageCount += 1
+                } else {
+                    groupedCredentialAccess.set(groupKey, {
+                        credentialId: access.credentialId,
+                        credentialName: access.credentialName,
+                        model: access.model,
+                        usageCount: 1
+                    })
+                }
+            }
+
+            const groups = Array.from(groupedCredentialAccess.values())
+            const weights = groups.map((group) => group.usageCount)
+
+            const distributedMetrics = {
+                inputTokens: distributeIntegerByWeights(aggregatedMetrics.inputTokens, weights),
+                outputTokens: distributeIntegerByWeights(aggregatedMetrics.outputTokens, weights),
+                totalTokens: distributeIntegerByWeights(aggregatedMetrics.totalTokens, weights),
+                cacheReadTokens: distributeIntegerByWeights(aggregatedMetrics.cacheReadTokens, weights),
+                cacheWriteTokens: distributeIntegerByWeights(aggregatedMetrics.cacheWriteTokens, weights),
+                reasoningTokens: distributeIntegerByWeights(aggregatedMetrics.reasoningTokens, weights),
+                acceptedPredictionTokens: distributeIntegerByWeights(aggregatedMetrics.acceptedPredictionTokens, weights),
+                rejectedPredictionTokens: distributeIntegerByWeights(aggregatedMetrics.rejectedPredictionTokens, weights),
+                audioInputTokens: distributeIntegerByWeights(aggregatedMetrics.audioInputTokens, weights),
+                audioOutputTokens: distributeIntegerByWeights(aggregatedMetrics.audioOutputTokens, weights)
+            }
+
+            const additionalBreakdownKeys = Object.keys(aggregatedMetrics.additionalBreakdown)
+            const distributedAdditionalBreakdown: Record<string, number[]> = {}
+            for (const key of additionalBreakdownKeys) {
+                distributedAdditionalBreakdown[key] = distributeIntegerByWeights(aggregatedMetrics.additionalBreakdown[key], weights)
+            }
+
+            credentialRows = groups.map((group, index) => {
+                const usageBreakdown: Record<string, number> = {}
+                for (const key of additionalBreakdownKeys) {
+                    usageBreakdown[key] = distributedAdditionalBreakdown[key][index] || 0
+                }
+
+                return this.dataSource.getRepository(TokenUsageCredential).create({
+                    usageExecutionId: savedExecution.id,
+                    workspaceId: input.workspaceId,
+                    organizationId: input.organizationId,
+                    userId: input.userId,
+                    credentialId: group.credentialId,
+                    credentialName: group.credentialName,
+                    model: group.model || topModel,
+                    usageCount: group.usageCount,
+                    inputTokens: distributedMetrics.inputTokens[index] || 0,
+                    outputTokens: distributedMetrics.outputTokens[index] || 0,
+                    totalTokens: distributedMetrics.totalTokens[index] || 0,
+                    cacheReadTokens: distributedMetrics.cacheReadTokens[index] || 0,
+                    cacheWriteTokens: distributedMetrics.cacheWriteTokens[index] || 0,
+                    reasoningTokens: distributedMetrics.reasoningTokens[index] || 0,
+                    acceptedPredictionTokens: distributedMetrics.acceptedPredictionTokens[index] || 0,
+                    rejectedPredictionTokens: distributedMetrics.rejectedPredictionTokens[index] || 0,
+                    audioInputTokens: distributedMetrics.audioInputTokens[index] || 0,
+                    audioOutputTokens: distributedMetrics.audioOutputTokens[index] || 0,
+                    usageBreakdown: JSON.stringify(usageBreakdown)
+                })
             })
-        })
+        }
 
         const savedCredentialRows = await this.dataSource.getRepository(TokenUsageCredential).save(credentialRows)
         logger.info(`[token-usage] credential rows inserted count=${credentialRows.length} executionId=${savedExecution.id}`)

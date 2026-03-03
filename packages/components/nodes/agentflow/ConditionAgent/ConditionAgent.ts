@@ -447,7 +447,13 @@ class ConditionAgent_Agentflow implements INode {
                         start: startTime,
                         end: endTime,
                         delta: timeDelta
-                    }
+                    },
+                    ...(response.usage_metadata && {
+                        usageMetadata: response.usage_metadata
+                    }),
+                    ...(response.response_metadata && {
+                        responseMetadata: response.response_metadata
+                    })
                 },
                 state,
                 chatHistory: [...inputMessages]

@@ -203,6 +203,7 @@ class HumanInput_Agentflow implements INode {
             return nodeOutput
         } else {
             let humanInputDescription = ''
+            let llmResponse: AIMessageChunk | undefined
 
             if (humanInputDescriptionType === 'fixed') {
                 humanInputDescription = (nodeData.inputs?.humanInputDescription as string) || 'Do you want to proceed?'
@@ -247,16 +248,25 @@ class HumanInput_Agentflow implements INode {
                             const messageChunk = typeof chunk === 'string' ? new AIMessageChunk(chunk) : chunk
                             response = response.concat(messageChunk)
                         }
+                        llmResponse = response
                         humanInputDescription = response.content as string
                     } else {
-                        const response = await llmNodeInstance.invoke(messages)
-                        humanInputDescription = response.content as string
+                        llmResponse = await llmNodeInstance.invoke(messages)
+                        humanInputDescription = llmResponse.content as string
                     }
                 }
             }
 
             const input = { messages: [...pastChatHistory, ...runtimeChatHistory], humanInputEnableFeedback }
-            const output = { content: humanInputDescription }
+            const output = {
+                content: humanInputDescription,
+                ...(llmResponse?.usage_metadata && {
+                    usageMetadata: llmResponse.usage_metadata
+                }),
+                ...(llmResponse?.response_metadata && {
+                    responseMetadata: llmResponse.response_metadata
+                })
+            }
             const nodeOutput = {
                 id: nodeData.id,
                 name: this.name,

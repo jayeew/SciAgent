@@ -5,6 +5,7 @@ import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import { WorkspaceCreditTransaction, WorkspaceCreditTransactionType } from '../database/entities/workspace-credit-transaction.entity'
 import { WorkspaceUser } from '../database/entities/workspace-user.entity'
 import { Credential } from '../../database/entities/Credential'
+import logger from '../../utils/logger'
 
 interface IModelBillingConfig {
     multiplier: number
@@ -401,8 +402,13 @@ export class WorkspaceCreditService {
     ) {
         const validUsages = usages.filter((usage) => usage.totalTokens > 0)
         if (!validUsages.length) {
+            logger.info(`[workspace-credit] skip consume: no valid usages workspaceId=${workspaceId} userId=${userId}`)
             return { workspaceId, userId, creditConsumed: 0, transactions: [] as WorkspaceCreditTransaction[] }
         }
+        const requestedTokenTotal = validUsages.reduce((sum, usage) => sum + usage.totalTokens, 0)
+        logger.info(
+            `[workspace-credit] start consume workspaceId=${workspaceId} userId=${userId} usageCount=${validUsages.length} requestedTokens=${requestedTokenTotal}`
+        )
 
         const queryRunner = this.dataSource.createQueryRunner()
         await queryRunner.connect()
@@ -418,6 +424,7 @@ export class WorkspaceCreditService {
             if (!workspaceUser) {
                 throw new InternalFlowiseError(StatusCodes.NOT_FOUND, WorkspaceCreditErrorMessage.WORKSPACE_USER_NOT_FOUND)
             }
+            const startCredit = workspaceUser.credit ?? 0
 
             const credentialIds = validUsages.map((usage) => usage.credentialId).filter((id): id is string => !!id)
             const credentials = credentialIds.length ? await queryRunner.manager.findBy(Credential, { id: In(credentialIds) }) : []
@@ -435,7 +442,16 @@ export class WorkspaceCreditService {
                 const tokenCostRmb = (usage.totalTokens / ONE_MILLION_TOKENS) * rmbPerMTok
                 const baseCredit = calculateBaseCreditFromRmb(tokenCostRmb)
                 const consumed = Math.ceil(baseCredit * modelMultiplier * credentialMultiplier - Number.EPSILON)
-                if (consumed <= 0) continue
+                if (consumed <= 0) {
+                    logger.info(
+                        `[workspace-credit] skip usage charge workspaceId=${workspaceId} userId=${userId} credentialId=${
+                            usage.credentialId || '-'
+                        } model=${usage.model || 'unknown'} totalTokens=${
+                            usage.totalTokens
+                        } rmbPerMTok=${rmbPerMTok} baseCredit=${baseCredit}`
+                    )
+                    continue
+                }
 
                 workspaceUser.credit = (workspaceUser.credit ?? 0) - consumed
                 totalCreditConsumed += consumed
@@ -457,10 +473,20 @@ export class WorkspaceCreditService {
 
                 const saved = await queryRunner.manager.save(WorkspaceCreditTransaction, transaction)
                 transactions.push(saved)
+                logger.info(
+                    `[workspace-credit] consumed=${consumed} workspaceId=${workspaceId} userId=${userId} credentialId=${
+                        usage.credentialId || '-'
+                    } model=${usage.model || 'unknown'} totalTokens=${usage.totalTokens} balance=${workspaceUser.credit}`
+                )
             }
 
             await queryRunner.manager.save(WorkspaceUser, workspaceUser)
             await queryRunner.commitTransaction()
+            logger.info(
+                `[workspace-credit] consume done workspaceId=${workspaceId} userId=${userId} startCredit=${startCredit} consumed=${totalCreditConsumed} endCredit=${
+                    workspaceUser.credit ?? 0
+                } transactions=${transactions.length}`
+            )
 
             return {
                 workspaceId,
@@ -471,6 +497,7 @@ export class WorkspaceCreditService {
             }
         } catch (error) {
             if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction()
+            logger.error(`[workspace-credit] consume failed workspaceId=${workspaceId} userId=${userId}`, error)
             throw error
         } finally {
             if (!queryRunner.isReleased) await queryRunner.release()

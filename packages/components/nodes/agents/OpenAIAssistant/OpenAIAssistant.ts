@@ -238,6 +238,25 @@ class OpenAIAssistant_Agents implements INode {
         if (!openAIApiKey) throw new Error(`OpenAI ApiKey not found`)
 
         const openai = new OpenAI({ apiKey: openAIApiKey })
+        const getRunUsagePayload = async (threadId: string, runId: string) => {
+            if (!threadId || !runId) return {}
+
+            try {
+                const completedRun = await openai.beta.threads.runs.retrieve(threadId, runId)
+                const usageMetadata = completedRun?.usage as ICommonObject | undefined
+                const responseMetadata: ICommonObject = {}
+
+                if (completedRun?.model) responseMetadata.model = completedRun.model
+                if (completedRun?.status) responseMetadata.status = completedRun.status
+
+                return {
+                    ...(usageMetadata && { usageMetadata }),
+                    ...(Object.keys(responseMetadata).length > 0 && { responseMetadata })
+                }
+            } catch {
+                return {}
+            }
+        }
 
         // Start analytics
         const analyticHandlers = AnalyticHandler.getInstance(nodeData, options)
@@ -629,6 +648,8 @@ class OpenAIAssistant_Agents implements INode {
                 let llmOutput = text.replace(imageRegex, '')
                 llmOutput = llmOutput.replace('<br/>', '')
 
+                const runUsagePayload = await getRunUsagePayload(threadId, runThreadId)
+
                 await analyticHandlers.onLLMEnd(llmIds, llmOutput)
                 await analyticHandlers.onChainEnd(parentIds, messageData, true)
 
@@ -637,7 +658,8 @@ class OpenAIAssistant_Agents implements INode {
                     usedTools,
                     artifacts,
                     fileAnnotations,
-                    assistant: { assistantId: openAIAssistantId, threadId, runId: runThreadId, messages: messageData }
+                    assistant: { assistantId: openAIAssistantId, threadId, runId: runThreadId, messages: messageData },
+                    ...runUsagePayload
                 }
             }
 
@@ -919,6 +941,8 @@ class OpenAIAssistant_Agents implements INode {
             let llmOutput = returnVal.replace(imageRegex, '')
             llmOutput = llmOutput.replace('<br/>', '')
 
+            const runUsagePayload = await getRunUsagePayload(threadId, runThreadId)
+
             await analyticHandlers.onLLMEnd(llmIds, llmOutput)
             await analyticHandlers.onChainEnd(parentIds, messageData, true)
 
@@ -927,7 +951,8 @@ class OpenAIAssistant_Agents implements INode {
                 usedTools,
                 artifacts,
                 fileAnnotations,
-                assistant: { assistantId: openAIAssistantId, threadId, runId: runThreadId, messages: messageData }
+                assistant: { assistantId: openAIAssistantId, threadId, runId: runThreadId, messages: messageData },
+                ...runUsagePayload
             }
         } catch (error) {
             await analyticHandlers.onChainError(parentIds, error, true)

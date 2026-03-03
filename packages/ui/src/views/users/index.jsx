@@ -765,6 +765,7 @@ const Users = () => {
                                                 <TableRow>
                                                     <StyledTableCell>credentialId</StyledTableCell>
                                                     <StyledTableCell>credentialName</StyledTableCell>
+                                                    <StyledTableCell>model</StyledTableCell>
                                                     <StyledTableCell>usageCount</StyledTableCell>
                                                     {TOKEN_STAT_FIELDS.map((item) => (
                                                         <StyledTableCell key={item.key}>{item.label}</StyledTableCell>
@@ -777,6 +778,7 @@ const Users = () => {
                                                         <TableRow key={credential.id}>
                                                             <StyledTableCell>{credential.credentialId || '-'}</StyledTableCell>
                                                             <StyledTableCell>{credential.credentialName || '-'}</StyledTableCell>
+                                                            <StyledTableCell>{credential.model || '-'}</StyledTableCell>
                                                             <StyledTableCell>{credential.usageCount || 0}</StyledTableCell>
                                                             {TOKEN_STAT_FIELDS.map((item) => (
                                                                 <StyledTableCell key={item.key}>
@@ -787,7 +789,7 @@ const Users = () => {
                                                     ))
                                                 ) : (
                                                     <TableRow>
-                                                        <StyledTableCell colSpan={13}>No credential usage details.</StyledTableCell>
+                                                        <StyledTableCell colSpan={14}>No credential usage details.</StyledTableCell>
                                                     </TableRow>
                                                 )}
                                             </TableBody>

@@ -148,7 +148,27 @@ interface IExecuteAgentFlowParams extends Omit<IExecuteFlowParams, 'incomingInpu
     incomingInput: IncomingAgentflowInput
 }
 
+interface ITokenAuditSnapshot {
+    payloadCount: number
+    credentialAccessCount: number
+}
+
 const MAX_LOOP_COUNT = process.env.MAX_LOOP_COUNT ? parseInt(process.env.MAX_LOOP_COUNT) : 10
+
+const getTokenAuditSnapshot = (tokenAuditContext?: ICommonObject): ITokenAuditSnapshot => {
+    const tokenUsagePayloads = Array.isArray(tokenAuditContext?.tokenUsagePayloads) ? (tokenAuditContext?.tokenUsagePayloads as any[]) : []
+    const credentialAccesses = Array.isArray(tokenAuditContext?.credentialAccesses) ? (tokenAuditContext?.credentialAccesses as any[]) : []
+
+    return {
+        payloadCount: tokenUsagePayloads.length,
+        credentialAccessCount: credentialAccesses.length
+    }
+}
+
+const formatSignedNumber = (value: number): string => {
+    if (value > 0) return `+${value}`
+    return `${value}`
+}
 
 const mergeAndDedupeTokenPayloads = (payloads: any[], tokenAuditContext?: ICommonObject): any[] => {
     const merged = [...payloads, ...(((tokenAuditContext?.tokenUsagePayloads as any[]) || []) as any[])]
@@ -1537,6 +1557,19 @@ export const executeAgentFlow = async ({
     const sessionId = iterationContext?.sessionId || overrideConfig.sessionId || chatId
     const humanInput: IHumanInput | undefined = incomingInput.humanInput
 
+    logger.info(
+        `[agentflow] execution started flowId=${chatflowid} chatId=${chatId} sessionId=${sessionId} recursive=${isRecursive} userId=${
+            userId || '-'
+        } workspaceId=${workspaceId}`
+    )
+
+    let tokenAuditSnapshot = getTokenAuditSnapshot(tokenAuditContext)
+    if (tokenAuditSnapshot.payloadCount > 0 || tokenAuditSnapshot.credentialAccessCount > 0) {
+        logger.info(
+            `[agentflow-token] initial snapshot chatId=${chatId} payloads=${tokenAuditSnapshot.payloadCount} credentialAccesses=${tokenAuditSnapshot.credentialAccessCount}`
+        )
+    }
+
     // Validate history schema if provided
     if (incomingInput.history && incomingInput.history.length > 0) {
         if (!validateHistorySchema(incomingInput.history)) {
@@ -2054,6 +2087,20 @@ export const executeAgentFlow = async ({
                 pastChatHistory.length = 0
             }
 
+            const latestTokenAuditSnapshot = getTokenAuditSnapshot(tokenAuditContext)
+            const payloadDelta = latestTokenAuditSnapshot.payloadCount - tokenAuditSnapshot.payloadCount
+            const credentialAccessDelta = latestTokenAuditSnapshot.credentialAccessCount - tokenAuditSnapshot.credentialAccessCount
+            if (payloadDelta !== 0 || credentialAccessDelta !== 0) {
+                logger.info(
+                    `[agentflow-token] node=${currentNode.nodeId} label=${reactFlowNode.data.label} payloads=${
+                        latestTokenAuditSnapshot.payloadCount
+                    } (${formatSignedNumber(payloadDelta)}) credentialAccesses=${
+                        latestTokenAuditSnapshot.credentialAccessCount
+                    } (${formatSignedNumber(credentialAccessDelta)})`
+                )
+            }
+            tokenAuditSnapshot = latestTokenAuditSnapshot
+
             // Process node outputs and handle branching
             const processResult = await processNodeOutputs({
                 nodeId: currentNode.nodeId,
@@ -2151,6 +2198,9 @@ export const executeAgentFlow = async ({
 
     logger.debug(`\n🏁 Flow execution completed`)
     logger.debug(`   Status: ${status}`)
+    logger.info(
+        `[agentflow] execution completed flowId=${chatflow.id} executionId=${newExecution.id} chatId=${chatId} status=${status} nodesExecuted=${agentFlowExecutedData.length}`
+    )
 
     // check if last agentFlowExecutedData.data.output contains the key "content"
     const lastNodeOutput = agentFlowExecutedData[agentFlowExecutedData.length - 1].data?.output as ICommonObject | undefined
@@ -2213,6 +2263,12 @@ export const executeAgentFlow = async ({
 
     if (!isRecursive) {
         try {
+            const usagePayloadSeeds = agentFlowExecutedData.length ? [agentFlowExecutedData] : [lastNodeOutput || {}]
+            const usagePayloads = mergeAndDedupeTokenPayloads(usagePayloadSeeds, tokenAuditContext)
+            const credentialAccesses = (tokenAuditContext?.credentialAccesses as any[]) || []
+            logger.info(
+                `[agentflow-token] record start flowId=${chatflow.id} executionId=${newExecution.id} chatId=${chatId} payloads=${usagePayloads.length} credentialAccesses=${credentialAccesses.length}`
+            )
             const tokenUsageService = new TokenUsageService()
             await tokenUsageService.recordTokenUsage({
                 workspaceId,
@@ -2223,9 +2279,10 @@ export const executeAgentFlow = async ({
                 executionId: newExecution.id,
                 chatId,
                 sessionId,
-                usagePayloads: mergeAndDedupeTokenPayloads([agentFlowExecutedData, lastNodeOutput || {}], tokenAuditContext),
-                credentialAccesses: (tokenAuditContext?.credentialAccesses as any[]) || []
+                usagePayloads,
+                credentialAccesses
             })
+            logger.info(`[agentflow-token] record done flowId=${chatflow.id} executionId=${newExecution.id} chatId=${chatId}`)
         } catch (error) {
             logger.warn(`[server]: Failed to record agentflow token usage: ${getErrorMessage(error)}`)
         }
