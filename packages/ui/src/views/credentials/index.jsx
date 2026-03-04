@@ -82,7 +82,8 @@ const StyledTableRow = styled(TableRow)(() => ({
 const EMPTY_MODEL_MULTIPLIER_ROW = {
     model: '',
     multiplier: 1,
-    rmbPerMTok: ''
+    inputRmbPerMTok: '',
+    outputRmbPerMTok: ''
 }
 
 // ==============================|| Credentials ||============================== //
@@ -284,12 +285,27 @@ const Credentials = () => {
         const rows = Object.entries(existingModelMultipliers).map(([model, config]) => {
             if (config && typeof config === 'object' && !Array.isArray(config)) {
                 const multiplier = Number(config.multiplier)
-                const rmbPerMTok = Number(config.rmbPerMTok)
+                const inputRmbPerMTok = Number(config.inputRmbPerMTok)
+                const outputRmbPerMTok = Number(config.outputRmbPerMTok)
+                const legacyRmbPerMTok = Number(config.rmbPerMTok)
+                const hasInputOutputPrice =
+                    Number.isFinite(inputRmbPerMTok) && inputRmbPerMTok >= 0 && Number.isFinite(outputRmbPerMTok) && outputRmbPerMTok >= 0
+                const normalizedInputRmbPerMTok = hasInputOutputPrice
+                    ? inputRmbPerMTok
+                    : Number.isFinite(legacyRmbPerMTok) && legacyRmbPerMTok >= 0
+                    ? legacyRmbPerMTok
+                    : ''
+                const normalizedOutputRmbPerMTok = hasInputOutputPrice
+                    ? outputRmbPerMTok
+                    : Number.isFinite(legacyRmbPerMTok) && legacyRmbPerMTok >= 0
+                    ? legacyRmbPerMTok
+                    : ''
 
                 return {
                     model,
                     multiplier: Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1,
-                    rmbPerMTok: Number.isFinite(rmbPerMTok) && rmbPerMTok >= 0 ? rmbPerMTok : ''
+                    inputRmbPerMTok: normalizedInputRmbPerMTok,
+                    outputRmbPerMTok: normalizedOutputRmbPerMTok
                 }
             }
 
@@ -297,7 +313,8 @@ const Credentials = () => {
             return {
                 model,
                 multiplier: Number.isFinite(legacyMultiplier) && legacyMultiplier > 0 ? legacyMultiplier : 1,
-                rmbPerMTok: ''
+                inputRmbPerMTok: '',
+                outputRmbPerMTok: ''
             }
         })
         setModelMultiplierRows(rows)
@@ -362,7 +379,8 @@ const Credentials = () => {
         for (const row of modelMultiplierRows) {
             const modelName = String(row.model || '').trim()
             const multiplier = Number(row.multiplier)
-            const rmbPerMTok = Number(row.rmbPerMTok)
+            const inputRmbPerMTok = Number(row.inputRmbPerMTok)
+            const outputRmbPerMTok = Number(row.outputRmbPerMTok)
 
             if (!modelName) {
                 enqueueSnackbar({
@@ -398,9 +416,20 @@ const Credentials = () => {
                 return
             }
 
-            if (!Number.isFinite(rmbPerMTok) || rmbPerMTok < 0) {
+            if (!Number.isFinite(inputRmbPerMTok) || inputRmbPerMTok < 0) {
                 enqueueSnackbar({
-                    message: `Invalid RMB/MTok for model: ${modelName}`,
+                    message: `Invalid input RMB/MTok for model: ${modelName}`,
+                    options: {
+                        key: new Date().getTime() + Math.random(),
+                        variant: 'error'
+                    }
+                })
+                return
+            }
+
+            if (!Number.isFinite(outputRmbPerMTok) || outputRmbPerMTok < 0) {
+                enqueueSnackbar({
+                    message: `Invalid output RMB/MTok for model: ${modelName}`,
                     options: {
                         key: new Date().getTime() + Math.random(),
                         variant: 'error'
@@ -411,7 +440,8 @@ const Credentials = () => {
 
             normalizedModelMultipliers[modelName] = {
                 multiplier,
-                rmbPerMTok
+                inputRmbPerMTok,
+                outputRmbPerMTok
             }
         }
 
@@ -767,14 +797,21 @@ const Credentials = () => {
                     setError={setError}
                 ></ShareWithWorkspaceDialog>
             )}
-            <Dialog fullWidth maxWidth='md' open={showModelMultipliersDialog} onClose={closeModelMultipliersDialog}>
+            <Dialog
+                fullWidth
+                maxWidth='md'
+                open={showModelMultipliersDialog}
+                onClose={closeModelMultipliersDialog}
+                sx={{ '& .MuiDialog-paper': { width: 'min(980px, calc(100% - 64px))' } }}
+            >
                 <DialogTitle>
                     Model Billing Configuration{activeModelMultiplierCredential ? ` - ${activeModelMultiplierCredential.name}` : ''}
                 </DialogTitle>
                 <DialogContent>
                     <Stack sx={{ mt: 1, gap: 2 }}>
                         <Typography variant='body2' color='text.secondary'>
-                            Exact model name matching. Final credit cost = baseCost * model multiplier * credential multiplier.
+                            Exact model name matching. Base cost = inputTokens * input RMB/MTok + outputTokens * output RMB/MTok (per 1M
+                            tokens), then multiplied by model multiplier and credential multiplier.
                         </Typography>
 
                         {!modelMultiplierRows.length && (
@@ -825,10 +862,10 @@ const Credentials = () => {
                                 <TextField
                                     size='small'
                                     type='number'
-                                    label='RMB/MTok'
-                                    value={row.rmbPerMTok}
+                                    label='Input RMB/MTok'
+                                    value={row.inputRmbPerMTok}
                                     inputProps={{ min: 0, step: '0.01' }}
-                                    sx={{ width: 160 }}
+                                    sx={{ width: 190 }}
                                     onKeyDown={(e) => {
                                         if (e.key === '-') {
                                             e.preventDefault()
@@ -837,7 +874,26 @@ const Credentials = () => {
                                     onChange={(e) => {
                                         const value = Number(e.target.value)
                                         onUpdateModelMultiplierRow(index, {
-                                            rmbPerMTok: Number.isNaN(value) ? '' : value
+                                            inputRmbPerMTok: Number.isNaN(value) ? '' : value
+                                        })
+                                    }}
+                                />
+                                <TextField
+                                    size='small'
+                                    type='number'
+                                    label='Output RMB/MTok'
+                                    value={row.outputRmbPerMTok}
+                                    inputProps={{ min: 0, step: '0.01' }}
+                                    sx={{ width: 190 }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === '-') {
+                                            e.preventDefault()
+                                        }
+                                    }}
+                                    onChange={(e) => {
+                                        const value = Number(e.target.value)
+                                        onUpdateModelMultiplierRow(index, {
+                                            outputRmbPerMTok: Number.isNaN(value) ? '' : value
                                         })
                                     }}
                                 />

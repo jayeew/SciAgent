@@ -142,7 +142,10 @@ export interface ICredential {
 
 export interface ICredentialModelBillingConfig {
     multiplier: number
-    rmbPerMTok: number
+    inputRmbPerMTok: number
+    outputRmbPerMTok: number
+    // Legacy field for backward compatibility when parsing older persisted payloads.
+    rmbPerMTok?: number
 }
 
 export interface IVariable {

@@ -15,7 +15,8 @@ const MODEL_NAME_MAX_LENGTH = 255
 
 interface ICredentialModelBillingConfig {
     multiplier: number
-    rmbPerMTok: number
+    inputRmbPerMTok: number
+    outputRmbPerMTok: number
 }
 
 const LEGACY_DEFAULT_RMB_PER_MTOK = 0
@@ -26,7 +27,8 @@ const normalizeModelBillingConfig = (rawValue: unknown): ICredentialModelBilling
         if (!Number.isFinite(multiplier) || multiplier <= 0) return null
         return {
             multiplier,
-            rmbPerMTok: LEGACY_DEFAULT_RMB_PER_MTOK
+            inputRmbPerMTok: LEGACY_DEFAULT_RMB_PER_MTOK,
+            outputRmbPerMTok: LEGACY_DEFAULT_RMB_PER_MTOK
         }
     }
 
@@ -34,14 +36,28 @@ const normalizeModelBillingConfig = (rawValue: unknown): ICredentialModelBilling
 
     const config = rawValue as Record<string, unknown>
     const multiplier = Number(config.multiplier)
-    const rmbPerMTok = Number(config.rmbPerMTok)
+    const inputRmbPerMTok = Number(config.inputRmbPerMTok)
+    const outputRmbPerMTok = Number(config.outputRmbPerMTok)
+    const legacyRmbPerMTok = Number(config.rmbPerMTok)
 
     if (!Number.isFinite(multiplier) || multiplier <= 0) return null
-    if (!Number.isFinite(rmbPerMTok) || rmbPerMTok < 0) return null
+
+    const hasInputOutputPrice =
+        Number.isFinite(inputRmbPerMTok) && inputRmbPerMTok >= 0 && Number.isFinite(outputRmbPerMTok) && outputRmbPerMTok >= 0
+    if (hasInputOutputPrice) {
+        return {
+            multiplier,
+            inputRmbPerMTok,
+            outputRmbPerMTok
+        }
+    }
+
+    if (!Number.isFinite(legacyRmbPerMTok) || legacyRmbPerMTok < 0) return null
 
     return {
         multiplier,
-        rmbPerMTok
+        inputRmbPerMTok: legacyRmbPerMTok,
+        outputRmbPerMTok: legacyRmbPerMTok
     }
 }
 
@@ -91,7 +107,7 @@ const validateAndNormalizeModelMultipliers = (modelMultipliers: unknown): Record
         if (!normalizedConfig) {
             throw new InternalFlowiseError(
                 StatusCodes.BAD_REQUEST,
-                `Invalid model billing config for "${modelName}". Expect { multiplier > 0, rmbPerMTok >= 0 }`
+                `Invalid model billing config for "${modelName}". Expect { multiplier > 0, inputRmbPerMTok >= 0, outputRmbPerMTok >= 0 }`
             )
         }
 

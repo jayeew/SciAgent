@@ -722,7 +722,9 @@ export class TokenUsageService {
                 credentialId: row.credentialId,
                 credentialName: row.credentialName,
                 model: row.model,
-                totalTokens: row.totalTokens || 0
+                totalTokens: row.totalTokens || 0,
+                inputTokens: row.inputTokens || 0,
+                outputTokens: row.outputTokens || 0
             }))
         )
         logger.info(

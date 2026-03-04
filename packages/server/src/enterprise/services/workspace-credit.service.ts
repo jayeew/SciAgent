@@ -9,7 +9,8 @@ import logger from '../../utils/logger'
 
 interface IModelBillingConfig {
     multiplier: number
-    rmbPerMTok: number
+    inputRmbPerMTok: number
+    outputRmbPerMTok: number
 }
 
 type ModelMultiplierSource = 'model_config' | 'default'
@@ -35,7 +36,8 @@ const parseModelBillingConfigMap = (value?: string | null): Record<string, IMode
                 if (!Number.isFinite(legacyMultiplier) || legacyMultiplier <= 0) continue
                 result[normalizedModelName] = {
                     multiplier: legacyMultiplier,
-                    rmbPerMTok: LEGACY_DEFAULT_RMB_PER_MTOK
+                    inputRmbPerMTok: LEGACY_DEFAULT_RMB_PER_MTOK,
+                    outputRmbPerMTok: LEGACY_DEFAULT_RMB_PER_MTOK
                 }
                 continue
             }
@@ -44,14 +46,29 @@ const parseModelBillingConfigMap = (value?: string | null): Record<string, IMode
 
             const config = rawValue as Record<string, unknown>
             const multiplier = Number(config.multiplier)
-            const rmbPerMTok = Number(config.rmbPerMTok)
+            const inputRmbPerMTok = Number(config.inputRmbPerMTok)
+            const outputRmbPerMTok = Number(config.outputRmbPerMTok)
+            const legacyRmbPerMTok = Number(config.rmbPerMTok)
 
             if (!Number.isFinite(multiplier) || multiplier <= 0) continue
-            if (!Number.isFinite(rmbPerMTok) || rmbPerMTok < 0) continue
+            const hasInputOutputPrice =
+                Number.isFinite(inputRmbPerMTok) && inputRmbPerMTok >= 0 && Number.isFinite(outputRmbPerMTok) && outputRmbPerMTok >= 0
+
+            if (hasInputOutputPrice) {
+                result[normalizedModelName] = {
+                    multiplier,
+                    inputRmbPerMTok,
+                    outputRmbPerMTok
+                }
+                continue
+            }
+
+            if (!Number.isFinite(legacyRmbPerMTok) || legacyRmbPerMTok < 0) continue
 
             result[normalizedModelName] = {
                 multiplier,
-                rmbPerMTok
+                inputRmbPerMTok: legacyRmbPerMTok,
+                outputRmbPerMTok: legacyRmbPerMTok
             }
         }
         return result
@@ -67,7 +84,8 @@ const resolveBillingConfig = (
     credentialMultiplier: number
     modelMultiplier: number
     modelMultiplierSource: ModelMultiplierSource
-    rmbPerMTok: number
+    inputRmbPerMTok: number
+    outputRmbPerMTok: number
     rmbPriceSource: RmbPriceSource
 } => {
     const defaultCredentialMultiplier = Number(credential?.creditConsumptionMultiplier)
@@ -84,7 +102,8 @@ const resolveBillingConfig = (
                 credentialMultiplier,
                 modelMultiplier: modelBillingConfig.multiplier,
                 modelMultiplierSource: 'model_config',
-                rmbPerMTok: modelBillingConfig.rmbPerMTok,
+                inputRmbPerMTok: modelBillingConfig.inputRmbPerMTok,
+                outputRmbPerMTok: modelBillingConfig.outputRmbPerMTok,
                 rmbPriceSource: 'model_config'
             }
         }
@@ -94,7 +113,8 @@ const resolveBillingConfig = (
         credentialMultiplier,
         modelMultiplier: 1,
         modelMultiplierSource: 'default',
-        rmbPerMTok: 0,
+        inputRmbPerMTok: 0,
+        outputRmbPerMTok: 0,
         rmbPriceSource: 'missing'
     }
 }
@@ -398,14 +418,44 @@ export class WorkspaceCreditService {
     public async consumeCreditByCredentialUsages(
         workspaceId: string,
         userId: string,
-        usages: Array<{ credentialId?: string; credentialName?: string; model?: string; totalTokens: number }>
+        usages: Array<{
+            credentialId?: string
+            credentialName?: string
+            model?: string
+            totalTokens: number
+            inputTokens?: number
+            outputTokens?: number
+        }>
     ) {
-        const validUsages = usages.filter((usage) => usage.totalTokens > 0)
+        const normalizedUsages = usages.map((usage) => {
+            const inputTokens = Number(usage.inputTokens)
+            const outputTokens = Number(usage.outputTokens)
+            const totalTokens = Number(usage.totalTokens)
+
+            const normalizedInputTokens = Number.isFinite(inputTokens) && inputTokens > 0 ? inputTokens : 0
+            const normalizedOutputTokens = Number.isFinite(outputTokens) && outputTokens > 0 ? outputTokens : 0
+            const normalizedTotalTokens = Number.isFinite(totalTokens) && totalTokens > 0 ? totalTokens : 0
+            const hasDirectionalTokens = normalizedInputTokens > 0 || normalizedOutputTokens > 0
+            const billableInputTokens = hasDirectionalTokens ? normalizedInputTokens : normalizedTotalTokens
+            const billableOutputTokens = hasDirectionalTokens ? normalizedOutputTokens : 0
+
+            return {
+                ...usage,
+                inputTokens: normalizedInputTokens,
+                outputTokens: normalizedOutputTokens,
+                totalTokens: normalizedTotalTokens,
+                billableInputTokens,
+                billableOutputTokens,
+                billableTotalTokens: billableInputTokens + billableOutputTokens
+            }
+        })
+
+        const validUsages = normalizedUsages.filter((usage) => usage.billableTotalTokens > 0)
         if (!validUsages.length) {
             logger.info(`[workspace-credit] skip consume: no valid usages workspaceId=${workspaceId} userId=${userId}`)
             return { workspaceId, userId, creditConsumed: 0, transactions: [] as WorkspaceCreditTransaction[] }
         }
-        const requestedTokenTotal = validUsages.reduce((sum, usage) => sum + usage.totalTokens, 0)
+        const requestedTokenTotal = validUsages.reduce((sum, usage) => sum + usage.billableTotalTokens, 0)
         logger.info(
             `[workspace-credit] start consume workspaceId=${workspaceId} userId=${userId} usageCount=${validUsages.length} requestedTokens=${requestedTokenTotal}`
         )
@@ -435,20 +485,21 @@ export class WorkspaceCreditService {
 
             for (const usage of validUsages) {
                 const credential = usage.credentialId ? credentialMap.get(usage.credentialId) : undefined
-                const { credentialMultiplier, modelMultiplier, modelMultiplierSource, rmbPerMTok, rmbPriceSource } = resolveBillingConfig(
-                    credential,
-                    usage.model
-                )
-                const tokenCostRmb = (usage.totalTokens / ONE_MILLION_TOKENS) * rmbPerMTok
+                const { credentialMultiplier, modelMultiplier, modelMultiplierSource, inputRmbPerMTok, outputRmbPerMTok, rmbPriceSource } =
+                    resolveBillingConfig(credential, usage.model)
+
+                const inputTokenCostRmb = (usage.billableInputTokens / ONE_MILLION_TOKENS) * inputRmbPerMTok
+                const outputTokenCostRmb = (usage.billableOutputTokens / ONE_MILLION_TOKENS) * outputRmbPerMTok
+                const tokenCostRmb = inputTokenCostRmb + outputTokenCostRmb
                 const baseCredit = calculateBaseCreditFromRmb(tokenCostRmb)
                 const consumed = Math.ceil(baseCredit * modelMultiplier * credentialMultiplier - Number.EPSILON)
                 if (consumed <= 0) {
                     logger.info(
                         `[workspace-credit] skip usage charge workspaceId=${workspaceId} userId=${userId} credentialId=${
                             usage.credentialId || '-'
-                        } model=${usage.model || 'unknown'} totalTokens=${
-                            usage.totalTokens
-                        } rmbPerMTok=${rmbPerMTok} baseCredit=${baseCredit}`
+                        } model=${usage.model || 'unknown'} inputTokens=${usage.billableInputTokens} outputTokens=${
+                            usage.billableOutputTokens
+                        } inputRmbPerMTok=${inputRmbPerMTok} outputRmbPerMTok=${outputRmbPerMTok} baseCredit=${baseCredit}`
                     )
                     continue
                 }
@@ -464,9 +515,13 @@ export class WorkspaceCreditService {
                     balance: workspaceUser.credit,
                     credentialName: usage.credentialName || credential?.name || 'Unknown Credential',
                     credentialId: usage.credentialId,
-                    description: `Token consumption: totalTokens=${usage.totalTokens}, model=${
+                    description: `Token consumption: inputTokens=${usage.billableInputTokens}, outputTokens=${
+                        usage.billableOutputTokens
+                    }, totalTokens=${usage.totalTokens}, model=${
                         usage.model || 'unknown'
-                    }, rmbPerMTok=${rmbPerMTok}, tokenCostRmb=${tokenCostRmb.toFixed(
+                    }, inputRmbPerMTok=${inputRmbPerMTok}, outputRmbPerMTok=${outputRmbPerMTok}, inputTokenCostRmb=${inputTokenCostRmb.toFixed(
+                        6
+                    )}, outputTokenCostRmb=${outputTokenCostRmb.toFixed(6)}, tokenCostRmb=${tokenCostRmb.toFixed(
                         6
                     )}, baseCredit=${baseCredit}, modelMultiplier=${modelMultiplier}, modelMultiplierSource=${modelMultiplierSource}, credentialMultiplier=${credentialMultiplier}, rmbPriceSource=${rmbPriceSource}`
                 })
@@ -476,7 +531,9 @@ export class WorkspaceCreditService {
                 logger.info(
                     `[workspace-credit] consumed=${consumed} workspaceId=${workspaceId} userId=${userId} credentialId=${
                         usage.credentialId || '-'
-                    } model=${usage.model || 'unknown'} totalTokens=${usage.totalTokens} balance=${workspaceUser.credit}`
+                    } model=${usage.model || 'unknown'} inputTokens=${usage.billableInputTokens} outputTokens=${
+                        usage.billableOutputTokens
+                    } balance=${workspaceUser.credit}`
                 )
             }
 
