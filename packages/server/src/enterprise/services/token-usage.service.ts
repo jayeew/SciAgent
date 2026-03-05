@@ -388,6 +388,10 @@ const parseDateRange = (startDate?: string, endDate?: string) => {
 }
 
 const hasAnyUsage = (metrics: ITokenUsageMetrics): boolean => {
+    const additionalBreakdownTotal = Object.values(metrics.additionalBreakdown || {}).reduce(
+        (sum, value) => sum + (Number.isFinite(value) ? value : 0),
+        0
+    )
     return (
         metrics.inputTokens > 0 ||
         metrics.outputTokens > 0 ||
@@ -398,7 +402,8 @@ const hasAnyUsage = (metrics: ITokenUsageMetrics): boolean => {
         metrics.acceptedPredictionTokens > 0 ||
         metrics.rejectedPredictionTokens > 0 ||
         metrics.audioInputTokens > 0 ||
-        metrics.audioOutputTokens > 0
+        metrics.audioOutputTokens > 0 ||
+        additionalBreakdownTotal > 0
     )
 }
 

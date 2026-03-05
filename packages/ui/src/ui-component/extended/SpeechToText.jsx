@@ -17,6 +17,7 @@ import { StyledButton } from '@/ui-component/button/StyledButton'
 import { Dropdown } from '@/ui-component/dropdown/Dropdown'
 import openAISVG from '@/assets/images/openai.svg'
 import assemblyAIPng from '@/assets/images/assemblyai.png'
+import alibabaSvg from '@/assets/images/alibaba-svgrepo-com.svg'
 import localAiPng from '@/assets/images/localai.png'
 import azureSvg from '@/assets/images/azure_openai.svg'
 import groqPng from '@/assets/images/groq.png'
@@ -34,7 +35,8 @@ const SpeechToTextType = {
     ASSEMBLYAI_TRANSCRIBE: 'assemblyAiTranscribe',
     LOCALAI_STT: 'localAISTT',
     AZURE_COGNITIVE: 'azureCognitive',
-    GROQ_WHISPER: 'groqWhisper'
+    GROQ_WHISPER: 'groqWhisper',
+    ALIBABA_STT: 'alibabaSTT'
 }
 
 // Weird quirk - the key must match the name property value.
@@ -89,6 +91,24 @@ const speechToTextProviders = {
                 name: 'credential',
                 type: 'credential',
                 credentialNames: ['assemblyAIApi']
+            },
+            {
+                label: 'Model',
+                name: 'speechModels',
+                type: 'options',
+                description: 'Speech model used for transcription.',
+                options: [
+                    {
+                        label: 'universal-3-pro',
+                        name: 'universal-3-pro'
+                    },
+                    {
+                        label: 'universal-2',
+                        name: 'universal-2'
+                    }
+                ],
+                default: 'universal-3-pro',
+                optional: true
             }
         ]
     },
@@ -233,6 +253,53 @@ const speechToTextProviders = {
                 step: 0.1,
                 description:
                     'The sampling temperature, between 0 and 1. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.',
+                optional: true
+            }
+        ]
+    },
+    [SpeechToTextType.ALIBABA_STT]: {
+        label: 'Alibaba STT',
+        name: SpeechToTextType.ALIBABA_STT,
+        icon: alibabaSvg,
+        url: 'https://help.aliyun.com/zh/model-studio/',
+        inputs: [
+            {
+                label: 'Connect Credential',
+                name: 'credential',
+                type: 'credential',
+                credentialNames: ['alibabaSTTApi']
+            },
+            {
+                label: 'Model',
+                name: 'model',
+                type: 'string',
+                description: 'Alibaba ASR model name. Defaults to qwen3-asr-flash.',
+                default: 'qwen3-asr-flash',
+                optional: true
+            },
+            {
+                label: 'Base URL',
+                name: 'baseUrl',
+                type: 'string',
+                description:
+                    'DashScope OpenAI-compatible endpoint. For Singapore region, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1.',
+                default: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+                optional: true
+            },
+            {
+                label: 'Language',
+                name: 'language',
+                type: 'string',
+                description: 'Optional language hint for ASR, for example zh or en.',
+                placeholder: 'zh',
+                optional: true
+            },
+            {
+                label: 'Enable ITN',
+                name: 'enableItn',
+                type: 'boolean',
+                description: 'Enable inverse text normalization in Alibaba ASR options.',
+                default: false,
                 optional: true
             }
         ]

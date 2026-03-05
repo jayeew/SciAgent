@@ -61,8 +61,16 @@ const TOKEN_STAT_FIELDS = [
     { key: 'acceptedPredictionTokens', label: 'Accepted Prediction Tokens' },
     { key: 'rejectedPredictionTokens', label: 'Rejected Prediction Tokens' },
     { key: 'audioInputTokens', label: 'Audio Input Tokens' },
-    { key: 'audioOutputTokens', label: 'Audio Output Tokens' }
+    { key: 'audioOutputTokens', label: 'Audio Output Tokens' },
+    { key: 'seconds', label: 'Seconds' }
 ]
+
+const getTokenStatValue = (row, key) => {
+    if (key === 'seconds') {
+        return Number(row?.usageBreakdown?.seconds) || 0
+    }
+    return row?.[key] || 0
+}
 
 const toInputDateTimeValue = (value) => {
     if (!value) return ''
@@ -744,7 +752,9 @@ const Users = () => {
                                             <TableBody>
                                                 <TableRow>
                                                     {TOKEN_STAT_FIELDS.map((item) => (
-                                                        <StyledTableCell key={item.key}>{record[item.key] || 0}</StyledTableCell>
+                                                        <StyledTableCell key={item.key}>
+                                                            {getTokenStatValue(record, item.key)}
+                                                        </StyledTableCell>
                                                     ))}
                                                 </TableRow>
                                             </TableBody>
@@ -782,14 +792,16 @@ const Users = () => {
                                                             <StyledTableCell>{credential.usageCount || 0}</StyledTableCell>
                                                             {TOKEN_STAT_FIELDS.map((item) => (
                                                                 <StyledTableCell key={item.key}>
-                                                                    {credential[item.key] || 0}
+                                                                    {getTokenStatValue(credential, item.key)}
                                                                 </StyledTableCell>
                                                             ))}
                                                         </TableRow>
                                                     ))
                                                 ) : (
                                                     <TableRow>
-                                                        <StyledTableCell colSpan={14}>No credential usage details.</StyledTableCell>
+                                                        <StyledTableCell colSpan={4 + TOKEN_STAT_FIELDS.length}>
+                                                            No credential usage details.
+                                                        </StyledTableCell>
                                                     </TableRow>
                                                 )}
                                             </TableBody>

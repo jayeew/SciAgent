@@ -1,13 +1,15 @@
 import { StatusCodes } from 'http-status-codes'
 import { In } from 'typeorm'
 import { omit } from 'lodash'
+import fs from 'fs'
+import path from 'path'
 import { INodeOptionsValue } from 'flowise-components'
 import { Credential } from '../../database/entities/Credential'
 import { WorkspaceShared } from '../../enterprise/database/entities/EnterpriseEntities'
 import { WorkspaceService } from '../../enterprise/services/workspace.service'
 import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import { getErrorMessage } from '../../errors/utils'
-import { decryptCredentialData, transformToCredentialEntity } from '../../utils'
+import { decryptCredentialData, getNodeModulesPackagePath, transformToCredentialEntity } from '../../utils'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import logger from '../../utils/logger'
 
@@ -20,6 +22,20 @@ interface ICredentialModelBillingConfig {
 }
 
 const LEGACY_DEFAULT_RMB_PER_MTOK = 0
+let cachedSpeechToTextModelMap: Map<string, INodeOptionsValue[]> | undefined
+
+const appendModelOptions = (modelOptionMap: Map<string, { name: string; label: string }>, models: INodeOptionsValue[] | undefined) => {
+    if (!Array.isArray(models)) return
+
+    for (const model of models) {
+        const modelName = typeof model?.name === 'string' ? model.name.trim() : ''
+        if (!modelName || modelName.length > MODEL_NAME_MAX_LENGTH) continue
+        if (modelOptionMap.has(modelName)) continue
+
+        const modelLabel = typeof model?.label === 'string' && model.label.trim() ? model.label.trim() : modelName
+        modelOptionMap.set(modelName, { name: modelName, label: modelLabel })
+    }
+}
 
 const normalizeModelBillingConfig = (rawValue: unknown): ICredentialModelBillingConfig | null => {
     if (typeof rawValue === 'number' || typeof rawValue === 'string') {
@@ -456,16 +472,7 @@ const getCredentialModels = async (
                     }
                 )) as INodeOptionsValue[]
 
-                if (!Array.isArray(models)) continue
-
-                for (const model of models) {
-                    const modelName = typeof model?.name === 'string' ? model.name.trim() : ''
-                    if (!modelName || modelName.length > MODEL_NAME_MAX_LENGTH) continue
-                    if (modelOptionMap.has(modelName)) continue
-
-                    const modelLabel = typeof model?.label === 'string' && model.label.trim() ? model.label.trim() : modelName
-                    modelOptionMap.set(modelName, { name: modelName, label: modelLabel })
-                }
+                appendModelOptions(modelOptionMap, models)
             } catch (error) {
                 logger.warn(
                     `[credentialsService]: Failed to load models for credential=${
@@ -473,6 +480,17 @@ const getCredentialModels = async (
                     } node=${nodeName}: ${getErrorMessage(error)}`
                 )
             }
+        }
+
+        try {
+            const speechToTextModels = getSpeechToTextModelsByCredentialName(credential.credentialName)
+            appendModelOptions(modelOptionMap, speechToTextModels)
+        } catch (error) {
+            logger.warn(
+                `[credentialsService]: Failed to load speech-to-text models for credential=${credential.credentialName}: ${getErrorMessage(
+                    error
+                )}`
+            )
         }
 
         return Array.from(modelOptionMap.values()).sort((a, b) => a.label.localeCompare(b.label))
@@ -483,6 +501,50 @@ const getCredentialModels = async (
             `Error: credentialsService.getCredentialModels - ${getErrorMessage(error)}`
         )
     }
+}
+
+const getSpeechToTextModelsByCredentialName = (credentialName: string): INodeOptionsValue[] => {
+    if (!credentialName) return []
+
+    if (!cachedSpeechToTextModelMap) {
+        cachedSpeechToTextModelMap = loadSpeechToTextModelMap()
+    }
+
+    return cachedSpeechToTextModelMap.get(credentialName) ?? []
+}
+
+const loadSpeechToTextModelMap = (): Map<string, INodeOptionsValue[]> => {
+    const speechToTextModelMap = new Map<string, INodeOptionsValue[]>()
+    const componentsPackagePath = getNodeModulesPackagePath('flowise-components')
+    if (!componentsPackagePath) return speechToTextModelMap
+
+    const modelFilesToCheck = [path.join(componentsPackagePath, 'models.json'), path.join(componentsPackagePath, 'dist', 'models.json')]
+    let modelFilePath = ''
+    for (const candidatePath of modelFilesToCheck) {
+        if (fs.existsSync(candidatePath)) {
+            modelFilePath = candidatePath
+            break
+        }
+    }
+    if (!modelFilePath) return speechToTextModelMap
+
+    try {
+        const raw = fs.readFileSync(modelFilePath, 'utf8')
+        const parsed = JSON.parse(raw)
+        const speechToTextConfigs = Array.isArray(parsed?.speechToText) ? parsed.speechToText : []
+
+        for (const config of speechToTextConfigs) {
+            const providerName = typeof config?.name === 'string' ? config.name.trim() : ''
+            if (!providerName) continue
+
+            const providerModels = Array.isArray(config?.models) ? (config.models as INodeOptionsValue[]) : []
+            speechToTextModelMap.set(providerName, providerModels)
+        }
+    } catch (error) {
+        logger.warn(`[credentialsService]: Failed to parse speech-to-text model config: ${getErrorMessage(error)}`)
+    }
+
+    return speechToTextModelMap
 }
 
 export default {

@@ -404,6 +404,7 @@ export const executeFlow = async ({
     const streaming = incomingInput.streaming ?? false
     const userMessageDateTime = new Date()
     const chatflowid = chatflow.id
+    const workspaceCreditService = userId ? new WorkspaceCreditService() : undefined
 
     /* Process file uploads from the chat
      * - Images
@@ -443,7 +444,7 @@ export const executeFlow = async ({
             }
 
             // Run Speech to Text conversion
-            if (upload.mime === 'audio/webm' || upload.mime === 'audio/mp4' || upload.mime === 'audio/ogg') {
+            if (typeof upload.mime === 'string' && upload.mime.startsWith('audio/')) {
                 logger.debug(`[server]: [${orgId}]: Attempting a speech to text conversion...`)
                 let speechToTextConfig: ICommonObject = {}
                 if (chatflow.speechToText) {
@@ -463,13 +464,56 @@ export const executeFlow = async ({
                         chatId,
                         chatflowid,
                         appDataSource,
-                        databaseEntities: databaseEntities
+                        databaseEntities: databaseEntities,
+                        tokenAuditContext
                     }
                     const speechToTextResult = await convertSpeechToText(upload, speechToTextConfig, options)
-                    logger.debug(`[server]: [${orgId}]: Speech to text result: ${speechToTextResult}`)
-                    if (speechToTextResult) {
-                        incomingInput.question = speechToTextResult
-                        question = speechToTextResult
+                    logger.debug(`[server]: [${orgId}]: Speech to text result: ${JSON.stringify(speechToTextResult)}`)
+                    const transcribedText =
+                        typeof speechToTextResult === 'string'
+                            ? speechToTextResult
+                            : typeof speechToTextResult?.text === 'string'
+                            ? speechToTextResult.text
+                            : ''
+
+                    if (transcribedText) {
+                        incomingInput.question = transcribedText
+                        question = transcribedText
+                    }
+
+                    if (
+                        workspaceCreditService &&
+                        userId &&
+                        speechToTextConfig.name === 'alibabaSTT' &&
+                        speechToTextResult &&
+                        typeof speechToTextResult === 'object'
+                    ) {
+                        const seconds = Number(speechToTextResult?.usage?.seconds)
+                        const inputRmbPerSecond = Number(speechToTextResult?.billing?.inputRmbPerSecond)
+                        const normalizedSeconds = Number.isFinite(seconds) && seconds >= 0 ? seconds : 0
+                        const normalizedInputRmbPerSecond =
+                            Number.isFinite(inputRmbPerSecond) && inputRmbPerSecond >= 0 ? inputRmbPerSecond : 0
+
+                        await workspaceCreditService.consumeCreditBySpeechSeconds(workspaceId, userId, {
+                            credentialId: speechToTextResult.credentialId || speechToTextConfig.credentialId,
+                            provider: speechToTextResult.provider || 'alibabaSTT',
+                            model: speechToTextResult.model,
+                            seconds: normalizedSeconds,
+                            inputRmbPerSecond: normalizedInputRmbPerSecond
+                        })
+                        logger.info(
+                            `[server]: [${orgId}]: Alibaba STT credit consumed credentialId=${
+                                speechToTextResult.credentialId || speechToTextConfig.credentialId || '-'
+                            } model=${
+                                speechToTextResult.model || '-'
+                            } seconds=${normalizedSeconds} inputRmbPerSecond=${normalizedInputRmbPerSecond}`
+                        )
+                    } else if (speechToTextConfig.name === 'alibabaSTT') {
+                        logger.warn(
+                            `[server]: [${orgId}]: Alibaba STT credit skipped workspaceCreditService=${!!workspaceCreditService} userId=${
+                                userId || '-'
+                            }`
+                        )
                     }
                 }
             }

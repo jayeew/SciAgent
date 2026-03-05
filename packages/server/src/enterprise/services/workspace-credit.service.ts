@@ -415,6 +415,104 @@ export class WorkspaceCreditService {
         }
     }
 
+    public async consumeCreditBySpeechSeconds(
+        workspaceId: string,
+        userId: string,
+        usage: {
+            credentialId?: string
+            credentialName?: string
+            provider?: string
+            model?: string
+            seconds: number
+            inputRmbPerSecond: number
+        }
+    ) {
+        const normalizedSeconds = Number(usage.seconds)
+        if (!Number.isFinite(normalizedSeconds) || normalizedSeconds < 0) {
+            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid speech duration in seconds')
+        }
+
+        const normalizedInputRmbPerSecond = Number(usage.inputRmbPerSecond)
+        if (!Number.isFinite(normalizedInputRmbPerSecond) || normalizedInputRmbPerSecond < 0) {
+            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid input RMB/s')
+        }
+
+        const rawConsumedCredit = normalizedInputRmbPerSecond * normalizedSeconds * 100 + 1
+        const consumedCredit = Math.max(1, Math.ceil(rawConsumedCredit - Number.EPSILON))
+        logger.info(
+            `[workspace-credit] start speech consume workspaceId=${workspaceId} userId=${userId} credentialId=${
+                usage.credentialId || '-'
+            } provider=${usage.provider || 'unknown'} model=${
+                usage.model || 'unknown'
+            } seconds=${normalizedSeconds} inputRmbPerSecond=${normalizedInputRmbPerSecond} rawConsumedCredit=${rawConsumedCredit.toFixed(
+                6
+            )} consumed=${consumedCredit}`
+        )
+
+        const queryRunner = this.dataSource.createQueryRunner()
+        await queryRunner.connect()
+
+        try {
+            await queryRunner.startTransaction()
+
+            const workspaceUser = await queryRunner.manager.findOneBy(WorkspaceUser, {
+                workspaceId,
+                userId
+            })
+
+            if (!workspaceUser) {
+                throw new InternalFlowiseError(StatusCodes.NOT_FOUND, WorkspaceCreditErrorMessage.WORKSPACE_USER_NOT_FOUND)
+            }
+
+            const credential = usage.credentialId
+                ? await queryRunner.manager.findOneBy(Credential, {
+                      id: usage.credentialId
+                  })
+                : undefined
+            const credentialName = usage.credentialName || credential?.name || credential?.credentialName || 'Unknown Credential'
+
+            workspaceUser.credit = (workspaceUser.credit ?? 0) - consumedCredit
+            await queryRunner.manager.save(WorkspaceUser, workspaceUser)
+
+            const transaction = queryRunner.manager.create(WorkspaceCreditTransaction, {
+                workspaceId,
+                userId,
+                type: WorkspaceCreditTransactionType.CONSUME,
+                amount: -consumedCredit,
+                balance: workspaceUser.credit,
+                credentialName,
+                credentialId: usage.credentialId,
+                description: `Speech duration consumption: provider=${usage.provider || 'unknown'}, model=${
+                    usage.model || 'unknown'
+                }, seconds=${normalizedSeconds}, inputRmbPerSecond=${normalizedInputRmbPerSecond}, formula=inputRmbPerSecond*seconds*100+1, rawConsumedCredit=${rawConsumedCredit.toFixed(
+                    6
+                )}, chargedCredit=${consumedCredit}`
+            })
+            const savedTransaction = await queryRunner.manager.save(WorkspaceCreditTransaction, transaction)
+
+            await queryRunner.commitTransaction()
+            logger.info(
+                `[workspace-credit] speech consume done workspaceId=${workspaceId} userId=${userId} consumed=${consumedCredit} balance=${
+                    workspaceUser.credit ?? 0
+                }`
+            )
+
+            return {
+                workspaceId,
+                userId,
+                creditConsumed: consumedCredit,
+                creditBalance: workspaceUser.credit,
+                transaction: savedTransaction
+            }
+        } catch (error) {
+            if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction()
+            logger.error(`[workspace-credit] speech consume failed workspaceId=${workspaceId} userId=${userId}`, error)
+            throw error
+        } finally {
+            if (!queryRunner.isReleased) await queryRunner.release()
+        }
+    }
+
     public async consumeCreditByCredentialUsages(
         workspaceId: string,
         userId: string,

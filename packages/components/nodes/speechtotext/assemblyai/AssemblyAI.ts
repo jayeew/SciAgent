@@ -20,7 +20,26 @@ class AssemblyAI_SpeechToText implements INode {
         this.icon = 'assemblyai.png'
         this.category = 'SpeechToText'
         this.baseClasses = [this.type]
-        this.inputs = []
+        this.inputs = [
+            {
+                label: 'Model',
+                name: 'speechModels',
+                type: 'options',
+                description: 'Speech model used for transcription.',
+                options: [
+                    {
+                        label: 'universal-3-pro',
+                        name: 'universal-3-pro'
+                    },
+                    {
+                        label: 'universal-2',
+                        name: 'universal-2'
+                    }
+                ],
+                default: 'universal-3-pro',
+                optional: true
+            }
+        ]
         this.credential = {
             label: 'Connect Credential',
             name: 'credential',
