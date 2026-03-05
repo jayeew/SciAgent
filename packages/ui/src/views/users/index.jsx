@@ -55,11 +55,7 @@ const TOKEN_STAT_FIELDS = [
     { key: 'totalTokens', label: 'Total Tokens' },
     { key: 'inputTokens', label: 'Input Tokens' },
     { key: 'outputTokens', label: 'Output Tokens' },
-    { key: 'cacheReadTokens', label: 'Cache Read Tokens' },
-    { key: 'cacheWriteTokens', label: 'Cache Write Tokens' },
     { key: 'reasoningTokens', label: 'Reasoning Tokens' },
-    { key: 'acceptedPredictionTokens', label: 'Accepted Prediction Tokens' },
-    { key: 'rejectedPredictionTokens', label: 'Rejected Prediction Tokens' },
     { key: 'audioInputTokens', label: 'Audio Input Tokens' },
     { key: 'audioOutputTokens', label: 'Audio Output Tokens' },
     { key: 'seconds', label: 'Seconds' }

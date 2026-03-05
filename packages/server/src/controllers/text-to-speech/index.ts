@@ -17,7 +17,11 @@ const generateTextToSpeech = async (req: Request, res: Response) => {
             provider: bodyProvider,
             credentialId: bodyCredentialId,
             voice: bodyVoice,
-            model: bodyModel
+            model: bodyModel,
+            baseUrl: bodyBaseUrl,
+            languageType: bodyLanguageType,
+            instructions: bodyInstructions,
+            optimizeInstructions: bodyOptimizeInstructions
         } = req.body
 
         if (!text) {
@@ -27,7 +31,14 @@ const generateTextToSpeech = async (req: Request, res: Response) => {
             )
         }
 
-        let provider: string, credentialId: string, voice: string, model: string
+        let provider: string,
+            credentialId: string,
+            voice: string,
+            model: string,
+            baseUrl: string,
+            languageType: string,
+            instructions: string,
+            optimizeInstructions: boolean
 
         if (chatflowId) {
             const workspaceId = req.user?.activeWorkspaceId
@@ -55,12 +66,20 @@ const generateTextToSpeech = async (req: Request, res: Response) => {
             credentialId = providerConfig.credentialId
             voice = providerConfig.voice
             model = providerConfig.model
+            baseUrl = providerConfig.baseUrl
+            languageType = providerConfig.languageType
+            instructions = providerConfig.instructions
+            optimizeInstructions = providerConfig.optimizeInstructions
         } else {
             // Use TTS config from request body
             provider = bodyProvider
             credentialId = bodyCredentialId
             voice = bodyVoice
             model = bodyModel
+            baseUrl = bodyBaseUrl
+            languageType = bodyLanguageType
+            instructions = bodyInstructions
+            optimizeInstructions = bodyOptimizeInstructions
         }
 
         if (!provider) {
@@ -96,7 +115,11 @@ const generateTextToSpeech = async (req: Request, res: Response) => {
             name: provider,
             credentialId: credentialId,
             voice: voice,
-            model: model
+            model: model,
+            baseUrl: baseUrl,
+            languageType: languageType,
+            instructions: instructions,
+            optimizeInstructions: optimizeInstructions
         }
 
         // Create and store AbortController

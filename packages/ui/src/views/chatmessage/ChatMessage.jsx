@@ -1910,7 +1910,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
 
             mediaSource.addEventListener('sourceopen', () => {
                 try {
-                    const mimeType = data.format === 'mp3' ? 'audio/mpeg' : 'audio/mpeg'
+                    const mimeType = data.format === 'wav' ? 'audio/wav' : 'audio/mpeg'
                     const sourceBuffer = mediaSource.addSourceBuffer(mimeType)
 
                     setTtsStreamingState((prevState) => ({

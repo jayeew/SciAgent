@@ -31,6 +31,7 @@ import { Dropdown } from '@/ui-component/dropdown/Dropdown'
 import AudioWaveform from '@/ui-component/extended/AudioWaveform'
 import openAISVG from '@/assets/images/openai.svg'
 import elevenLabsSVG from '@/assets/images/elevenlabs.svg'
+import alibabaSvg from '@/assets/images/alibaba-svgrepo-com.svg'
 
 // store
 import useNotifier from '@/utils/useNotifier'
@@ -41,7 +42,8 @@ import ttsApi from '@/api/tts'
 
 const TextToSpeechType = {
     OPENAI_TTS: 'openai',
-    ELEVEN_LABS_TTS: 'elevenlabs'
+    ELEVEN_LABS_TTS: 'elevenlabs',
+    ALIBABA_TTS: 'alibaba'
 }
 
 // Weird quirk - the key must match the name property value.
@@ -86,6 +88,82 @@ const textToSpeechProviders = {
                 type: 'voice_select',
                 description: 'The voice to use for text-to-speech',
                 default: '21m00Tcm4TlvDq8ikWAM',
+                optional: true
+            }
+        ]
+    },
+    [TextToSpeechType.ALIBABA_TTS]: {
+        label: 'Alibaba TTS',
+        name: TextToSpeechType.ALIBABA_TTS,
+        icon: alibabaSvg,
+        url: 'https://help.aliyun.com/zh/model-studio/developer-reference/qwen-tts-api',
+        inputs: [
+            {
+                label: 'Connect Credential',
+                name: 'credential',
+                type: 'credential',
+                credentialNames: ['alibabaTTSApi']
+            },
+            {
+                label: 'Voice',
+                name: 'voice',
+                type: 'voice_select',
+                description: 'The voice to use for Alibaba text-to-speech',
+                default: 'Cherry',
+                optional: true
+            },
+            {
+                label: 'Model',
+                name: 'model',
+                type: 'string',
+                description: 'Alibaba TTS model. Defaults to qwen3-tts-flash.',
+                default: 'qwen3-tts-flash',
+                optional: true
+            },
+            {
+                label: 'Base URL',
+                name: 'baseUrl',
+                type: 'string',
+                description: 'DashScope API base URL. For Singapore region use https://dashscope-intl.aliyuncs.com/api/v1.',
+                default: 'https://dashscope.aliyuncs.com/api/v1',
+                optional: true
+            },
+            {
+                label: 'Language Type',
+                name: 'languageType',
+                type: 'options',
+                description: 'TTS language type, should match your input text language.',
+                options: [
+                    {
+                        label: 'Chinese',
+                        name: 'Chinese'
+                    },
+                    {
+                        label: 'English',
+                        name: 'English'
+                    },
+                    {
+                        label: 'Auto',
+                        name: 'Auto'
+                    }
+                ],
+                default: 'Chinese',
+                optional: true
+            },
+            {
+                label: 'Instructions',
+                name: 'instructions',
+                type: 'string',
+                rows: 4,
+                description: 'Optional style control instructions (works with instruct models).',
+                optional: true
+            },
+            {
+                label: 'Optimize Instructions',
+                name: 'optimizeInstructions',
+                type: 'boolean',
+                description: 'Enable instruction optimization for Alibaba instruct TTS models.',
+                default: true,
                 optional: true
             }
         ]
@@ -248,7 +326,11 @@ const TextToSpeech = ({ dialogProps }) => {
                 provider: selectedProvider,
                 credentialId: providerConfig.credentialId,
                 voice: providerConfig.voice,
-                model: providerConfig.model
+                model: providerConfig.model,
+                baseUrl: providerConfig.baseUrl,
+                languageType: providerConfig.languageType,
+                instructions: providerConfig.instructions,
+                optimizeInstructions: providerConfig.optimizeInstructions
             }
 
             const response = await fetch('/api/v1/text-to-speech/generate', {
@@ -266,6 +348,7 @@ const TextToSpeech = ({ dialogProps }) => {
             }
 
             const audioChunks = []
+            let audioMimeType = 'audio/mpeg'
             const reader = response.body.getReader()
             let buffer = ''
 
@@ -283,7 +366,10 @@ const TextToSpeech = ({ dialogProps }) => {
                 for (const eventBlock of lines) {
                     if (eventBlock.trim()) {
                         const event = parseSSEEvent(eventBlock)
-                        if (event && event.event === 'tts_data' && event.data?.audioChunk) {
+                        if (event && event.event === 'tts_start') {
+                            const format = event.data?.format
+                            audioMimeType = format === 'wav' ? 'audio/wav' : 'audio/mpeg'
+                        } else if (event && event.event === 'tts_data' && event.data?.audioChunk) {
                             const audioBuffer = Uint8Array.from(atob(event.data.audioChunk), (c) => c.charCodeAt(0))
                             audioChunks.push(audioBuffer)
                         }
@@ -302,7 +388,7 @@ const TextToSpeech = ({ dialogProps }) => {
                     offset += chunk.length
                 }
 
-                const audioBlob = new Blob([combinedBuffer], { type: 'audio/mpeg' })
+                const audioBlob = new Blob([combinedBuffer], { type: audioMimeType })
                 const audioUrl = URL.createObjectURL(audioBlob)
 
                 // Clean up previous audio
