@@ -70,6 +70,7 @@ import { FLOWISE_METRIC_COUNTERS, FLOWISE_COUNTER_STATUS, IMetricsProvider } fro
 import { getWorkspaceSearchOptions } from '../enterprise/utils/ControllerServiceUtils'
 import { TokenUsageService } from '../enterprise/services/token-usage.service'
 import { WorkspaceCreditService } from '../enterprise/services/workspace-credit.service'
+import textToSpeechService from '../services/text-to-speech'
 import { OMIT_QUEUE_JOB_DATA } from './constants'
 import { executeAgentFlow } from './buildAgentflow'
 import { Workspace } from '../enterprise/database/entities/workspace.entity'
@@ -99,7 +100,11 @@ const generateTTSForResponseStream = async (
     chatId: string,
     chatMessageId: string,
     sseStreamer: IServerSideEventStreamer,
-    abortController?: AbortController
+    abortController?: AbortController,
+    workspaceId?: string,
+    userId?: string,
+    organizationId?: string,
+    flowType: 'CHATFLOW' | 'ASSISTANT' = 'CHATFLOW'
 ): Promise<void> => {
     try {
         if (!textToSpeechConfig) return
@@ -113,7 +118,11 @@ const generateTTSForResponseStream = async (
                     name: providerKey,
                     credentialId: provider.credentialId,
                     voice: provider.voice,
-                    model: provider.model
+                    model: provider.model,
+                    baseUrl: provider.baseUrl,
+                    languageType: provider.languageType,
+                    instructions: provider.instructions,
+                    optimizeInstructions: provider.optimizeInstructions
                 }
                 break
             }
@@ -137,6 +146,36 @@ const generateTTSForResponseStream = async (
                 sseStreamer.streamTTSEndEvent(chatId, chatMessageId)
             }
         )
+
+        try {
+            const billingDetails = await textToSpeechService.consumeTextToSpeechCredit({
+                text: responseText,
+                provider: activeProviderConfig.name,
+                credentialId: activeProviderConfig.credentialId,
+                model: activeProviderConfig.model,
+                baseUrl: activeProviderConfig.baseUrl,
+                languageType: activeProviderConfig.languageType,
+                instructions: activeProviderConfig.instructions,
+                optimizeInstructions: activeProviderConfig.optimizeInstructions,
+                workspaceId,
+                userId,
+                options
+            })
+
+            await textToSpeechService.recordTextToSpeechTokenUsage({
+                workspaceId,
+                organizationId,
+                userId,
+                flowType,
+                flowId: options.chatflowid,
+                chatId,
+                chatMessageId,
+                billingDetails,
+                options
+            })
+        } catch (billingError) {
+            logger.warn(`[server]: TTS credit consumption failed: ${getErrorMessage(billingError)}`)
+        }
     } catch (error) {
         logger.error(`[server]: TTS streaming failed: ${getErrorMessage(error)}`)
         sseStreamer.streamTTSEndEvent(chatId, chatMessageId)
@@ -1056,7 +1095,19 @@ export const executeFlow = async ({
                 appDataSource,
                 databaseEntities
             }
-            await generateTTSForResponseStream(result.text, chatflow.textToSpeech, options, chatId, chatMessage?.id, sseStreamer, signal)
+            await generateTTSForResponseStream(
+                result.text,
+                chatflow.textToSpeech,
+                options,
+                chatId,
+                chatMessage?.id,
+                sseStreamer,
+                signal,
+                workspaceId,
+                userId,
+                orgId,
+                chatflow.type === 'ASSISTANT' ? 'ASSISTANT' : 'CHATFLOW'
+            )
         }
 
         await recordTokenUsage({

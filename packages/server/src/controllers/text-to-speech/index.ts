@@ -6,6 +6,7 @@ import chatflowsService from '../../services/chatflows'
 import textToSpeechService from '../../services/text-to-speech'
 import { databaseEntities } from '../../utils'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
+import logger from '../../utils/logger'
 
 const generateTextToSpeech = async (req: Request, res: Response) => {
     try {
@@ -38,7 +39,8 @@ const generateTextToSpeech = async (req: Request, res: Response) => {
             baseUrl: string,
             languageType: string,
             instructions: string,
-            optimizeInstructions: boolean
+            optimizeInstructions: boolean,
+            flowType: 'CHATFLOW' | 'ASSISTANT' = 'CHATFLOW'
 
         if (chatflowId) {
             const workspaceId = req.user?.activeWorkspaceId
@@ -51,6 +53,7 @@ const generateTextToSpeech = async (req: Request, res: Response) => {
             // Get TTS config from chatflow
             const chatflow = await chatflowsService.getChatflowById(chatflowId, workspaceId)
             const ttsConfig = JSON.parse(chatflow.textToSpeech)
+            flowType = chatflow.type === 'ASSISTANT' ? 'ASSISTANT' : 'CHATFLOW'
 
             // Find the provider with status: true
             const activeProviderKey = Object.keys(ttsConfig).find((key) => ttsConfig[key].status === true)
@@ -162,6 +165,36 @@ const generateTextToSpeech = async (req: Request, res: Response) => {
                     appServer.abortControllerPool.remove(ttsAbortId)
                 }
             )
+
+            try {
+                const billingDetails = await textToSpeechService.consumeTextToSpeechCredit({
+                    text,
+                    provider,
+                    credentialId,
+                    model,
+                    baseUrl,
+                    languageType,
+                    instructions,
+                    optimizeInstructions,
+                    workspaceId: req.user?.activeWorkspaceId,
+                    userId: req.user?.id,
+                    options
+                })
+
+                await textToSpeechService.recordTextToSpeechTokenUsage({
+                    workspaceId: req.user?.activeWorkspaceId,
+                    organizationId: req.user?.activeOrganizationId,
+                    userId: req.user?.id,
+                    flowType,
+                    flowId: chatflowId,
+                    chatId,
+                    chatMessageId,
+                    billingDetails,
+                    options
+                })
+            } catch (billingError) {
+                logger.warn(`Alibaba TTS credit consumption failed: ${billingError instanceof Error ? billingError.message : billingError}`)
+            }
         } catch (error) {
             // Clean up from pool on error
             appServer.abortControllerPool.remove(ttsAbortId)

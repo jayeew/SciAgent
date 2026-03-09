@@ -18,6 +18,7 @@ type RmbPriceSource = 'model_config' | 'missing'
 
 const LEGACY_DEFAULT_RMB_PER_MTOK = 0
 const ONE_MILLION_TOKENS = 1_000_000
+const TEN_THOUSAND_CHARACTERS = 10_000
 
 const parseModelBillingConfigMap = (value?: string | null): Record<string, IModelBillingConfig> => {
     if (!value) return {}
@@ -507,6 +508,122 @@ export class WorkspaceCreditService {
         } catch (error) {
             if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction()
             logger.error(`[workspace-credit] speech consume failed workspaceId=${workspaceId} userId=${userId}`, error)
+            throw error
+        } finally {
+            if (!queryRunner.isReleased) await queryRunner.release()
+        }
+    }
+
+    public async consumeCreditByTextCharacters(
+        workspaceId: string,
+        userId: string,
+        usage: {
+            credentialId?: string
+            credentialName?: string
+            provider?: string
+            model?: string
+            characters: number
+            inputRmbPer10kChars: number
+        }
+    ) {
+        const normalizedCharacters = Number(usage.characters)
+        if (!Number.isFinite(normalizedCharacters) || normalizedCharacters < 0) {
+            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid text-to-speech character count')
+        }
+
+        const normalizedInputRmbPer10kChars = Number(usage.inputRmbPer10kChars)
+        if (!Number.isFinite(normalizedInputRmbPer10kChars) || normalizedInputRmbPer10kChars < 0) {
+            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid input RMB/10k chars')
+        }
+
+        const queryRunner = this.dataSource.createQueryRunner()
+        await queryRunner.connect()
+
+        try {
+            await queryRunner.startTransaction()
+
+            const workspaceUser = await queryRunner.manager.findOneBy(WorkspaceUser, {
+                workspaceId,
+                userId
+            })
+
+            if (!workspaceUser) {
+                throw new InternalFlowiseError(StatusCodes.NOT_FOUND, WorkspaceCreditErrorMessage.WORKSPACE_USER_NOT_FOUND)
+            }
+
+            const credential = usage.credentialId
+                ? await queryRunner.manager.findOneBy(Credential, {
+                      id: usage.credentialId
+                  })
+                : undefined
+            const credentialName = usage.credentialName || credential?.name || credential?.credentialName || 'Unknown Credential'
+            const credentialMultiplierValue = Number(credential?.creditConsumptionMultiplier)
+            const credentialMultiplier =
+                Number.isFinite(credentialMultiplierValue) && credentialMultiplierValue > 0 ? credentialMultiplierValue : 1
+            const textCostRmb = (normalizedCharacters / TEN_THOUSAND_CHARACTERS) * normalizedInputRmbPer10kChars
+            const baseCredit = calculateBaseCreditFromRmb(textCostRmb)
+            const consumedCredit = Math.ceil(baseCredit * credentialMultiplier - Number.EPSILON)
+
+            if (consumedCredit <= 0) {
+                await queryRunner.rollbackTransaction()
+                logger.info(
+                    `[workspace-credit] skip tts consume workspaceId=${workspaceId} userId=${userId} credentialId=${
+                        usage.credentialId || '-'
+                    } model=${
+                        usage.model || 'unknown'
+                    } characters=${normalizedCharacters} inputRmbPer10kChars=${normalizedInputRmbPer10kChars} textCostRmb=${textCostRmb.toFixed(
+                        6
+                    )} baseCredit=${baseCredit} credentialMultiplier=${credentialMultiplier}`
+                )
+                return {
+                    workspaceId,
+                    userId,
+                    creditConsumed: 0,
+                    creditBalance: workspaceUser.credit,
+                    transaction: null
+                }
+            }
+
+            workspaceUser.credit = (workspaceUser.credit ?? 0) - consumedCredit
+            await queryRunner.manager.save(WorkspaceUser, workspaceUser)
+
+            const transaction = queryRunner.manager.create(WorkspaceCreditTransaction, {
+                workspaceId,
+                userId,
+                type: WorkspaceCreditTransactionType.CONSUME,
+                amount: -consumedCredit,
+                balance: workspaceUser.credit,
+                credentialName,
+                credentialId: usage.credentialId,
+                description: `Text-to-speech consumption: provider=${usage.provider || 'unknown'}, model=${
+                    usage.model || 'unknown'
+                }, characters=${normalizedCharacters}, inputRmbPer10kChars=${normalizedInputRmbPer10kChars}, formula=characters/10000*inputRmbPer10kChars, textCostRmb=${textCostRmb.toFixed(
+                    6
+                )}, baseCredit=${baseCredit}, credentialMultiplier=${credentialMultiplier}, chargedCredit=${consumedCredit}`
+            })
+            const savedTransaction = await queryRunner.manager.save(WorkspaceCreditTransaction, transaction)
+
+            await queryRunner.commitTransaction()
+            logger.info(
+                `[workspace-credit] tts consume done workspaceId=${workspaceId} userId=${userId} credentialId=${
+                    usage.credentialId || '-'
+                } provider=${usage.provider || 'unknown'} model=${
+                    usage.model || 'unknown'
+                } characters=${normalizedCharacters} inputRmbPer10kChars=${normalizedInputRmbPer10kChars} consumed=${consumedCredit} balance=${
+                    workspaceUser.credit ?? 0
+                }`
+            )
+
+            return {
+                workspaceId,
+                userId,
+                creditConsumed: consumedCredit,
+                creditBalance: workspaceUser.credit,
+                transaction: savedTransaction
+            }
+        } catch (error) {
+            if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction()
+            logger.error(`[workspace-credit] tts consume failed workspaceId=${workspaceId} userId=${userId}`, error)
             throw error
         } finally {
             if (!queryRunner.isReleased) await queryRunner.release()

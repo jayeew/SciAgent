@@ -58,12 +58,16 @@ const TOKEN_STAT_FIELDS = [
     { key: 'reasoningTokens', label: 'Reasoning Tokens' },
     { key: 'audioInputTokens', label: 'Audio Input Tokens' },
     { key: 'audioOutputTokens', label: 'Audio Output Tokens' },
-    { key: 'seconds', label: 'Seconds' }
+    { key: 'seconds', label: 'Seconds' },
+    { key: 'inputCharacters', label: 'Input Characters' }
 ]
 
 const getTokenStatValue = (row, key) => {
     if (key === 'seconds') {
         return Number(row?.usageBreakdown?.seconds) || 0
+    }
+    if (key === 'inputCharacters') {
+        return Number(row?.usageBreakdown?.input_characters) || Number(row?.usageBreakdown?.characters) || 0
     }
     return row?.[key] || 0
 }

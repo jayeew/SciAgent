@@ -15,6 +15,14 @@ class AlibabaTTSApi implements INodeCredential {
                 label: 'Alibaba Api Key',
                 name: 'alibabaApiKey',
                 type: 'password'
+            },
+            {
+                label: 'Input RMB/10k chars',
+                name: 'inputRmbPer10kChars',
+                type: 'number',
+                step: 0.01,
+                default: 0,
+                description: 'Text-to-speech billing unit price in RMB per 10,000 characters.'
             }
         ]
     }

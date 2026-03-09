@@ -189,6 +189,13 @@ const TextToSpeech = ({ dialogProps }) => {
     const [isGeneratingTest, setIsGeneratingTest] = useState(false)
     const [resetWaveform, setResetWaveform] = useState(false)
 
+    const formatVoiceOptionLabel = (option) => {
+        if (!option) return ''
+        if (typeof option === 'string') return option
+        if (option.description) return `${option.name}（${option.description}）`
+        return option.name || ''
+    }
+
     const resetTestAudio = () => {
         if (testAudioSrc) {
             URL.revokeObjectURL(testAudioSrc)
@@ -369,6 +376,8 @@ const TextToSpeech = ({ dialogProps }) => {
                         if (event && event.event === 'tts_start') {
                             const format = event.data?.format
                             audioMimeType = format === 'wav' ? 'audio/wav' : 'audio/mpeg'
+                        } else if (event && event.event === 'tts_error') {
+                            throw new Error(event.data?.error || 'TTS generation failed')
                         } else if (event && event.event === 'tts_data' && event.data?.audioChunk) {
                             const audioBuffer = Uint8Array.from(atob(event.data.audioChunk), (c) => c.charCodeAt(0))
                             audioChunks.push(audioBuffer)
@@ -640,7 +649,7 @@ const TextToSpeech = ({ dialogProps }) => {
                                     sx={{ mt: 1 }}
                                     options={voices}
                                     loading={loadingVoices}
-                                    getOptionLabel={(option) => option.name || ''}
+                                    getOptionLabel={formatVoiceOptionLabel}
                                     value={
                                         voices.find(
                                             (voice) =>
@@ -650,6 +659,11 @@ const TextToSpeech = ({ dialogProps }) => {
                                     onChange={(event, newValue) => {
                                         setValue(newValue ? newValue.id : '', selectedProvider, inputParam.name)
                                     }}
+                                    renderOption={(props, option) => (
+                                        <li {...props} key={option.id}>
+                                            {formatVoiceOptionLabel(option)}
+                                        </li>
+                                    )}
                                     renderInput={(params) => (
                                         <TextField
                                             {...params}

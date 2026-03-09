@@ -291,8 +291,10 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         sourceBuffer: null,
         audio: null,
         chunkQueue: [],
+        audioChunks: [],
         isBuffering: false,
         audioFormat: null,
+        useMediaSource: false,
         abortController: null
     })
 
@@ -1212,6 +1214,13 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                     case 'tts_end':
                         handleTTSEnd()
                         break
+                    case 'tts_error':
+                        enqueueSnackbar({
+                            message: `TTS failed: ${payload.data?.error || 'Unknown error'}`,
+                            options: { variant: 'error' }
+                        })
+                        cleanupTTSStreaming()
+                        break
                     case 'tts_abort':
                         handleTTSAbort(payload.data)
                         break
@@ -1791,7 +1800,6 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         await handleTTSAbortAll()
         stopAllTTS()
 
-        handleTTSStart({ chatMessageId: messageId, format: 'mp3' })
         try {
             const abortController = new AbortController()
             setTtsStreamingState((prev) => ({ ...prev, abortController }))
@@ -1844,6 +1852,9 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                         if (event) {
                             switch (event.event) {
                                 case 'tts_start':
+                                    if (!abortController.signal.aborted) {
+                                        handleTTSStart(event.data, { preserveAbortController: true, stopExisting: false })
+                                    }
                                     break
                                 case 'tts_data':
                                     if (!abortController.signal.aborted) {
@@ -1855,6 +1866,8 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                                         handleTTSEnd()
                                     }
                                     break
+                                case 'tts_error':
+                                    throw new Error(event.data?.error || 'TTS generation failed')
                             }
                         }
                     }
@@ -1902,33 +1915,53 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         return event.event ? event : null
     }
 
+    const getTTSAudioMimeType = (format) => {
+        return format === 'wav' ? 'audio/wav' : 'audio/mpeg'
+    }
+
+    const canStreamTTSAudio = (format) => {
+        const mimeType = getTTSAudioMimeType(format)
+        return typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported(mimeType)
+    }
+
     const initializeTTSStreaming = (data) => {
         try {
-            const mediaSource = new MediaSource()
             const audio = new Audio()
-            audio.src = URL.createObjectURL(mediaSource)
+            const mimeType = getTTSAudioMimeType(data.format)
+            const shouldUseMediaSource = canStreamTTSAudio(data.format)
 
-            mediaSource.addEventListener('sourceopen', () => {
-                try {
-                    const mimeType = data.format === 'wav' ? 'audio/wav' : 'audio/mpeg'
-                    const sourceBuffer = mediaSource.addSourceBuffer(mimeType)
+            if (shouldUseMediaSource) {
+                const mediaSource = new MediaSource()
+                audio.src = URL.createObjectURL(mediaSource)
 
-                    setTtsStreamingState((prevState) => ({
-                        ...prevState,
-                        mediaSource,
-                        sourceBuffer,
-                        audio
-                    }))
+                mediaSource.addEventListener('sourceopen', () => {
+                    try {
+                        const sourceBuffer = mediaSource.addSourceBuffer(mimeType)
 
-                    audio.play().catch((playError) => {
-                        console.error('Error starting audio playback:', playError)
-                    })
-                } catch (error) {
-                    console.error('Error setting up source buffer:', error)
-                    console.error('MediaSource readyState:', mediaSource.readyState)
-                    console.error('Requested MIME type:', mimeType)
-                }
-            })
+                        setTtsStreamingState((prevState) => ({
+                            ...prevState,
+                            mediaSource,
+                            sourceBuffer,
+                            audio,
+                            useMediaSource: true
+                        }))
+
+                        audio.play().catch((playError) => {
+                            console.error('Error starting audio playback:', playError)
+                        })
+                    } catch (error) {
+                        console.error('Error setting up source buffer:', error)
+                        console.error('MediaSource readyState:', mediaSource.readyState)
+                        console.error('Requested MIME type:', mimeType)
+                    }
+                })
+            } else {
+                setTtsStreamingState((prevState) => ({
+                    ...prevState,
+                    audio,
+                    useMediaSource: false
+                }))
+            }
 
             audio.addEventListener('playing', () => {
                 setIsTTSLoading((prevState) => {
@@ -1962,10 +1995,12 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
             }
 
             if (prevState.audio) {
+                const audioSrc = prevState.audio.src
                 prevState.audio.pause()
                 prevState.audio.removeAttribute('src')
-                if (prevState.audio.src) {
-                    URL.revokeObjectURL(prevState.audio.src)
+                prevState.audio.load()
+                if (audioSrc?.startsWith('blob:')) {
+                    URL.revokeObjectURL(audioSrc)
                 }
             }
 
@@ -1985,8 +2020,10 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                 sourceBuffer: null,
                 audio: null,
                 chunkQueue: [],
+                audioChunks: [],
                 isBuffering: false,
                 audioFormat: null,
+                useMediaSource: false,
                 abortController: null
             }
         })
@@ -2014,11 +2051,13 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         })
     }
 
-    const handleTTSStart = (data) => {
+    const handleTTSStart = (data, options = {}) => {
+        const { preserveAbortController = false, stopExisting = true } = options
         setTTSAction(true)
 
-        // Stop all existing TTS audio before starting new stream
-        stopAllTTS()
+        if (stopExisting) {
+            stopAllTTS()
+        }
 
         setIsTTSLoading((prevState) => ({
             ...prevState,
@@ -2032,15 +2071,17 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
             allMessages[allMessages.length - 1].id = data.chatMessageId
             return allMessages
         })
-        setTtsStreamingState({
+        setTtsStreamingState((prevState) => ({
             mediaSource: null,
             sourceBuffer: null,
             audio: null,
             chunkQueue: [],
+            audioChunks: [],
             isBuffering: false,
             audioFormat: data.format,
-            abortController: null
-        })
+            useMediaSource: canStreamTTSAudio(data.format),
+            abortController: preserveAbortController ? prevState.abortController : null
+        }))
 
         setTimeout(() => initializeTTSStreaming(data), 0)
     }
@@ -2052,10 +2093,11 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
             setTtsStreamingState((prevState) => {
                 const newState = {
                     ...prevState,
-                    chunkQueue: [...prevState.chunkQueue, audioBuffer]
+                    chunkQueue: prevState.useMediaSource ? [...prevState.chunkQueue, audioBuffer] : prevState.chunkQueue,
+                    audioChunks: prevState.useMediaSource ? prevState.audioChunks : [...prevState.audioChunks, audioBuffer]
                 }
 
-                if (prevState.sourceBuffer && !prevState.sourceBuffer.updating) {
+                if (prevState.useMediaSource && prevState.sourceBuffer && !prevState.sourceBuffer.updating) {
                     setTimeout(() => processChunkQueue(), 0)
                 }
 
@@ -2068,6 +2110,28 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
 
     const handleTTSEnd = () => {
         setTtsStreamingState((prevState) => {
+            if (!prevState.useMediaSource) {
+                if (prevState.audio && prevState.audioChunks.length > 0) {
+                    try {
+                        const audioBlob = new Blob(prevState.audioChunks, { type: getTTSAudioMimeType(prevState.audioFormat) })
+                        const audioUrl = URL.createObjectURL(audioBlob)
+                        prevState.audio.src = audioUrl
+                        prevState.audio.load()
+                        prevState.audio.play().catch((playError) => {
+                            console.error('Error starting buffered TTS playback:', playError)
+                        })
+                    } catch (error) {
+                        console.error('Error finalizing TTS audio:', error)
+                    }
+                }
+
+                return {
+                    ...prevState,
+                    chunkQueue: [],
+                    audioChunks: []
+                }
+            }
+
             if (prevState.mediaSource && prevState.mediaSource.readyState === 'open') {
                 try {
                     if (prevState.sourceBuffer && prevState.chunkQueue.length > 0 && !prevState.sourceBuffer.updating) {
