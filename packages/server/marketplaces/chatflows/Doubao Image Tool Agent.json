@@ -1,0 +1,469 @@
+{
+    "description": "Tool Agent chatflow that calls Doubao Ark to generate images and stores them as chat artifacts.",
+    "usecases": ["Agent", "Multimodal"],
+    "framework": ["Langchain"],
+    "nodes": [
+        {
+            "id": "chatOpenAI_0",
+            "position": {
+                "x": 80,
+                "y": 60
+            },
+            "type": "customNode",
+            "width": 300,
+            "height": 330,
+            "positionAbsolute": {
+                "x": 80,
+                "y": 60
+            },
+            "dragging": false,
+            "selected": false,
+            "data": {
+                "id": "chatOpenAI_0",
+                "label": "ChatOpenAI",
+                "version": 8.2,
+                "name": "chatOpenAI",
+                "type": "ChatOpenAI",
+                "baseClasses": ["ChatOpenAI", "BaseChatModel", "BaseLanguageModel", "Runnable"],
+                "category": "Chat Models",
+                "description": "Wrapper around OpenAI large language models that use the Chat endpoint",
+                "inputParams": [
+                    {
+                        "label": "Connect Credential",
+                        "name": "credential",
+                        "type": "credential",
+                        "credentialNames": ["openAIApi"],
+                        "id": "chatOpenAI_0-input-credential-credential",
+                        "display": true
+                    },
+                    {
+                        "label": "Model Name",
+                        "name": "modelName",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "default": "gpt-4o-mini",
+                        "id": "chatOpenAI_0-input-modelName-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Temperature",
+                        "name": "temperature",
+                        "type": "number",
+                        "step": 0.1,
+                        "default": 0.9,
+                        "optional": true,
+                        "id": "chatOpenAI_0-input-temperature-number",
+                        "display": true
+                    },
+                    {
+                        "label": "Streaming",
+                        "name": "streaming",
+                        "type": "boolean",
+                        "default": true,
+                        "optional": true,
+                        "additionalParams": true,
+                        "id": "chatOpenAI_0-input-streaming-boolean",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [
+                    {
+                        "label": "Cache",
+                        "name": "cache",
+                        "type": "BaseCache",
+                        "optional": true,
+                        "id": "chatOpenAI_0-input-cache-BaseCache",
+                        "display": true
+                    }
+                ],
+                "inputs": {
+                    "cache": "",
+                    "modelName": "gpt-4o-mini",
+                    "temperature": 0.9,
+                    "streaming": true
+                },
+                "outputAnchors": [
+                    {
+                        "id": "chatOpenAI_0-output-chatOpenAI-ChatOpenAI|BaseChatModel|BaseLanguageModel|Runnable",
+                        "name": "chatOpenAI",
+                        "label": "ChatOpenAI",
+                        "type": "ChatOpenAI | BaseChatModel | BaseLanguageModel | Runnable"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            }
+        },
+        {
+            "id": "doubaoImageGeneration_0",
+            "position": {
+                "x": 430,
+                "y": 60
+            },
+            "type": "customNode",
+            "width": 300,
+            "height": 500,
+            "positionAbsolute": {
+                "x": 430,
+                "y": 60
+            },
+            "dragging": false,
+            "selected": false,
+            "data": {
+                "id": "doubaoImageGeneration_0",
+                "label": "Doubao Image Generation",
+                "version": 1,
+                "name": "doubaoImageGeneration",
+                "type": "DoubaoImageGeneration",
+                "baseClasses": ["DoubaoImageGeneration", "StructuredTool", "Tool"],
+                "category": "Tools",
+                "description": "Generate images with Doubao Ark from text prompts. Use only when the user explicitly asks to create or design an image.",
+                "inputParams": [
+                    {
+                        "label": "Connect Credential",
+                        "name": "credential",
+                        "type": "credential",
+                        "credentialNames": ["doubaoArkApi"],
+                        "id": "doubaoImageGeneration_0-input-credential-credential",
+                        "display": true
+                    },
+                    {
+                        "label": "Tool Name",
+                        "name": "toolName",
+                        "type": "string",
+                        "default": "doubao_image_generation",
+                        "id": "doubaoImageGeneration_0-input-toolName-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Description",
+                        "name": "description",
+                        "type": "string",
+                        "rows": 4,
+                        "default": "Generate images from a text prompt with Doubao Ark. Use this tool only when the user explicitly asks to create, draw, design, or generate an image, poster, illustration, cover, avatar, or artwork. Do not use it for search, OCR, or image analysis.",
+                        "description": "Describe clearly when the LLM should use this tool",
+                        "id": "doubaoImageGeneration_0-input-description-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Model",
+                        "name": "model",
+                        "type": "string",
+                        "default": "doubao-seedream-5-0-260128",
+                        "id": "doubaoImageGeneration_0-input-model-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Default Size",
+                        "name": "size",
+                        "type": "string",
+                        "default": "2K",
+                        "optional": true,
+                        "additionalParams": true,
+                        "id": "doubaoImageGeneration_0-input-size-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Default Output Format",
+                        "name": "outputFormat",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "PNG",
+                                "name": "png"
+                            },
+                            {
+                                "label": "JPEG",
+                                "name": "jpeg"
+                            }
+                        ],
+                        "default": "png",
+                        "optional": true,
+                        "additionalParams": true,
+                        "id": "doubaoImageGeneration_0-input-outputFormat-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Default Watermark",
+                        "name": "watermark",
+                        "type": "boolean",
+                        "default": false,
+                        "optional": true,
+                        "additionalParams": true,
+                        "id": "doubaoImageGeneration_0-input-watermark-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Return Direct",
+                        "name": "returnDirect",
+                        "type": "boolean",
+                        "optional": true,
+                        "additionalParams": true,
+                        "id": "doubaoImageGeneration_0-input-returnDirect-boolean",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "toolName": "doubao_image_generation",
+                    "description": "Generate images from a text prompt with Doubao Ark. Use this tool only when the user explicitly asks to create, draw, design, or generate an image, poster, illustration, cover, avatar, or artwork. Do not use it for search, OCR, or image analysis.",
+                    "model": "doubao-seedream-5-0-260128",
+                    "size": "2K",
+                    "outputFormat": "png",
+                    "watermark": false,
+                    "returnDirect": false
+                },
+                "outputAnchors": [
+                    {
+                        "id": "doubaoImageGeneration_0-output-doubaoImageGeneration-DoubaoImageGeneration|StructuredTool|Tool",
+                        "name": "doubaoImageGeneration",
+                        "label": "Doubao Image Generation",
+                        "type": "DoubaoImageGeneration | StructuredTool | Tool"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            }
+        },
+        {
+            "id": "bufferMemory_1",
+            "position": {
+                "x": 430,
+                "y": 420
+            },
+            "type": "customNode",
+            "width": 300,
+            "height": 250,
+            "positionAbsolute": {
+                "x": 430,
+                "y": 420
+            },
+            "dragging": false,
+            "selected": false,
+            "data": {
+                "id": "bufferMemory_1",
+                "label": "Buffer Memory",
+                "version": 2,
+                "name": "bufferMemory",
+                "type": "BufferMemory",
+                "baseClasses": ["BufferMemory", "BaseChatMemory", "BaseMemory"],
+                "category": "Memory",
+                "description": "Retrieve chat messages stored in database",
+                "inputParams": [
+                    {
+                        "label": "Session Id",
+                        "name": "sessionId",
+                        "type": "string",
+                        "default": "",
+                        "additionalParams": true,
+                        "optional": true,
+                        "id": "bufferMemory_1-input-sessionId-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Key",
+                        "name": "memoryKey",
+                        "type": "string",
+                        "default": "chat_history",
+                        "additionalParams": true,
+                        "id": "bufferMemory_1-input-memoryKey-string",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "sessionId": "",
+                    "memoryKey": "chat_history"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "bufferMemory_1-output-bufferMemory-BufferMemory|BaseChatMemory|BaseMemory",
+                        "name": "bufferMemory",
+                        "label": "BufferMemory",
+                        "type": "BufferMemory | BaseChatMemory | BaseMemory"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            }
+        },
+        {
+            "id": "stickyNote_0",
+            "position": {
+                "x": 1120,
+                "y": 70
+            },
+            "type": "stickyNote",
+            "width": 300,
+            "height": 165,
+            "positionAbsolute": {
+                "x": 1120,
+                "y": 70
+            },
+            "dragging": false,
+            "selected": false,
+            "data": {
+                "id": "stickyNote_0",
+                "label": "Sticky Note",
+                "version": 2,
+                "name": "stickyNote",
+                "type": "StickyNote",
+                "baseClasses": ["StickyNote"],
+                "tags": ["Utilities"],
+                "category": "Utilities",
+                "description": "Add a sticky note",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "id": "stickyNote_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "Configure both OpenAI and Doubao Ark credentials before running. Ask for posters, covers, avatars, illustrations, or other generated images to trigger the tool."
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNote_0-output-stickyNote-StickyNote",
+                        "name": "stickyNote",
+                        "label": "StickyNote",
+                        "type": "StickyNote"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            }
+        },
+        {
+            "id": "toolAgent_0",
+            "position": {
+                "x": 1120,
+                "y": 240
+            },
+            "type": "customNode",
+            "width": 300,
+            "height": 500,
+            "positionAbsolute": {
+                "x": 1120,
+                "y": 240
+            },
+            "dragging": false,
+            "selected": false,
+            "data": {
+                "id": "toolAgent_0",
+                "label": "Tool Agent",
+                "version": 2,
+                "name": "toolAgent",
+                "type": "AgentExecutor",
+                "baseClasses": ["AgentExecutor", "BaseChain", "Runnable"],
+                "category": "Agents",
+                "description": "Agent that uses Function Calling to pick the tools and args to call",
+                "inputParams": [
+                    {
+                        "label": "System Message",
+                        "name": "systemMessage",
+                        "type": "string",
+                        "default": "You are a helpful AI assistant.",
+                        "rows": 4,
+                        "optional": true,
+                        "additionalParams": true,
+                        "id": "toolAgent_0-input-systemMessage-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Max Iterations",
+                        "name": "maxIterations",
+                        "type": "number",
+                        "optional": true,
+                        "additionalParams": true,
+                        "id": "toolAgent_0-input-maxIterations-number",
+                        "display": true
+                    },
+                    {
+                        "label": "Enable Detailed Streaming",
+                        "name": "enableDetailedStreaming",
+                        "type": "boolean",
+                        "default": false,
+                        "optional": true,
+                        "additionalParams": true,
+                        "id": "toolAgent_0-input-enableDetailedStreaming-boolean",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [
+                    {
+                        "label": "Tools",
+                        "name": "tools",
+                        "type": "Tool",
+                        "list": true,
+                        "id": "toolAgent_0-input-tools-Tool",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory",
+                        "name": "memory",
+                        "type": "BaseChatMemory",
+                        "id": "toolAgent_0-input-memory-BaseChatMemory",
+                        "display": true
+                    },
+                    {
+                        "label": "Tool Calling Chat Model",
+                        "name": "model",
+                        "type": "BaseChatModel",
+                        "id": "toolAgent_0-input-model-BaseChatModel",
+                        "display": true
+                    }
+                ],
+                "inputs": {
+                    "tools": ["{{doubaoImageGeneration_0.data.instance}}"],
+                    "memory": "{{bufferMemory_1.data.instance}}",
+                    "model": "{{chatOpenAI_0.data.instance}}",
+                    "systemMessage": "You are a helpful AI assistant. When the user explicitly asks to create or design an image, call the doubao_image_generation tool. After the tool runs, briefly describe the generated result in natural language.",
+                    "maxIterations": 6,
+                    "enableDetailedStreaming": false
+                },
+                "outputAnchors": [
+                    {
+                        "id": "toolAgent_0-output-toolAgent-AgentExecutor|BaseChain|Runnable",
+                        "name": "toolAgent",
+                        "label": "AgentExecutor",
+                        "type": "AgentExecutor | BaseChain | Runnable"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            }
+        }
+    ],
+    "edges": [
+        {
+            "id": "doubaoImageGeneration_0-toolAgent_0",
+            "source": "doubaoImageGeneration_0",
+            "sourceHandle": "doubaoImageGeneration_0-output-doubaoImageGeneration-DoubaoImageGeneration|StructuredTool|Tool",
+            "target": "toolAgent_0",
+            "targetHandle": "toolAgent_0-input-tools-Tool",
+            "type": "buttonedge"
+        },
+        {
+            "id": "chatOpenAI_0-toolAgent_0",
+            "source": "chatOpenAI_0",
+            "sourceHandle": "chatOpenAI_0-output-chatOpenAI-ChatOpenAI|BaseChatModel|BaseLanguageModel|Runnable",
+            "target": "toolAgent_0",
+            "targetHandle": "toolAgent_0-input-model-BaseChatModel",
+            "type": "buttonedge"
+        },
+        {
+            "id": "bufferMemory_1-toolAgent_0",
+            "source": "bufferMemory_1",
+            "sourceHandle": "bufferMemory_1-output-bufferMemory-BufferMemory|BaseChatMemory|BaseMemory",
+            "target": "toolAgent_0",
+            "targetHandle": "toolAgent_0-input-memory-BaseChatMemory",
+            "type": "buttonedge"
+        }
+    ]
+}
