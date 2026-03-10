@@ -54,6 +54,7 @@ import { MemoizedReactMarkdown } from '@/ui-component/markdown/MemoizedReactMark
 import { SafeHTML } from '@/ui-component/safe/SafeHTML'
 import SourceDocDialog from '@/ui-component/dialog/SourceDocDialog'
 import ChatFeedbackContentDialog from '@/ui-component/dialog/ChatFeedbackContentDialog'
+import ArtifactImageDialog from '@/ui-component/dialog/ArtifactImageDialog'
 import StarterPromptsCard from '@/ui-component/cards/StarterPromptsCard'
 import AgentReasoningCard from './AgentReasoningCard'
 import AgentExecutedDataCard from './AgentExecutedDataCard'
@@ -85,7 +86,13 @@ import { baseURL, maxScroll } from '@/store/constant'
 import { enqueueSnackbar as enqueueSnackbarAction, closeSnackbar as closeSnackbarAction } from '@/store/actions'
 
 // Utils
-import { isValidURL, removeDuplicateURL, setLocalStorageChatflow, getLocalStorageChatflow } from '@/utils/genericHelper'
+import {
+    isValidURL,
+    removeDuplicateURL,
+    setLocalStorageChatflow,
+    getLocalStorageChatflow,
+    normalizeArtifactsForDisplay
+} from '@/utils/genericHelper'
 import useNotifier from '@/utils/useNotifier'
 import FollowUpPromptsCard from '@/ui-component/cards/FollowUpPromptsCard'
 
@@ -297,6 +304,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         useMediaSource: false,
         abortController: null
     })
+    const [selectedArtifactImage, setSelectedArtifactImage] = useState(null)
 
     // Ref to prevent auto-scroll during TTS actions (using ref to avoid re-renders)
     const isTTSActionRef = useRef(false)
@@ -717,18 +725,11 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
     }
 
     const updateLastMessageArtifacts = (artifacts) => {
-        artifacts.forEach((artifact) => {
-            if (artifact.type === 'png' || artifact.type === 'jpeg') {
-                artifact.data = `${baseURL}/api/v1/get-upload-file?chatflowId=${chatflowid}&chatId=${chatId}&fileName=${artifact.data.replace(
-                    'FILE-STORAGE::',
-                    ''
-                )}`
-            }
-        })
+        const normalizedArtifacts = normalizeArtifactsForDisplay(baseURL, artifacts, chatflowid, chatId)
         setMessages((prevMessages) => {
             let allMessages = [...cloneDeep(prevMessages)]
             if (allMessages[allMessages.length - 1].type === 'userMessage') return allMessages
-            allMessages[allMessages.length - 1].artifacts = artifacts
+            allMessages[allMessages.length - 1].artifacts = normalizedArtifacts
             return allMessages
         })
     }
@@ -925,6 +926,20 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
 
         if (data.chatId) {
             setChatId(data.chatId)
+            setMessages((prevMessages) => {
+                let allMessages = [...cloneDeep(prevMessages)]
+                if (allMessages[allMessages.length - 1]?.type !== 'apiMessage') return allMessages
+                if (!allMessages[allMessages.length - 1]?.artifacts) return allMessages
+
+                allMessages[allMessages.length - 1].artifacts = normalizeArtifactsForDisplay(
+                    baseURL,
+                    allMessages[allMessages.length - 1].artifacts,
+                    chatflowid,
+                    data.chatId
+                )
+
+                return allMessages
+            })
         }
 
         if (input === '' && data.question) {
@@ -1102,7 +1117,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                             agentReasoning: data?.agentReasoning,
                             agentFlowExecutedData: data?.agentFlowExecutedData,
                             action: data?.action,
-                            artifacts: data?.artifacts,
+                            artifacts: normalizeArtifactsForDisplay(baseURL, data?.artifacts, chatflowid, data?.chatId || chatId),
                             type: 'apiMessage',
                             feedback: null
                         }
@@ -1350,15 +1365,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                 if (message.agentReasoning) obj.agentReasoning = message.agentReasoning
                 if (message.action) obj.action = message.action
                 if (message.artifacts) {
-                    obj.artifacts = message.artifacts
-                    obj.artifacts.forEach((artifact) => {
-                        if (artifact.type === 'png' || artifact.type === 'jpeg') {
-                            artifact.data = `${baseURL}/api/v1/get-upload-file?chatflowId=${chatflowid}&chatId=${chatId}&fileName=${artifact.data.replace(
-                                'FILE-STORAGE::',
-                                ''
-                            )}`
-                        }
-                    })
+                    obj.artifacts = normalizeArtifactsForDisplay(baseURL, message.artifacts, chatflowid, chatId)
                 }
                 if (message.fileUploads) {
                     obj.fileUploads = message.fileUploads
@@ -2341,18 +2348,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
     }
 
     const agentReasoningArtifacts = (artifacts) => {
-        const newArtifacts = cloneDeep(artifacts)
-        for (let i = 0; i < newArtifacts.length; i++) {
-            const artifact = newArtifacts[i]
-            if (artifact && (artifact.type === 'png' || artifact.type === 'jpeg')) {
-                const data = artifact.data
-                newArtifacts[i].data = `${baseURL}/api/v1/get-upload-file?chatflowId=${chatflowid}&chatId=${chatId}&fileName=${data.replace(
-                    'FILE-STORAGE::',
-                    ''
-                )}`
-            }
-        }
-        return newArtifacts
+        return normalizeArtifactsForDisplay(baseURL, cloneDeep(artifacts), chatflowid, chatId)
     }
 
     const renderArtifacts = (item, index, isAgentReasoning) => {
@@ -2365,8 +2361,10 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                         m: 0,
                         mt: 2,
                         mb: 2,
-                        flex: '0 0 auto'
+                        flex: '0 0 auto',
+                        cursor: 'zoom-in'
                     }}
+                    onClick={() => setSelectedArtifactImage(item)}
                 >
                     <CardMedia
                         component='img'
@@ -3258,6 +3256,12 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                 )}
             </div>
             <SourceDocDialog show={sourceDialogOpen} dialogProps={sourceDialogProps} onCancel={() => setSourceDialogOpen(false)} />
+            <ArtifactImageDialog
+                open={!!selectedArtifactImage}
+                artifact={selectedArtifactImage}
+                onClose={() => setSelectedArtifactImage(null)}
+                title='Generated Image'
+            />
             <ChatFeedbackContentDialog
                 show={showFeedbackContentDialog}
                 onCancel={() => setShowFeedbackContentDialog(false)}

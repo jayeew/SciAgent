@@ -46,6 +46,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import { MemoizedReactMarkdown } from '@/ui-component/markdown/MemoizedReactMarkdown'
 import { SafeHTML } from '@/ui-component/safe/SafeHTML'
 import SourceDocDialog from '@/ui-component/dialog/SourceDocDialog'
+import ArtifactImageDialog from '@/ui-component/dialog/ArtifactImageDialog'
 import { MultiDropdown } from '@/ui-component/dropdown/MultiDropdown'
 import { StyledButton } from '@/ui-component/button/StyledButton'
 import StatsCard from '@/ui-component/cards/StatsCard'
@@ -62,7 +63,7 @@ import useApi from '@/hooks/useApi'
 import useConfirm from '@/hooks/useConfirm'
 
 // Utils
-import { isValidURL, removeDuplicateURL } from '@/utils/genericHelper'
+import { isValidURL, removeDuplicateURL, normalizeArtifactsForDisplay } from '@/utils/genericHelper'
 import useNotifier from '@/utils/useNotifier'
 import { baseURL } from '@/store/constant'
 
@@ -210,6 +211,7 @@ const ViewMessagesDialog = ({ show, dialogProps, onCancel }) => {
     const [currentPage, setCurrentPage] = useState(1)
     const [pageLimit, setPageLimit] = useState(10)
     const [total, setTotal] = useState(0)
+    const [selectedArtifactImage, setSelectedArtifactImage] = useState(null)
     const onChange = (event, page) => {
         setCurrentPage(page)
         refresh(page, pageLimit, startDate, endDate, chatTypeFilter, feedbackTypeFilter)
@@ -510,14 +512,7 @@ const ViewMessagesDialog = ({ show, dialogProps, onCancel }) => {
             if (chatmsg.fileAnnotations) obj.fileAnnotations = chatmsg.fileAnnotations
             if (chatmsg.agentReasoning) obj.agentReasoning = chatmsg.agentReasoning
             if (chatmsg.artifacts) {
-                obj.artifacts = chatmsg.artifacts
-                obj.artifacts.forEach((artifact) => {
-                    if (artifact.type === 'png' || artifact.type === 'jpeg') {
-                        artifact.data = `${baseURL}/api/v1/get-upload-file?chatflowId=${chatmsg.chatflowid}&chatId=${
-                            chatmsg.chatId
-                        }&fileName=${artifact.data.replace('FILE-STORAGE::', '')}`
-                    }
-                })
+                obj.artifacts = normalizeArtifactsForDisplay(baseURL, chatmsg.artifacts, chatmsg.chatflowid, chatmsg.chatId)
             }
             loadedMessages.push(obj)
         }
@@ -784,17 +779,7 @@ const ViewMessagesDialog = ({ show, dialogProps, onCancel }) => {
     }, [feedbackTypeFilter])
 
     const agentReasoningArtifacts = (artifacts) => {
-        const newArtifacts = cloneDeep(artifacts)
-        for (let i = 0; i < newArtifacts.length; i++) {
-            const artifact = newArtifacts[i]
-            if (artifact && (artifact.type === 'png' || artifact.type === 'jpeg')) {
-                const data = artifact.data
-                newArtifacts[i].data = `${baseURL}/api/v1/get-upload-file?chatflowId=${
-                    dialogProps.chatflow.id
-                }&chatId=${selectedChatId}&fileName=${data.replace('FILE-STORAGE::', '')}`
-            }
-        }
-        return newArtifacts
+        return normalizeArtifactsForDisplay(baseURL, cloneDeep(artifacts), dialogProps.chatflow.id, selectedChatId)
     }
 
     const renderArtifacts = (item, index, isAgentReasoning) => {
@@ -807,8 +792,10 @@ const ViewMessagesDialog = ({ show, dialogProps, onCancel }) => {
                         m: 0,
                         mt: 2,
                         mb: 2,
-                        flex: '0 0 auto'
+                        flex: '0 0 auto',
+                        cursor: 'zoom-in'
                     }}
+                    onClick={() => setSelectedArtifactImage(item)}
                 >
                     <CardMedia
                         component='img'
@@ -1591,6 +1578,12 @@ const ViewMessagesDialog = ({ show, dialogProps, onCancel }) => {
                         )}
                     </div>
                     <SourceDocDialog show={sourceDialogOpen} dialogProps={sourceDialogProps} onCancel={() => setSourceDialogOpen(false)} />
+                    <ArtifactImageDialog
+                        open={!!selectedArtifactImage}
+                        artifact={selectedArtifactImage}
+                        onClose={() => setSelectedArtifactImage(null)}
+                        title='Generated Image'
+                    />
                     <ConfirmDeleteMessageDialog
                         show={hardDeleteDialogOpen}
                         dialogProps={hardDeleteDialogProps}

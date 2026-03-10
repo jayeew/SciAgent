@@ -557,6 +557,39 @@ export const getFolderName = (base64ArrayStr) => {
     }
 }
 
+export const resolveArtifactDataUrl = (baseURL, artifact, chatflowId, chatId) => {
+    if (!artifact || typeof artifact !== 'object') return artifact
+
+    const data = artifact.data
+    if (typeof data !== 'string') return data
+
+    if (artifact.type === 'png' || artifact.type === 'jpeg') {
+        if (data.startsWith('FILE-STORAGE::') && chatflowId && chatId) {
+            const fileName = encodeURIComponent(data.replace('FILE-STORAGE::', ''))
+            return `${baseURL}/api/v1/get-upload-file?chatflowId=${chatflowId}&chatId=${chatId}&fileName=${fileName}`
+        }
+
+        if (data.startsWith('http://') || data.startsWith('https://') || data.startsWith('data:') || data.startsWith('blob:')) {
+            return data
+        }
+    }
+
+    return data
+}
+
+export const normalizeArtifactsForDisplay = (baseURL, artifacts = [], chatflowId, chatId) => {
+    if (!Array.isArray(artifacts)) return []
+
+    return artifacts.map((artifact) => {
+        if (!artifact) return artifact
+
+        return {
+            ...artifact,
+            data: resolveArtifactDataUrl(baseURL, artifact, chatflowId, chatId)
+        }
+    })
+}
+
 const _removeCredentialId = (obj) => {
     if (!obj || typeof obj !== 'object') return obj
 

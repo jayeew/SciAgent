@@ -71,6 +71,7 @@ import { getWorkspaceSearchOptions } from '../enterprise/utils/ControllerService
 import { TokenUsageService } from '../enterprise/services/token-usage.service'
 import { WorkspaceCreditService } from '../enterprise/services/workspace-credit.service'
 import textToSpeechService from '../services/text-to-speech'
+import mediaGenerationService from '../services/media-generation'
 import { OMIT_QUEUE_JOB_DATA } from './constants'
 import { executeAgentFlow } from './buildAgentflow'
 import { Workspace } from '../enterprise/database/entities/workspace.entity'
@@ -367,7 +368,8 @@ const recordTokenUsage = async ({
     chatMessageId,
     sessionId,
     tokenAuditContext,
-    usagePayloads
+    usagePayloads,
+    credentialAccesses = []
 }: {
     workspaceId: string
     organizationId: string
@@ -380,10 +382,15 @@ const recordTokenUsage = async ({
     sessionId?: string
     tokenAuditContext?: ICommonObject
     usagePayloads: any[]
+    credentialAccesses?: any[]
 }) => {
     try {
         const mergedPayloads = mergeAndDedupePayloads(usagePayloads, tokenAuditContext)
         const tokenUsageService = new TokenUsageService()
+        const mergedCredentialAccesses = [
+            ...(((tokenAuditContext?.credentialAccesses as any[]) || []) as any[]),
+            ...(Array.isArray(credentialAccesses) ? credentialAccesses : [])
+        ]
         await tokenUsageService.recordTokenUsage({
             workspaceId,
             organizationId,
@@ -395,11 +402,71 @@ const recordTokenUsage = async ({
             chatMessageId,
             sessionId,
             usagePayloads: mergedPayloads,
-            credentialAccesses: (tokenAuditContext?.credentialAccesses as any[]) || []
+            credentialAccesses: mergedCredentialAccesses
         })
     } catch (error) {
         logger.warn(`[server]: Failed to record token usage: ${getErrorMessage(error)}`)
     }
+}
+
+const mergeMediaCredentialAccess = (
+    tokenAuditContext: ICommonObject | undefined,
+    credentialAccess?: { credentialId?: string; credentialName?: string; model?: string }
+): any[] => {
+    if (!credentialAccess) return []
+    if (!credentialAccess.credentialId) return [credentialAccess]
+
+    const recordedAccesses = Array.isArray(tokenAuditContext?.credentialAccesses) ? (tokenAuditContext?.credentialAccesses as any[]) : []
+    for (let index = recordedAccesses.length - 1; index >= 0; index -= 1) {
+        const recordedAccess = recordedAccesses[index]
+        if (!recordedAccess || recordedAccess.credentialId !== credentialAccess.credentialId) continue
+
+        if (!recordedAccess.credentialName && credentialAccess.credentialName) {
+            recordedAccess.credentialName = credentialAccess.credentialName
+        }
+        if (!recordedAccess.model && credentialAccess.model) {
+            recordedAccess.model = credentialAccess.model
+        }
+
+        return []
+    }
+
+    return [credentialAccess]
+}
+
+const getPendingMediaBillingDetails = (result: ICommonObject, tokenAuditContext?: ICommonObject) => {
+    const billingDetails: any[] = []
+    const seenKeys = new Set<string>()
+
+    const appendBillingDetails = (value?: ICommonObject) => {
+        const details = mediaGenerationService.getMediaGenerationBillingDetails(
+            value ? ({ mediaBilling: value } as ICommonObject) : undefined
+        )
+        if (!details) return
+
+        const key = JSON.stringify(details)
+        if (seenKeys.has(key)) return
+        seenKeys.add(key)
+        billingDetails.push(details)
+    }
+
+    appendBillingDetails(result?.mediaBilling as ICommonObject | undefined)
+
+    const queuedBillings = Array.isArray(tokenAuditContext?.mediaGenerationBillings)
+        ? (tokenAuditContext?.mediaGenerationBillings as ICommonObject[])
+        : []
+    for (const queuedBilling of queuedBillings) {
+        appendBillingDetails(queuedBilling)
+    }
+
+    if (result?.mediaBilling) {
+        delete result.mediaBilling
+    }
+    if (tokenAuditContext && Array.isArray(tokenAuditContext.mediaGenerationBillings)) {
+        tokenAuditContext.mediaGenerationBillings = []
+    }
+
+    return billingDetails
 }
 
 /*
@@ -1110,6 +1177,27 @@ export const executeFlow = async ({
             )
         }
 
+        const additionalCredentialAccesses: any[] = []
+        const mediaBillingDetailsList = getPendingMediaBillingDetails(result, tokenAuditContext)
+        for (const mediaBillingDetails of mediaBillingDetailsList) {
+            try {
+                await mediaGenerationService.consumeMediaGenerationCredit({
+                    workspaceId,
+                    userId,
+                    billingDetails: mediaBillingDetails
+                })
+
+                const credentialAccess = await mediaGenerationService.getCredentialAccessForUsage(
+                    mediaBillingDetails.credentialId,
+                    mediaBillingDetails.model,
+                    runParams
+                )
+                additionalCredentialAccesses.push(...mergeMediaCredentialAccess(tokenAuditContext, credentialAccess))
+            } catch (billingError) {
+                logger.warn(`[server]: Media generation credit consumption failed: ${getErrorMessage(billingError)}`)
+            }
+        }
+
         await recordTokenUsage({
             workspaceId,
             organizationId: orgId,
@@ -1120,7 +1208,8 @@ export const executeFlow = async ({
             chatMessageId: chatMessage?.id,
             sessionId,
             tokenAuditContext,
-            usagePayloads: [result || {}]
+            usagePayloads: [result || {}],
+            credentialAccesses: additionalCredentialAccesses
         })
 
         return result

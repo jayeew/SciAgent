@@ -640,6 +640,7 @@ export class WorkspaceCreditService {
             totalTokens: number
             inputTokens?: number
             outputTokens?: number
+            usageBreakdown?: Record<string, any>
         }>
     ) {
         const normalizedUsages = usages.map((usage) => {
@@ -665,7 +666,20 @@ export class WorkspaceCreditService {
             }
         })
 
-        const validUsages = normalizedUsages.filter((usage) => usage.billableTotalTokens > 0)
+        const validUsages = normalizedUsages.filter((usage) => {
+            const generatedImages = Number(usage.usageBreakdown?.generated_images) || Number(usage.usageBreakdown?.generatedimages) || 0
+
+            if (generatedImages > 0) {
+                logger.info(
+                    `[workspace-credit] skip token charge for media usage workspaceId=${workspaceId} userId=${userId} credentialId=${
+                        usage.credentialId || '-'
+                    } model=${usage.model || 'unknown'} generatedImages=${generatedImages}`
+                )
+                return false
+            }
+
+            return usage.billableTotalTokens > 0
+        })
         if (!validUsages.length) {
             logger.info(`[workspace-credit] skip consume: no valid usages workspaceId=${workspaceId} userId=${userId}`)
             return { workspaceId, userId, creditConsumed: 0, transactions: [] as WorkspaceCreditTransaction[] }
@@ -770,6 +784,122 @@ export class WorkspaceCreditService {
         } catch (error) {
             if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction()
             logger.error(`[workspace-credit] consume failed workspaceId=${workspaceId} userId=${userId}`, error)
+            throw error
+        } finally {
+            if (!queryRunner.isReleased) await queryRunner.release()
+        }
+    }
+
+    public async consumeCreditByGeneratedImages(
+        workspaceId: string,
+        userId: string,
+        usage: {
+            credentialId?: string
+            credentialName?: string
+            provider?: string
+            model?: string
+            generatedImages: number
+            inputRmbPerImage: number
+        }
+    ) {
+        const normalizedGeneratedImages = Number(usage.generatedImages)
+        if (!Number.isFinite(normalizedGeneratedImages) || normalizedGeneratedImages < 0) {
+            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid generated image count')
+        }
+
+        const normalizedInputRmbPerImage = Number(usage.inputRmbPerImage)
+        if (!Number.isFinite(normalizedInputRmbPerImage) || normalizedInputRmbPerImage < 0) {
+            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid input RMB/image')
+        }
+
+        const queryRunner = this.dataSource.createQueryRunner()
+        await queryRunner.connect()
+
+        try {
+            await queryRunner.startTransaction()
+
+            const workspaceUser = await queryRunner.manager.findOneBy(WorkspaceUser, {
+                workspaceId,
+                userId
+            })
+
+            if (!workspaceUser) {
+                throw new InternalFlowiseError(StatusCodes.NOT_FOUND, WorkspaceCreditErrorMessage.WORKSPACE_USER_NOT_FOUND)
+            }
+
+            const credential = usage.credentialId
+                ? await queryRunner.manager.findOneBy(Credential, {
+                      id: usage.credentialId
+                  })
+                : undefined
+            const credentialName = usage.credentialName || credential?.name || credential?.credentialName || 'Unknown Credential'
+            const credentialMultiplierValue = Number(credential?.creditConsumptionMultiplier)
+            const credentialMultiplier =
+                Number.isFinite(credentialMultiplierValue) && credentialMultiplierValue > 0 ? credentialMultiplierValue : 1
+            const imageCostRmb = normalizedGeneratedImages * normalizedInputRmbPerImage
+            const baseCredit = imageCostRmb * 100
+            const consumedCredit = Math.ceil(baseCredit * credentialMultiplier - Number.EPSILON)
+
+            if (consumedCredit <= 0) {
+                await queryRunner.rollbackTransaction()
+                logger.info(
+                    `[workspace-credit] skip image consume workspaceId=${workspaceId} userId=${userId} credentialId=${
+                        usage.credentialId || '-'
+                    } model=${
+                        usage.model || 'unknown'
+                    } generatedImages=${normalizedGeneratedImages} inputRmbPerImage=${normalizedInputRmbPerImage} imageCostRmb=${imageCostRmb.toFixed(
+                        6
+                    )} baseCredit=${baseCredit} credentialMultiplier=${credentialMultiplier}`
+                )
+                return {
+                    workspaceId,
+                    userId,
+                    creditConsumed: 0,
+                    creditBalance: workspaceUser.credit,
+                    transaction: null
+                }
+            }
+
+            workspaceUser.credit = (workspaceUser.credit ?? 0) - consumedCredit
+            await queryRunner.manager.save(WorkspaceUser, workspaceUser)
+
+            const transaction = queryRunner.manager.create(WorkspaceCreditTransaction, {
+                workspaceId,
+                userId,
+                type: WorkspaceCreditTransactionType.CONSUME,
+                amount: -consumedCredit,
+                balance: workspaceUser.credit,
+                credentialName,
+                credentialId: usage.credentialId,
+                description: `Image generation consumption: provider=${usage.provider || 'unknown'}, model=${
+                    usage.model || 'unknown'
+                }, generatedImages=${normalizedGeneratedImages}, inputRmbPerImage=${normalizedInputRmbPerImage}, formula=inputRmbPerImage*generatedImages*100*credentialMultiplier, imageCostRmb=${imageCostRmb.toFixed(
+                    6
+                )}, baseCredit=${baseCredit.toFixed(6)}, credentialMultiplier=${credentialMultiplier}, chargedCredit=${consumedCredit}`
+            })
+            const savedTransaction = await queryRunner.manager.save(WorkspaceCreditTransaction, transaction)
+
+            await queryRunner.commitTransaction()
+            logger.info(
+                `[workspace-credit] image consume done workspaceId=${workspaceId} userId=${userId} credentialId=${
+                    usage.credentialId || '-'
+                } provider=${usage.provider || 'unknown'} model=${
+                    usage.model || 'unknown'
+                } generatedImages=${normalizedGeneratedImages} inputRmbPerImage=${normalizedInputRmbPerImage} consumed=${consumedCredit} balance=${
+                    workspaceUser.credit ?? 0
+                }`
+            )
+
+            return {
+                workspaceId,
+                userId,
+                creditConsumed: consumedCredit,
+                creditBalance: workspaceUser.credit,
+                transaction: savedTransaction
+            }
+        } catch (error) {
+            if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction()
+            logger.error(`[workspace-credit] image consume failed workspaceId=${workspaceId} userId=${userId}`, error)
             throw error
         } finally {
             if (!queryRunner.isReleased) await queryRunner.release()

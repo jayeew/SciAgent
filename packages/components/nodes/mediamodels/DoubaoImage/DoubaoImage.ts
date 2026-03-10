@@ -5,16 +5,14 @@ import {
     DEFAULT_DOUBAO_IMAGE_MODEL,
     DEFAULT_DOUBAO_IMAGE_OUTPUT_FORMAT,
     DEFAULT_DOUBAO_IMAGE_SIZE,
-    DEFAULT_DOUBAO_IMAGE_TOOL_DESCRIPTION,
-    DEFAULT_DOUBAO_IMAGE_TOOL_NAME,
     DEFAULT_DOUBAO_IMAGE_WATERMARK,
     DOUBAO_IMAGE_SIZE_OPTIONS,
-    DoubaoImageGenerationTool,
+    DoubaoImageModel,
     normalizeDoubaoImageSize,
     normalizeDoubaoOutputFormat
 } from './core'
 
-class DoubaoImageGeneration_Tools implements INode {
+class DoubaoImage_MediaModels implements INode {
     label: string
     name: string
     version: number
@@ -27,15 +25,14 @@ class DoubaoImageGeneration_Tools implements INode {
     inputs: INodeParams[]
 
     constructor() {
-        this.label = 'Doubao Image Generation'
-        this.name = 'doubaoImageGeneration'
+        this.label = 'Doubao Image'
+        this.name = 'doubaoImage'
         this.version = 1.0
-        this.type = 'DoubaoImageGeneration'
+        this.type = 'DoubaoImage'
         this.icon = 'doubao.svg'
-        this.category = 'Tools'
-        this.description =
-            'Generate images with Doubao Ark from text prompts. Use only when the user explicitly asks to create or design an image.'
-        this.baseClasses = Array.from(new Set([this.type, ...getBaseClasses(DoubaoImageGenerationTool), 'Tool']))
+        this.category = 'Media Models'
+        this.description = 'Generate images with Doubao Ark from conversational prompts'
+        this.baseClasses = Array.from(new Set([this.type, ...getBaseClasses(DoubaoImageModel), 'Runnable']))
         this.credential = {
             label: 'Connect Credential',
             name: 'credential',
@@ -43,20 +40,6 @@ class DoubaoImageGeneration_Tools implements INode {
             credentialNames: ['doubaoArkApi']
         }
         this.inputs = [
-            {
-                label: 'Tool Name',
-                name: 'toolName',
-                type: 'string',
-                default: DEFAULT_DOUBAO_IMAGE_TOOL_NAME
-            },
-            {
-                label: 'Description',
-                name: 'description',
-                type: 'string',
-                rows: 4,
-                default: DEFAULT_DOUBAO_IMAGE_TOOL_DESCRIPTION,
-                description: 'Describe clearly when the LLM should use this tool'
-            },
             {
                 label: 'Model',
                 name: 'model',
@@ -98,40 +81,23 @@ class DoubaoImageGeneration_Tools implements INode {
                 default: DEFAULT_DOUBAO_IMAGE_WATERMARK,
                 optional: true,
                 additionalParams: true
-            },
-            {
-                label: 'Return Direct',
-                name: 'returnDirect',
-                type: 'boolean',
-                optional: true,
-                additionalParams: true
             }
         ]
     }
 
     async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
-        const toolName = (nodeData.inputs?.toolName as string)?.trim() || DEFAULT_DOUBAO_IMAGE_TOOL_NAME
-        const description = (nodeData.inputs?.description as string)?.trim() || DEFAULT_DOUBAO_IMAGE_TOOL_DESCRIPTION
         const model = (nodeData.inputs?.model as string)?.trim() || DEFAULT_DOUBAO_IMAGE_MODEL
         const size = normalizeDoubaoImageSize(nodeData.inputs?.size as string) || DEFAULT_DOUBAO_IMAGE_SIZE
         const outputFormat = normalizeDoubaoOutputFormat(nodeData.inputs?.outputFormat as string)
         const watermark =
             typeof nodeData.inputs?.watermark === 'boolean' ? (nodeData.inputs?.watermark as boolean) : DEFAULT_DOUBAO_IMAGE_WATERMARK
-        const returnDirect = (nodeData.inputs?.returnDirect as boolean) ?? false
-        const normalizedToolName =
-            toolName
-                .toLowerCase()
-                .replace(/ /g, '_')
-                .replace(/[^a-z0-9_-]/g, '') || DEFAULT_DOUBAO_IMAGE_TOOL_NAME
 
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const arkApiKey = getCredentialParam('arkApiKey', credentialData, nodeData)
         const baseUrl = getCredentialParam('baseUrl', credentialData, nodeData, DEFAULT_DOUBAO_ARK_BASE_URL)
         const inputRmbPerImage = Number(getCredentialParam('inputRmbPerImage', credentialData, nodeData, 0))
 
-        return new DoubaoImageGenerationTool({
-            name: normalizedToolName,
-            description,
+        return new DoubaoImageModel({
             apiKey: arkApiKey,
             credentialId: nodeData.credential,
             baseUrl,
@@ -140,12 +106,10 @@ class DoubaoImageGeneration_Tools implements INode {
             outputFormat,
             watermark,
             inputRmbPerImage,
-            returnDirect,
             chatflowid: options.chatflowid,
-            orgId: options.orgId,
-            tokenAuditContext: options.tokenAuditContext
+            orgId: options.orgId
         })
     }
 }
 
-module.exports = { nodeClass: DoubaoImageGeneration_Tools }
+module.exports = { nodeClass: DoubaoImage_MediaModels }

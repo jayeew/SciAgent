@@ -4,6 +4,7 @@ import { addSingleFileToStorage } from '../../../../src/storageUtils'
 import {
     DEFAULT_DOUBAO_IMAGE_MODEL,
     DoubaoImageGenerationTool,
+    normalizeDoubaoImageSize,
     normalizeDoubaoOutputFormat,
     resolveDoubaoImageGenerationArgs
 } from '../../../../nodes/tools/DoubaoImageGeneration/core'
@@ -61,6 +62,12 @@ describe('DoubaoImageGeneration helpers', () => {
         expect(normalizeDoubaoOutputFormat('jpg')).toBe('jpeg')
         expect(normalizeDoubaoOutputFormat('jpeg')).toBe('jpeg')
         expect(normalizeDoubaoOutputFormat()).toBe('png')
+    })
+
+    it('normalizes doubao image size labels and legacy values to pixels', () => {
+        expect(normalizeDoubaoImageSize('2K (4:3)')).toBe('2048x1536')
+        expect(normalizeDoubaoImageSize('2048 x 1152')).toBe('2048x1152')
+        expect(normalizeDoubaoImageSize('2K')).toBe('2048x2048')
     })
 
     it('resolves runtime args over node defaults', () => {
@@ -240,6 +247,45 @@ describe('DoubaoImageGenerationTool', () => {
         await expect(createTool().call({ prompt: 'Draw a cover image' }, undefined, undefined, { chatId: 'chat-1' })).rejects.toThrow(
             'Invalid request body'
         )
+    })
+
+    it('surfaces a safe API error message for non-2xx resolved responses', async () => {
+        mockedSecureAxiosRequest.mockResolvedValue({
+            status: 400,
+            data: {
+                error: {
+                    message: 'Invalid request body'
+                }
+            }
+        } as any)
+
+        await expect(createTool().call({ prompt: 'Draw a cover image' }, undefined, undefined, { chatId: 'chat-1' })).rejects.toThrow(
+            'Invalid request body'
+        )
+    })
+
+    it('parses stringified JSON image payloads', async () => {
+        mockedSecureAxiosRequest.mockResolvedValue({
+            status: 200,
+            data: JSON.stringify({
+                model: DEFAULT_DOUBAO_IMAGE_MODEL,
+                created: 1757321139,
+                data: [{ url: 'https://example.com/image-1.jpeg?signature=abc', size: '2048x2048' }],
+                usage: { generated_images: 1, output_tokens: 16384, total_tokens: 16384 }
+            })
+        } as any)
+        mockedSecureFetch.mockResolvedValue(createDownloadResponse('', 'image-bytes'))
+        mockedAddSingleFileToStorage.mockResolvedValue({
+            path: 'FILE-STORAGE::doubao_generated_image_1700000000000_1.jpeg',
+            totalSize: 0.5
+        })
+
+        const result = await createTool().call({ prompt: 'Draw a sci-fi poster' }, undefined, undefined, { chatId: 'chat-1' })
+        const parsed = parseToolResponse(result)
+
+        expect(parsed.summary.imageCount).toBe(1)
+        expect(parsed.summary.usage).toEqual({ generated_images: 1, output_tokens: 16384, total_tokens: 16384 })
+        expect(parsed.artifacts).toEqual([{ type: 'jpeg', data: 'FILE-STORAGE::doubao_generated_image_1700000000000_1.jpeg' }])
     })
 
     it('throws when no API key is configured', async () => {

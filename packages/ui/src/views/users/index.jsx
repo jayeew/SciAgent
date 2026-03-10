@@ -59,7 +59,8 @@ const TOKEN_STAT_FIELDS = [
     { key: 'audioInputTokens', label: 'Audio Input Tokens' },
     { key: 'audioOutputTokens', label: 'Audio Output Tokens' },
     { key: 'seconds', label: 'Seconds' },
-    { key: 'inputCharacters', label: 'Input Characters' }
+    { key: 'inputCharacters', label: 'Input Characters' },
+    { key: 'generatedImages', label: 'Generated Images' }
 ]
 
 const getTokenStatValue = (row, key) => {
@@ -68,6 +69,9 @@ const getTokenStatValue = (row, key) => {
     }
     if (key === 'inputCharacters') {
         return Number(row?.usageBreakdown?.input_characters) || Number(row?.usageBreakdown?.characters) || 0
+    }
+    if (key === 'generatedImages') {
+        return Number(row?.usageBreakdown?.generated_images) || Number(row?.usageBreakdown?.generatedimages) || 0
     }
     return row?.[key] || 0
 }

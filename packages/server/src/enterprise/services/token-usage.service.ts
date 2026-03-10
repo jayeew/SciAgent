@@ -729,7 +729,8 @@ export class TokenUsageService {
                 model: row.model,
                 totalTokens: row.totalTokens || 0,
                 inputTokens: row.inputTokens || 0,
-                outputTokens: row.outputTokens || 0
+                outputTokens: row.outputTokens || 0,
+                usageBreakdown: parseJsonRecord(row.usageBreakdown)
             }))
         )
         logger.info(

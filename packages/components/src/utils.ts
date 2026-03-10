@@ -716,7 +716,25 @@ export const mapChatMessageToBaseMessage = async (chatmessages: any[] = [], orgI
 
     for (const message of chatmessages) {
         if (message.role === 'apiMessage' || message.type === 'apiMessage') {
-            chatHistory.push(new AIMessage(message.content || ''))
+            const additionalKwargs: ICommonObject = {}
+            if (message.artifacts) {
+                try {
+                    additionalKwargs.artifacts = typeof message.artifacts === 'string' ? JSON.parse(message.artifacts) : message.artifacts
+                } catch (error) {
+                    additionalKwargs.artifacts = message.artifacts
+                }
+            }
+
+            if (Object.keys(additionalKwargs).length) {
+                chatHistory.push(
+                    new AIMessage({
+                        content: message.content || '',
+                        additional_kwargs: additionalKwargs
+                    })
+                )
+            } else {
+                chatHistory.push(new AIMessage(message.content || ''))
+            }
         } else if (message.role === 'userMessage' || message.type === 'userMessage') {
             // check for image/files uploads
             if (message.fileUploads) {
