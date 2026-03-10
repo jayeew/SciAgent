@@ -1,5 +1,5 @@
 import { AxiosResponse } from 'axios'
-import { ICommonObject } from '../../../src/Interface'
+import { ICommonObject, IFileUpload } from '../../../src/Interface'
 import {
     BaseMediaModel,
     IMediaArtifact,
@@ -9,7 +9,7 @@ import {
     IMediaImageSummary
 } from '../../../src/mediaModels'
 import { secureAxiosRequest, secureFetch } from '../../../src/httpSecurity'
-import { addSingleFileToStorage } from '../../../src/storageUtils'
+import { addSingleFileToStorage, getFileFromStorage } from '../../../src/storageUtils'
 import { parseJsonBody } from '../../../src/utils'
 
 export const DEFAULT_DOUBAO_ARK_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
@@ -65,6 +65,15 @@ export interface IDoubaoImageGenerationArgs {
     watermark: boolean
 }
 
+interface IDoubaoArkImageRequest {
+    model: string
+    prompt: string
+    size: string
+    output_format: 'png' | 'jpeg'
+    watermark: boolean
+    image?: string
+}
+
 interface IDoubaoArkImageResponseItem {
     url?: string
     size?: string
@@ -81,6 +90,11 @@ interface IStorageContext {
     chatflowid?: string
     orgId?: string
     chatId?: string
+}
+
+interface IResolvedReferenceImage {
+    primary: string
+    fallback?: string
 }
 
 export const normalizeDoubaoBaseUrl = (baseUrl?: string): string => {
@@ -146,13 +160,23 @@ export const resolveDoubaoImageGenerationArgs = (
 }
 
 const getSafeDoubaoErrorMessage = (error: any): string => {
-    const responseData = error?.response?.data ?? error?.data
+    const responseData = parseMaybeJson(error?.response?.data ?? error?.data)
+    const responseDataRecord = responseData && typeof responseData === 'object' ? (responseData as Record<string, any>) : undefined
+    const responseDataString =
+        typeof responseData === 'string'
+            ? responseData.trim()
+            : typeof error?.response?.data === 'string'
+            ? error.response.data.trim()
+            : typeof error?.data === 'string'
+            ? error.data.trim()
+            : undefined
     const candidates = [
-        responseData?.message,
-        responseData?.error?.message,
-        responseData?.error,
-        responseData?.detail,
-        responseData?.msg,
+        responseDataString,
+        responseDataRecord?.message,
+        responseDataRecord?.error?.message,
+        responseDataRecord?.error,
+        responseDataRecord?.detail,
+        responseDataRecord?.msg,
         error?.message
     ]
 
@@ -290,10 +314,90 @@ const resolveStorageContext = (config: IDoubaoImageGenerationConfig, options?: I
     }
 }
 
+const resolveReferenceImagePayload = async (
+    referenceImages: IFileUpload[] | undefined,
+    storageContext: IStorageContext
+): Promise<IResolvedReferenceImage | undefined> => {
+    if (!referenceImages?.length) return undefined
+
+    if (referenceImages.length > 1) {
+        throw new Error('Doubao image-to-image supports exactly one reference image')
+    }
+
+    const referenceImage = referenceImages[0]
+
+    if (referenceImage.type === 'stored-file') {
+        if (!hasStorageContext(storageContext)) {
+            throw new Error('Doubao image-to-image requires chat storage context for uploaded reference images')
+        }
+
+        const fileName = referenceImage.name.replace(/^FILE-STORAGE::/, '').trim()
+        if (!fileName) {
+            throw new Error('Doubao image-to-image reference image file name is missing')
+        }
+
+        const fileBuffer = await getFileFromStorage(fileName, storageContext.orgId, storageContext.chatflowid, storageContext.chatId)
+        const base64Payload = fileBuffer.toString('base64')
+        const mimeType = referenceImage.mime?.trim() || 'image/png'
+        return {
+            primary: `data:${mimeType};base64,${base64Payload}`,
+            fallback: base64Payload
+        }
+    }
+
+    if (referenceImage.type === 'url') {
+        const resourceUrl = referenceImage.data?.trim()
+        if (!resourceUrl) {
+            throw new Error('Doubao image-to-image reference image URL is missing')
+        }
+
+        return { primary: resourceUrl }
+    }
+
+    const rawData = referenceImage.data?.trim()
+    if (!rawData) {
+        throw new Error(`Doubao image-to-image does not support reference image type: ${referenceImage.type}`)
+    }
+
+    if (rawData.startsWith('data:image/')) {
+        const [, fallback] = rawData.split(',', 2)
+        return {
+            primary: rawData,
+            ...(fallback ? { fallback } : {})
+        }
+    }
+
+    const mimeType = referenceImage.mime?.trim()
+    if (mimeType?.startsWith('image/')) {
+        return {
+            primary: `data:${mimeType};base64,${rawData}`,
+            fallback: rawData
+        }
+    }
+
+    return { primary: rawData }
+}
+
+const buildDoubaoRequestPayload = (effectiveArgs: IDoubaoImageGenerationArgs, referenceImage?: string): IDoubaoArkImageRequest => {
+    return {
+        model: effectiveArgs.model,
+        prompt: effectiveArgs.prompt,
+        size: effectiveArgs.size,
+        output_format: effectiveArgs.outputFormat,
+        watermark: effectiveArgs.watermark,
+        ...(referenceImage ? { image: referenceImage } : {})
+    }
+}
+
+const shouldRetryWithFallbackReferenceImage = (response: AxiosResponse | undefined, hasFallbackVariant: boolean): boolean => {
+    return Boolean(hasFallbackVariant && response && response.status >= 500)
+}
+
 export class DoubaoImageModel extends BaseMediaModel {
     readonly provider = DOUBAO_IMAGE_PROVIDER
     readonly capabilities = {
         textToImage: true,
+        imageToImage: true,
         multiTurnPrompting: true
     }
 
@@ -329,42 +433,6 @@ export class DoubaoImageModel extends BaseMediaModel {
             throw new Error('Doubao Ark API key is required')
         }
 
-        const effectiveArgs = resolveDoubaoImageGenerationArgs(input, {
-            model: this.modelName,
-            size: this.defaultSize,
-            outputFormat: this.defaultOutputFormat,
-            watermark: this.defaultWatermark
-        })
-
-        const payload = {
-            model: effectiveArgs.model,
-            prompt: effectiveArgs.prompt,
-            size: effectiveArgs.size,
-            output_format: effectiveArgs.outputFormat,
-            watermark: effectiveArgs.watermark
-        }
-
-        let response: AxiosResponse<IDoubaoArkImageResponse>
-        try {
-            response = await secureAxiosRequest({
-                method: 'POST',
-                url: `${this.baseUrl}/images/generations`,
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${this.apiKey}`
-                },
-                data: payload,
-                responseType: 'json'
-            })
-        } catch (error) {
-            throw new Error(getSafeDoubaoErrorMessage(error))
-        }
-
-        const responseData = normalizeDoubaoImageResponse(response)
-        if (!responseData?.data || !Array.isArray(responseData.data) || responseData.data.length === 0) {
-            throw new Error('Doubao Ark image generation returned no images')
-        }
-
         const storageContext = resolveStorageContext(
             {
                 apiKey: this.apiKey,
@@ -378,6 +446,60 @@ export class DoubaoImageModel extends BaseMediaModel {
             },
             options
         )
+
+        const effectiveArgs = resolveDoubaoImageGenerationArgs(input, {
+            model: this.modelName,
+            size: this.defaultSize,
+            outputFormat: this.defaultOutputFormat,
+            watermark: this.defaultWatermark
+        })
+        const resolvedReferenceImage = await resolveReferenceImagePayload(input.referenceImages, storageContext)
+        const payloads = resolvedReferenceImage?.fallback
+            ? [
+                  buildDoubaoRequestPayload(effectiveArgs, resolvedReferenceImage.primary),
+                  buildDoubaoRequestPayload(effectiveArgs, resolvedReferenceImage.fallback)
+              ]
+            : [buildDoubaoRequestPayload(effectiveArgs, resolvedReferenceImage?.primary)]
+
+        let response: AxiosResponse<IDoubaoArkImageResponse> | undefined
+        let lastError: unknown
+        for (let index = 0; index < payloads.length; index += 1) {
+            const payload = payloads[index]
+            try {
+                response = await secureAxiosRequest({
+                    method: 'POST',
+                    url: `${this.baseUrl}/images/generations`,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${this.apiKey}`
+                    },
+                    data: payload,
+                    responseType: 'json'
+                })
+
+                if (!shouldRetryWithFallbackReferenceImage(response, index === 0 && payloads.length > 1)) {
+                    break
+                }
+            } catch (error) {
+                lastError = error
+                if (index === payloads.length - 1) {
+                    throw new Error(getSafeDoubaoErrorMessage(error))
+                }
+            }
+        }
+
+        if (!response) {
+            throw new Error(getSafeDoubaoErrorMessage(lastError))
+        }
+
+        if (response.status < 200 || response.status >= 300) {
+            throw new Error(getSafeDoubaoErrorMessage({ response }))
+        }
+
+        const responseData = normalizeDoubaoImageResponse(response)
+        if (!responseData?.data || !Array.isArray(responseData.data) || responseData.data.length === 0) {
+            throw new Error('Doubao Ark image generation returned no images')
+        }
 
         const artifacts: IMediaArtifact[] = []
         const images: IMediaImageSummary[] = []

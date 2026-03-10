@@ -6,9 +6,10 @@ const { nodeClass: MediaConversationChain } = require('../../../../nodes/chains/
 class FakeMediaModel extends BaseMediaModel {
     readonly provider = 'fake-provider'
     readonly modelName = 'fake-model'
-    readonly capabilities = {
-        textToImage: true,
-        multiTurnPrompting: true
+    readonly capabilities: {
+        textToImage: boolean
+        imageToImage?: boolean
+        multiTurnPrompting: boolean
     }
 
     invoke = jest.fn(async (input: IMediaGenerationInput): Promise<IMediaGenerationResult> => {
@@ -24,21 +25,32 @@ class FakeMediaModel extends BaseMediaModel {
             }
         }
     })
+
+    constructor(imageToImage = false) {
+        super()
+        this.capabilities = {
+            textToImage: true,
+            ...(imageToImage ? { imageToImage: true } : {}),
+            multiTurnPrompting: true
+        }
+    }
 }
 
 describe('MediaConversationChain', () => {
+    const createMemory = () => ({
+        memoryKey: 'chat_history',
+        getChatMessages: jest
+            .fn()
+            .mockResolvedValue([
+                new HumanMessage('Draw a cyberpunk cat'),
+                new AIMessage('Generated 1 image. Prompt: Draw a cyberpunk cat')
+            ]),
+        addChatMessages: jest.fn().mockResolvedValue(undefined)
+    })
+
     it('builds follow-up prompts from media history and returns artifacts', async () => {
         const mediaModel = new FakeMediaModel()
-        const memory = {
-            memoryKey: 'chat_history',
-            getChatMessages: jest
-                .fn()
-                .mockResolvedValue([
-                    new HumanMessage('Draw a cyberpunk cat'),
-                    new AIMessage('Generated 1 image. Prompt: Draw a cyberpunk cat')
-                ]),
-            addChatMessages: jest.fn().mockResolvedValue(undefined)
-        }
+        const memory = createMemory()
 
         const chain = new MediaConversationChain()
         const result = await chain.run(
@@ -88,5 +100,76 @@ describe('MediaConversationChain', () => {
                 }
             })
         )
+    })
+
+    it('passes reference images to media models that support image-to-image', async () => {
+        const mediaModel = new FakeMediaModel(true)
+        const memory = {
+            ...createMemory(),
+            getChatMessages: jest.fn().mockResolvedValue([])
+        }
+
+        const chain = new MediaConversationChain()
+        await chain.run(
+            {
+                inputs: {
+                    mediaModel,
+                    memory
+                }
+            },
+            'Make it watercolor',
+            {
+                shouldStreamResponse: false,
+                uploads: [
+                    { type: 'stored-file', name: 'base.png', mime: 'image/png' },
+                    { type: 'file:rag', name: 'notes.txt', mime: 'text/plain' }
+                ]
+            }
+        )
+
+        expect(mediaModel.invoke).toHaveBeenCalledWith(
+            expect.objectContaining({
+                prompt: 'Make it watercolor',
+                referenceImages: [{ type: 'stored-file', name: 'base.png', mime: 'image/png' }],
+                conversationContext: []
+            }),
+            expect.objectContaining({
+                shouldStreamResponse: false
+            })
+        )
+    })
+
+    it('does not pass reference images to media models without image-to-image support', async () => {
+        const mediaModel = new FakeMediaModel(false)
+        const memory = {
+            ...createMemory(),
+            getChatMessages: jest.fn().mockResolvedValue([])
+        }
+
+        const chain = new MediaConversationChain()
+        await chain.run(
+            {
+                inputs: {
+                    mediaModel,
+                    memory
+                }
+            },
+            'Make it watercolor',
+            {
+                shouldStreamResponse: false,
+                uploads: [{ type: 'stored-file', name: 'base.png', mime: 'image/png' }]
+            }
+        )
+
+        expect(mediaModel.invoke).toHaveBeenCalledWith(
+            expect.objectContaining({
+                prompt: 'Make it watercolor',
+                conversationContext: []
+            }),
+            expect.objectContaining({
+                shouldStreamResponse: false
+            })
+        )
+        expect((mediaModel.invoke.mock.calls[0]?.[0] as IMediaGenerationInput).referenceImages).toBeUndefined()
     })
 })

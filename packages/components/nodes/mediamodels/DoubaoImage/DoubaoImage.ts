@@ -31,7 +31,7 @@ class DoubaoImage_MediaModels implements INode {
         this.type = 'DoubaoImage'
         this.icon = 'doubao.svg'
         this.category = 'Media Models'
-        this.description = 'Generate images with Doubao Ark from conversational prompts'
+        this.description = 'Generate or edit images with Doubao Ark from conversational prompts and a single reference image'
         this.baseClasses = Array.from(new Set([this.type, ...getBaseClasses(DoubaoImageModel), 'Runnable']))
         this.credential = {
             label: 'Connect Credential',

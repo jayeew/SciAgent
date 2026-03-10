@@ -13,6 +13,31 @@ type IUploadConfig = {
     fileUploadSizeAndTypes: IUploadFileSizeAndTypes[]
 }
 
+const DEFAULT_IMAGE_UPLOAD_TYPES = ['image/gif', 'image/jpeg', 'image/png', 'image/webp']
+const DEFAULT_IMAGE_UPLOAD_MAX_SIZE_MB = 5
+
+const enableImageUploads = (imgUploadSizeAndTypes: IUploadFileSizeAndTypes[]) => {
+    if (imgUploadSizeAndTypes.length === 0) {
+        imgUploadSizeAndTypes.push({
+            fileTypes: DEFAULT_IMAGE_UPLOAD_TYPES,
+            maxUploadSize: DEFAULT_IMAGE_UPLOAD_MAX_SIZE_MB
+        })
+    }
+}
+
+const hasConnectedDoubaoImageMediaModel = (nodes: IReactFlowNode[], edges: IReactFlowEdge[]): boolean => {
+    const mediaConversationNodeIds = new Set(nodes.filter((node) => node.data.name === 'mediaConversationChain').map((node) => node.id))
+
+    if (mediaConversationNodeIds.size === 0) return false
+
+    return edges.some((edge) => {
+        if (!mediaConversationNodeIds.has(edge.target)) return false
+
+        const sourceNode = nodes.find((node) => node.id === edge.source)
+        return sourceNode?.data.name === 'doubaoImage' || sourceNode?.data.type === 'DoubaoImage'
+    })
+}
+
 /**
  * Method that checks if uploads are enabled in the chatflow
  * @param {string} chatflowid
@@ -104,10 +129,7 @@ export const utilGetUploadsConfig = async (chatflowid: string): Promise<IUploadC
                     node.data.inputs?.llmModelConfig?.allowImageUploads ||
                     node.data.inputs?.conditionAgentModelConfig?.allowImageUploads
                 ) {
-                    imgUploadSizeAndTypes.push({
-                        fileTypes: 'image/gif;image/jpeg;image/png;image/webp;'.split(';'),
-                        maxUploadSize: 5
-                    })
+                    enableImageUploads(imgUploadSizeAndTypes)
                     isImageUploadAllowed = true
                 }
             }
@@ -120,16 +142,18 @@ export const utilGetUploadsConfig = async (chatflowid: string): Promise<IUploadC
                     // TODO: for now the maxUploadSize is hardcoded to 5MB, we need to add it to the node properties
                     node.data.inputParams.map((param: INodeParams) => {
                         if (param.name === 'allowImageUploads' && node.data.inputs?.['allowImageUploads']) {
-                            imgUploadSizeAndTypes.push({
-                                fileTypes: 'image/gif;image/jpeg;image/png;image/webp;'.split(';'),
-                                maxUploadSize: 5
-                            })
+                            enableImageUploads(imgUploadSizeAndTypes)
                             isImageUploadAllowed = true
                         }
                     })
                 }
             })
         }
+    }
+
+    if (!isImageUploadAllowed && hasConnectedDoubaoImageMediaModel(nodes, edges)) {
+        enableImageUploads(imgUploadSizeAndTypes)
+        isImageUploadAllowed = true
     }
 
     return {

@@ -6,6 +6,7 @@ import { ConsoleCallbackHandler as LCConsoleCallbackHandler } from '@langchain/c
 import { BaseMediaModel, IMediaGenerationInput, IMediaGenerationResult } from '../../../src/mediaModels'
 import { FlowiseMemory, ICommonObject, INode, INodeData, INodeParams, IServerSideEventStreamer } from '../../../src/Interface'
 import { additionalCallbacks, ConsoleCallbackHandler } from '../../../src/handler'
+import { getImageUploads } from '../../../src/multiModalUtils'
 import { extractOutputFromArray, getBaseClasses, parseJsonBody, transformBracesWithColon } from '../../../src/utils'
 import { checkInputs, Moderation, streamResponse } from '../../moderation/Moderation'
 import { formatResponse } from '../../outputparsers/OutputParserHelpers'
@@ -163,9 +164,14 @@ const executeMediaConversation = async (
     const history = memory ? ((await memory.getChatMessages(sessionId, true, prependMessages)) as BaseMessage[]) ?? [] : []
 
     const resolvedInput = await resolveMediaInput(nodeData, input, history, callbacks)
+    const referenceImages =
+        mediaModel.capabilities.imageToImage && Array.isArray(options?.uploads) && options.uploads.length > 0
+            ? getImageUploads(options.uploads)
+            : undefined
     const result = await mediaModel.invoke(
         {
             ...resolvedInput,
+            ...(referenceImages?.length ? { referenceImages } : {}),
             conversationContext: history
         },
         options
