@@ -51,6 +51,38 @@ describe('utilGetUploadsConfig', () => {
         jest.clearAllMocks()
     })
 
+    it('enables image uploads when MediaConversationChain is connected to DoubaoVideo', async () => {
+        mockChatflowLookup({
+            nodes: [
+                createNode('doubao-1', {
+                    name: 'doubaoVideo',
+                    type: 'DoubaoVideo',
+                    category: 'Media Models',
+                    inputs: {},
+                    inputParams: []
+                }),
+                createNode('chain-1', {
+                    name: 'mediaConversationChain',
+                    type: 'MediaConversationChain',
+                    category: 'Chains',
+                    inputs: {},
+                    inputParams: []
+                })
+            ],
+            edges: [createEdge('doubao-1', 'chain-1')]
+        })
+
+        const result = await utilGetUploadsConfig('flow-1')
+
+        expect(result.isImageUploadAllowed).toBe(true)
+        expect(result.imgUploadSizeAndTypes).toEqual([
+            {
+                fileTypes: ['image/gif', 'image/jpeg', 'image/png', 'image/webp'],
+                maxUploadSize: 5
+            }
+        ])
+    })
+
     it('enables image uploads when MediaConversationChain is connected to DoubaoImage', async () => {
         mockChatflowLookup({
             nodes: [

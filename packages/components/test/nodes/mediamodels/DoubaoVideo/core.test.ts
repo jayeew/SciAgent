@@ -1,5 +1,5 @@
 import { secureAxiosRequest, secureFetch } from '../../../../src/httpSecurity'
-import { addSingleFileToStorage } from '../../../../src/storageUtils'
+import { addSingleFileToStorage, getFileFromStorage } from '../../../../src/storageUtils'
 import {
     DEFAULT_DOUBAO_VIDEO_MODEL,
     DoubaoVideoModel,
@@ -16,12 +16,14 @@ jest.mock('../../../../src/httpSecurity', () => ({
 }))
 
 jest.mock('../../../../src/storageUtils', () => ({
-    addSingleFileToStorage: jest.fn()
+    addSingleFileToStorage: jest.fn(),
+    getFileFromStorage: jest.fn()
 }))
 
 const mockedSecureAxiosRequest = secureAxiosRequest as jest.MockedFunction<typeof secureAxiosRequest>
 const mockedSecureFetch = secureFetch as jest.MockedFunction<typeof secureFetch>
 const mockedAddSingleFileToStorage = addSingleFileToStorage as jest.MockedFunction<typeof addSingleFileToStorage>
+const mockedGetFileFromStorage = getFileFromStorage as jest.MockedFunction<typeof getFileFromStorage>
 
 const createDownloadResponse = (contentType: string, body: string = 'video-bytes') =>
     ({
@@ -119,6 +121,7 @@ describe('DoubaoVideoModel', () => {
     it('advertises text-to-video capability', () => {
         expect(createModel().capabilities).toEqual({
             textToVideo: true,
+            imageToVideo: true,
             multiTurnPrompting: true
         })
     })
@@ -240,6 +243,148 @@ describe('DoubaoVideoModel', () => {
             'chat-1'
         )
         expect(result.artifacts).toEqual([{ type: 'mp4', data: 'FILE-STORAGE::doubao_generated_video_1700000000000.mp4' }])
+    })
+
+    it('normalizes a URL reference image before sending first-frame guidance for image-to-video', async () => {
+        mockedSecureAxiosRequest
+            .mockResolvedValueOnce({
+                data: {
+                    id: 'cgt-2025-task-2-url'
+                }
+            } as any)
+            .mockResolvedValueOnce({
+                data: {
+                    id: 'cgt-2025-task-2-url',
+                    model: DEFAULT_DOUBAO_VIDEO_MODEL,
+                    status: 'succeeded',
+                    content: {
+                        video_url: 'https://example.com/generated.mp4'
+                    },
+                    ratio: '16:9',
+                    resolution: '720p',
+                    duration: 5
+                }
+            } as any)
+
+        const result = await createModel({ chatflowid: undefined, orgId: undefined }).invoke({
+            prompt: '镜头从女孩和狐狸缓慢拉远',
+            referenceImages: [
+                {
+                    type: 'url',
+                    name: 'first-frame.png',
+                    mime: 'image/png',
+                    data: 'https://example.com/first frame.png\n# clipboard metadata'
+                }
+            ]
+        })
+
+        expect(mockedSecureAxiosRequest).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    content: [
+                        { type: 'text', text: '镜头从女孩和狐狸缓慢拉远' },
+                        {
+                            type: 'image_url',
+                            image_url: {
+                                url: 'https://example.com/first%20frame.png'
+                            }
+                        }
+                    ]
+                })
+            })
+        )
+        expect(result.artifacts).toEqual([{ type: 'mp4', data: 'https://example.com/generated.mp4' }])
+    })
+
+    it('rejects non-http reference frame URLs before calling Doubao', async () => {
+        await expect(
+            createModel({ chatflowid: undefined, orgId: undefined }).invoke({
+                prompt: '镜头从女孩和狐狸缓慢拉远',
+                referenceImages: [
+                    {
+                        type: 'url',
+                        name: 'first-frame.png',
+                        mime: 'image/png',
+                        data: 'blob:https://example.com/first-frame.png'
+                    }
+                ]
+            })
+        ).rejects.toThrow('Doubao image-to-video reference image URL must use http or https')
+
+        expect(mockedSecureAxiosRequest).not.toHaveBeenCalled()
+    })
+
+    it('loads stored-file reference image and sends it as data URI for image-to-video', async () => {
+        mockedGetFileFromStorage.mockResolvedValue(Buffer.from('first-frame-bytes'))
+        mockedSecureFetch.mockResolvedValue(createDownloadResponse('video/mp4'))
+        mockedAddSingleFileToStorage.mockResolvedValue({
+            path: 'FILE-STORAGE::doubao_generated_video_1700000000000.mp4',
+            totalSize: 1.5
+        })
+        mockedSecureAxiosRequest
+            .mockResolvedValueOnce({
+                data: {
+                    id: 'cgt-2025-task-2-file'
+                }
+            } as any)
+            .mockResolvedValueOnce({
+                data: {
+                    id: 'cgt-2025-task-2-file',
+                    model: DEFAULT_DOUBAO_VIDEO_MODEL,
+                    status: 'succeeded',
+                    content: {
+                        video_url: 'https://example.com/generated.mp4'
+                    },
+                    ratio: '16:9',
+                    resolution: '720p',
+                    duration: 5
+                }
+            } as any)
+
+        const result = await createModel().invoke(
+            {
+                prompt: '镜头从女孩和狐狸缓慢拉远',
+                referenceImages: [{ type: 'stored-file', name: 'first-frame.png', mime: 'image/png' }]
+            },
+            { chatId: 'chat-1' }
+        )
+
+        expect(mockedGetFileFromStorage).toHaveBeenCalledWith('first-frame.png', 'org-1', 'flow-1', 'chat-1')
+        expect(mockedSecureAxiosRequest).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    content: [
+                        { type: 'text', text: '镜头从女孩和狐狸缓慢拉远' },
+                        {
+                            type: 'image_url',
+                            image_url: {
+                                url: `data:image/png;base64,${Buffer.from('first-frame-bytes').toString('base64')}`
+                            }
+                        }
+                    ]
+                })
+            })
+        )
+        expect(result.artifacts).toEqual([{ type: 'mp4', data: 'FILE-STORAGE::doubao_generated_video_1700000000000.mp4' }])
+    })
+
+    it('throws when more than one reference image is provided for image-to-video', async () => {
+        await expect(
+            createModel().invoke(
+                {
+                    prompt: '生成一段视频',
+                    referenceImages: [
+                        { type: 'stored-file', name: 'first-frame-1.png', mime: 'image/png' },
+                        { type: 'stored-file', name: 'first-frame-2.png', mime: 'image/png' }
+                    ]
+                },
+                { chatId: 'chat-1' }
+            )
+        ).rejects.toThrow('Doubao image-to-video supports exactly one reference image')
+
+        expect(mockedSecureAxiosRequest).not.toHaveBeenCalled()
     })
 
     it('throws when prompt is empty', async () => {

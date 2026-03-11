@@ -33,7 +33,7 @@ class DoubaoVideo_MediaModels implements INode {
         this.type = 'DoubaoVideo'
         this.icon = 'doubao.svg'
         this.category = 'Media Models'
-        this.description = 'Generate videos with Doubao Ark from conversational prompts'
+        this.description = 'Generate videos with Doubao Ark from conversational prompts, with optional first-frame image guidance'
         this.baseClasses = Array.from(new Set([this.type, ...getBaseClasses(DoubaoVideoModel), 'Runnable']))
         this.credential = {
             label: 'Connect Credential',
@@ -50,22 +50,66 @@ class DoubaoVideo_MediaModels implements INode {
                 default: DEFAULT_DOUBAO_VIDEO_MODEL
             },
             {
-                label: 'Default Ratio',
-                name: 'ratio',
-                type: 'string',
-                default: DEFAULT_DOUBAO_VIDEO_RATIO,
-                optional: true,
-                additionalParams: true,
-                description: 'Pass aspect ratio to Doubao Ark, for example 16:9'
-            },
-            {
                 label: 'Default Resolution',
                 name: 'resolution',
-                type: 'string',
+                type: 'options',
+                options: [
+                    {
+                        label: '480p',
+                        name: '480p'
+                    },
+                    {
+                        label: '720p',
+                        name: '720p'
+                    },
+                    {
+                        label: '1080p',
+                        name: '1080p'
+                    }
+                ],
                 default: DEFAULT_DOUBAO_VIDEO_RESOLUTION,
                 optional: true,
                 additionalParams: true,
-                description: 'Pass resolution to Doubao Ark, for example 720p'
+                description: 'Pass resolution to Doubao Ark'
+            },
+            {
+                label: 'Default Ratio',
+                name: 'ratio',
+                type: 'options',
+                options: [
+                    {
+                        label: '16:9',
+                        name: '16:9'
+                    },
+                    {
+                        label: '4:3',
+                        name: '4:3'
+                    },
+                    {
+                        label: '1:1',
+                        name: '1:1'
+                    },
+                    {
+                        label: '3:4',
+                        name: '3:4'
+                    },
+                    {
+                        label: '9:16',
+                        name: '9:16'
+                    },
+                    {
+                        label: '21:9',
+                        name: '21:9'
+                    },
+                    {
+                        label: 'adaptive',
+                        name: 'adaptive'
+                    }
+                ],
+                default: DEFAULT_DOUBAO_VIDEO_RATIO,
+                optional: true,
+                additionalParams: true,
+                description: 'Pass aspect ratio to Doubao Ark'
             },
             {
                 label: 'Default Duration',

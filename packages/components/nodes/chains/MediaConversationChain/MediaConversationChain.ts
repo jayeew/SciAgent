@@ -213,7 +213,9 @@ const executeMediaConversation = async (
 
     const resolvedInput = await resolveMediaInput(nodeData, input, history, callbacks)
     const referenceImages =
-        mediaModel.capabilities.imageToImage && Array.isArray(options?.uploads) && options.uploads.length > 0
+        (mediaModel.capabilities.imageToImage || mediaModel.capabilities.imageToVideo) &&
+        Array.isArray(options?.uploads) &&
+        options.uploads.length > 0
             ? getImageUploads(options.uploads)
             : undefined
     const result = await mediaModel.invoke(

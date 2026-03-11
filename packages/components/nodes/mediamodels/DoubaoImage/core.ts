@@ -18,6 +18,8 @@ export const DEFAULT_DOUBAO_IMAGE_SIZE = '2048x2048'
 export const DEFAULT_DOUBAO_IMAGE_OUTPUT_FORMAT = 'png'
 export const DEFAULT_DOUBAO_IMAGE_WATERMARK = false
 export const DOUBAO_IMAGE_PROVIDER = 'doubao-ark'
+const MAX_DOUBAO_IMAGE_REQUEST_ATTEMPTS = 3
+const RETRYABLE_DOUBAO_IMAGE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504])
 export const DOUBAO_IMAGE_SIZE_OPTIONS = [
     { label: '2K (1:1)', name: '2048x2048' },
     { label: '2K (4:3)', name: '2304x1728' },
@@ -277,6 +279,7 @@ const getSummaryPayload = (
         provider: DOUBAO_IMAGE_PROVIDER,
         model: response.model || effectiveArgs.model,
         prompt: effectiveArgs.prompt,
+        source: 'media_generation',
         mediaType: 'image',
         imageCount: images.length,
         images,
@@ -300,6 +303,39 @@ const buildGenerationText = (metadata: IMediaGenerationMetadata): string => {
             : ''
 
     return `Generated ${imageLabel} with ${metadata.provider}.${partialFailureSummary}`.trim()
+}
+
+const normalizeReferenceImageUrl = (value: string): string => {
+    const normalizedValue = value.trim()
+    if (!normalizedValue) {
+        throw new Error('Doubao image-to-image reference image URL is missing')
+    }
+
+    if (normalizedValue.startsWith('data:image/')) {
+        return normalizedValue
+    }
+
+    const uriListEntry = normalizedValue
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line && !line.startsWith('#'))
+
+    if (!uriListEntry) {
+        throw new Error('Doubao image-to-image reference image URL is missing')
+    }
+
+    let parsedUrl: URL
+    try {
+        parsedUrl = new URL(uriListEntry)
+    } catch {
+        throw new Error('Doubao image-to-image reference image URL must be a valid absolute http(s) URL')
+    }
+
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        throw new Error('Doubao image-to-image reference image URL must use http or https')
+    }
+
+    return parsedUrl.toString()
 }
 
 const resolveStorageContext = (config: IDoubaoImageGenerationConfig, options?: ICommonObject): IStorageContext => {
@@ -346,12 +382,7 @@ const resolveReferenceImagePayload = async (
     }
 
     if (referenceImage.type === 'url') {
-        const resourceUrl = referenceImage.data?.trim()
-        if (!resourceUrl) {
-            throw new Error('Doubao image-to-image reference image URL is missing')
-        }
-
-        return { primary: resourceUrl }
+        return { primary: normalizeReferenceImageUrl(referenceImage.data || '') }
     }
 
     const rawData = referenceImage.data?.trim()
@@ -389,8 +420,14 @@ const buildDoubaoRequestPayload = (effectiveArgs: IDoubaoImageGenerationArgs, re
     }
 }
 
+const shouldRetryDoubaoImageRequest = (response: AxiosResponse | undefined): boolean => {
+    if (!response || typeof response.status !== 'number') return false
+
+    return RETRYABLE_DOUBAO_IMAGE_STATUS_CODES.has(response.status)
+}
+
 const shouldRetryWithFallbackReferenceImage = (response: AxiosResponse | undefined, hasFallbackVariant: boolean): boolean => {
-    return Boolean(hasFallbackVariant && response && response.status >= 500)
+    return Boolean(hasFallbackVariant && response && typeof response.status === 'number' && response.status >= 500)
 }
 
 export class DoubaoImageModel extends BaseMediaModel {
@@ -462,26 +499,52 @@ export class DoubaoImageModel extends BaseMediaModel {
         let lastError: unknown
         for (let index = 0; index < payloads.length; index += 1) {
             const payload = payloads[index]
-            try {
-                response = await secureAxiosRequest({
-                    method: 'POST',
-                    url: `${this.baseUrl}/images/generations`,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${this.apiKey}`
-                    },
-                    data: payload,
-                    responseType: 'json'
-                })
+            for (let attempt = 1; attempt <= MAX_DOUBAO_IMAGE_REQUEST_ATTEMPTS; attempt += 1) {
+                response = undefined
+                try {
+                    response = await secureAxiosRequest({
+                        method: 'POST',
+                        url: `${this.baseUrl}/images/generations`,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${this.apiKey}`
+                        },
+                        data: payload,
+                        responseType: 'json'
+                    })
 
-                if (!shouldRetryWithFallbackReferenceImage(response, index === 0 && payloads.length > 1)) {
+                    const hasFallbackVariant = index === 0 && payloads.length > 1
+                    if (shouldRetryWithFallbackReferenceImage(response, hasFallbackVariant)) {
+                        break
+                    }
+
+                    if (!shouldRetryDoubaoImageRequest(response) || attempt === MAX_DOUBAO_IMAGE_REQUEST_ATTEMPTS) {
+                        break
+                    }
+                } catch (error) {
+                    lastError = error
+                    response = undefined
+                    if (attempt === MAX_DOUBAO_IMAGE_REQUEST_ATTEMPTS) {
+                        if (index === payloads.length - 1) {
+                            throw new Error(getSafeDoubaoErrorMessage(error))
+                        }
+                        break
+                    }
+
+                    continue
+                }
+
+                lastError = response
+
+                if (response && response.status >= 200 && response.status < 300) {
                     break
                 }
-            } catch (error) {
-                lastError = error
-                if (index === payloads.length - 1) {
-                    throw new Error(getSafeDoubaoErrorMessage(error))
-                }
+            }
+
+            const hasFallbackVariant = index === 0 && payloads.length > 1
+            const shouldContinueWithFallback = shouldRetryWithFallbackReferenceImage(response, hasFallbackVariant)
+            if (!shouldContinueWithFallback) {
+                break
             }
         }
 

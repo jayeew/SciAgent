@@ -38,6 +38,7 @@ interface IUsageEntry {
     usage: Record<string, any>
     model?: string
     source?: string
+    billingSource?: string
 }
 
 interface ICredentialAccess {
@@ -234,6 +235,13 @@ const getModelFromObject = (obj: Record<string, any>, inheritedModel?: string): 
     return inheritedModel
 }
 
+const getBillingSourceFromObject = (obj: Record<string, any>): string | undefined => {
+    if (typeof obj.source !== 'string') return undefined
+
+    const normalizedSource = obj.source.trim()
+    return normalizedSource || undefined
+}
+
 const hasUsageSignals = (obj: Record<string, any>): boolean => {
     return (
         'input_tokens' in obj ||
@@ -298,7 +306,12 @@ const pickPreferredUsageEntry = (obj: Record<string, any>, model?: string): IUsa
 
     if (!candidates.length) {
         if (hasUsageSignals(obj)) {
-            return { usage: obj, model, source: 'direct_usage_object' }
+            return {
+                usage: obj,
+                model,
+                source: 'direct_usage_object',
+                billingSource: getBillingSourceFromObject(obj)
+            }
         }
         return undefined
     }
@@ -308,7 +321,32 @@ const pickPreferredUsageEntry = (obj: Record<string, any>, model?: string): IUsa
         return b.totalTokens - a.totalTokens
     })
 
-    return { usage: candidates[0].usage, model, source: candidates[0].source }
+    return {
+        usage: candidates[0].usage,
+        model,
+        source: candidates[0].source,
+        billingSource: getBillingSourceFromObject(obj)
+    }
+}
+
+const getSharedBillingSource = (sources: Array<string | undefined>): string | undefined => {
+    const normalizedSources = Array.from(
+        new Set(
+            sources
+                .filter((source): source is string => typeof source === 'string' && source.trim().length > 0)
+                .map((source) => source.trim())
+        )
+    )
+
+    return normalizedSources.length === 1 ? normalizedSources[0] : undefined
+}
+
+const buildUsageBreakdown = (additionalBreakdown: Record<string, number>, billingSource?: string): Record<string, number | string> => {
+    if (!billingSource) return additionalBreakdown
+    return {
+        ...additionalBreakdown,
+        source: billingSource
+    }
 }
 
 const extractUsageEntriesFromPayload = (payload: any): IUsageEntry[] => {
@@ -497,7 +535,8 @@ export class TokenUsageService {
 
         const usageEntryMetrics = selectedUsageEntries.map((entry) => ({
             metrics: deriveMetricsFromUsage(entry.usage),
-            model: typeof entry.model === 'string' && entry.model.trim() ? entry.model.trim() : undefined
+            model: typeof entry.model === 'string' && entry.model.trim() ? entry.model.trim() : undefined,
+            billingSource: typeof entry.billingSource === 'string' && entry.billingSource.trim() ? entry.billingSource.trim() : undefined
         }))
 
         const aggregatedMetrics = createEmptyMetrics()
@@ -577,6 +616,7 @@ export class TokenUsageService {
                     model?: string
                     usageCount: number
                     metrics: ITokenUsageMetrics
+                    billingSources: Set<string>
                 }
             >()
 
@@ -590,6 +630,9 @@ export class TokenUsageService {
                 if (existing) {
                     existing.usageCount += 1
                     addMetrics(existing.metrics, usageEntry.metrics)
+                    if (usageEntry.billingSource) {
+                        existing.billingSources.add(usageEntry.billingSource)
+                    }
                     continue
                 }
 
@@ -601,7 +644,8 @@ export class TokenUsageService {
                     credentialName: access.credentialName,
                     model: resolvedModel,
                     usageCount: 1,
-                    metrics
+                    metrics,
+                    billingSources: new Set(usageEntry.billingSource ? [usageEntry.billingSource] : [])
                 })
             }
 
@@ -626,7 +670,9 @@ export class TokenUsageService {
                     rejectedPredictionTokens: group.metrics.rejectedPredictionTokens,
                     audioInputTokens: group.metrics.audioInputTokens,
                     audioOutputTokens: group.metrics.audioOutputTokens,
-                    usageBreakdown: JSON.stringify(group.metrics.additionalBreakdown)
+                    usageBreakdown: JSON.stringify(
+                        buildUsageBreakdown(group.metrics.additionalBreakdown, getSharedBillingSource(Array.from(group.billingSources)))
+                    )
                 })
             )
         } else {
@@ -661,6 +707,7 @@ export class TokenUsageService {
 
             const groups = Array.from(groupedCredentialAccess.values())
             const weights = groups.map((group) => group.usageCount)
+            const sharedBillingSource = getSharedBillingSource(usageEntryMetrics.map((entry) => entry.billingSource))
 
             const distributedMetrics = {
                 inputTokens: distributeIntegerByWeights(aggregatedMetrics.inputTokens, weights),
@@ -682,9 +729,12 @@ export class TokenUsageService {
             }
 
             credentialRows = groups.map((group, index) => {
-                const usageBreakdown: Record<string, number> = {}
+                const usageBreakdown: Record<string, number | string> = {}
                 for (const key of additionalBreakdownKeys) {
                     usageBreakdown[key] = distributedAdditionalBreakdown[key][index] || 0
+                }
+                if (sharedBillingSource) {
+                    usageBreakdown.source = sharedBillingSource
                 }
 
                 return this.dataSource.getRepository(TokenUsageCredential).create({

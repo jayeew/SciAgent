@@ -1,5 +1,5 @@
 import { AxiosResponse } from 'axios'
-import { ICommonObject } from '../../../src/Interface'
+import { ICommonObject, IFileUpload } from '../../../src/Interface'
 import {
     BaseMediaModel,
     IMediaArtifact,
@@ -9,7 +9,7 @@ import {
     IMediaVideoSummary
 } from '../../../src/mediaModels'
 import { secureAxiosRequest, secureFetch } from '../../../src/httpSecurity'
-import { addSingleFileToStorage } from '../../../src/storageUtils'
+import { addSingleFileToStorage, getFileFromStorage } from '../../../src/storageUtils'
 import { mapMimeTypeToExt, parseJsonBody } from '../../../src/utils'
 
 export const DEFAULT_DOUBAO_ARK_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
@@ -71,10 +71,19 @@ export interface IDoubaoVideoGenerationArgs {
     watermark: boolean
 }
 
-interface IDoubaoArkVideoContent {
+interface IDoubaoArkVideoTextContent {
     type: 'text'
     text: string
 }
+
+interface IDoubaoArkVideoImageUrlContent {
+    type: 'image_url'
+    image_url: {
+        url: string
+    }
+}
+
+type IDoubaoArkVideoContent = IDoubaoArkVideoTextContent | IDoubaoArkVideoImageUrlContent
 
 interface IDoubaoArkVideoRequest {
     model: string
@@ -119,6 +128,10 @@ interface IStorageContext {
     chatflowid?: string
     orgId?: string
     chatId?: string
+}
+
+interface IResolvedReferenceFrame {
+    url: string
 }
 
 const VIDEO_ARTIFACT_TYPES = new Set(['mp4', 'webm', 'mov', 'avi'])
@@ -351,6 +364,7 @@ const getSummaryPayload = (
         provider: DOUBAO_VIDEO_PROVIDER,
         model: taskResponse.model || effectiveArgs.model,
         prompt: effectiveArgs.prompt,
+        source: 'media_generation',
         mediaType: 'video',
         videoCount: videos.length,
         videos,
@@ -409,6 +423,39 @@ const buildGenerationText = (metadata: IMediaGenerationMetadata): string => {
     return `Generated ${videoCount} video${videoCount === 1 ? '' : 's'} with ${metadata.provider}.`
 }
 
+const normalizeReferenceFrameUrl = (value: string): string => {
+    const normalizedValue = value.trim()
+    if (!normalizedValue) {
+        throw new Error('Doubao image-to-video reference image URL is missing')
+    }
+
+    if (normalizedValue.startsWith('data:image/')) {
+        return normalizedValue
+    }
+
+    const uriListEntry = normalizedValue
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line && !line.startsWith('#'))
+
+    if (!uriListEntry) {
+        throw new Error('Doubao image-to-video reference image URL is missing')
+    }
+
+    let parsedUrl: URL
+    try {
+        parsedUrl = new URL(uriListEntry)
+    } catch {
+        throw new Error('Doubao image-to-video reference image URL must be a valid absolute http(s) URL')
+    }
+
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        throw new Error('Doubao image-to-video reference image URL must use http or https')
+    }
+
+    return parsedUrl.toString()
+}
+
 const hasStorageContext = (storageContext: IStorageContext): storageContext is Required<IStorageContext> => {
     return Boolean(storageContext.chatflowid && storageContext.orgId && storageContext.chatId)
 }
@@ -428,15 +475,82 @@ const resolveStorageContext = (
     }
 }
 
-const buildDoubaoVideoRequestPayload = (effectiveArgs: IDoubaoVideoGenerationArgs): IDoubaoArkVideoRequest => {
+const resolveReferenceFramePayload = async (
+    referenceImages: IFileUpload[] | undefined,
+    storageContext: IStorageContext
+): Promise<IResolvedReferenceFrame | undefined> => {
+    if (!referenceImages?.length) return undefined
+
+    if (referenceImages.length > 1) {
+        throw new Error('Doubao image-to-video supports exactly one reference image')
+    }
+
+    const referenceImage = referenceImages[0]
+
+    if (referenceImage.type === 'stored-file') {
+        if (!hasStorageContext(storageContext)) {
+            throw new Error('Doubao image-to-video requires chat storage context for uploaded reference images')
+        }
+
+        const fileName = referenceImage.name.replace(/^FILE-STORAGE::/, '').trim()
+        if (!fileName) {
+            throw new Error('Doubao image-to-video reference image file name is missing')
+        }
+
+        const fileBuffer = await getFileFromStorage(fileName, storageContext.orgId, storageContext.chatflowid, storageContext.chatId)
+        const base64Payload = fileBuffer.toString('base64')
+        const mimeType = referenceImage.mime?.trim() || 'image/png'
+        return {
+            url: `data:${mimeType};base64,${base64Payload}`
+        }
+    }
+
+    if (referenceImage.type === 'url') {
+        return { url: normalizeReferenceFrameUrl(referenceImage.data || '') }
+    }
+
+    const rawData = referenceImage.data?.trim()
+    if (!rawData) {
+        throw new Error(`Doubao image-to-video does not support reference image type: ${referenceImage.type}`)
+    }
+
+    if (rawData.startsWith('data:image/')) {
+        return { url: rawData }
+    }
+
+    const mimeType = referenceImage.mime?.trim()
+    if (mimeType?.startsWith('image/')) {
+        return {
+            url: `data:${mimeType};base64,${rawData}`
+        }
+    }
+
+    return { url: rawData }
+}
+
+const buildDoubaoVideoRequestPayload = (
+    effectiveArgs: IDoubaoVideoGenerationArgs,
+    referenceFrame?: IResolvedReferenceFrame
+): IDoubaoArkVideoRequest => {
+    const content: IDoubaoArkVideoContent[] = [
+        {
+            type: 'text',
+            text: effectiveArgs.prompt
+        }
+    ]
+
+    if (referenceFrame?.url) {
+        content.push({
+            type: 'image_url',
+            image_url: {
+                url: referenceFrame.url
+            }
+        })
+    }
+
     return {
         model: effectiveArgs.model,
-        content: [
-            {
-                type: 'text',
-                text: effectiveArgs.prompt
-            }
-        ],
+        content,
         resolution: effectiveArgs.resolution,
         ratio: effectiveArgs.ratio,
         ...(typeof effectiveArgs.duration === 'number' ? { duration: effectiveArgs.duration } : {}),
@@ -457,6 +571,7 @@ export class DoubaoVideoModel extends BaseMediaModel {
     readonly modelName: string
     readonly capabilities = {
         textToVideo: true,
+        imageToVideo: true,
         multiTurnPrompting: true
     }
 
@@ -535,6 +650,7 @@ export class DoubaoVideoModel extends BaseMediaModel {
             },
             options
         )
+        const referenceFrame = await resolveReferenceFramePayload(input.referenceImages, storageContext)
 
         const createTaskResponse = await secureAxiosRequest({
             method: 'POST',
@@ -543,7 +659,7 @@ export class DoubaoVideoModel extends BaseMediaModel {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${this.apiKey}`
             },
-            data: buildDoubaoVideoRequestPayload(effectiveArgs),
+            data: buildDoubaoVideoRequestPayload(effectiveArgs, referenceFrame),
             responseType: 'json'
         })
 

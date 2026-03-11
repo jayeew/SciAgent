@@ -39,6 +39,7 @@ export interface IMediaGenerationMetadata {
     provider: string
     model: string
     prompt: string
+    source?: string
     mediaType?: 'image' | 'video'
     revisedPrompt?: string
     imageCount?: number

@@ -224,7 +224,33 @@ describe('DoubaoImageModel', () => {
         )
     })
 
-    it('passes URL reference images through to the Doubao API', async () => {
+    it('retries transient 5xx responses for text-to-image requests', async () => {
+        mockedSecureAxiosRequest
+            .mockResolvedValueOnce({
+                status: 502,
+                data: {
+                    error: {
+                        message: 'bad gateway'
+                    }
+                }
+            } as any)
+            .mockResolvedValueOnce({
+                status: 200,
+                data: {
+                    data: [{ url: 'https://example.com/generated.png', size: '2048x2048' }],
+                    usage: { generated_images: 1 }
+                }
+            } as any)
+
+        const result = await createModel({ chatflowid: undefined, orgId: undefined }).invoke({
+            prompt: 'Draw a poster'
+        })
+
+        expect(mockedSecureAxiosRequest).toHaveBeenCalledTimes(2)
+        expect(result.artifacts).toEqual([{ type: 'png', data: 'https://example.com/generated.png' }])
+    })
+
+    it('normalizes URL reference images before sending them to the Doubao API', async () => {
         mockedSecureAxiosRequest.mockResolvedValue({
             data: {
                 data: [{ url: 'https://example.com/generated.jpeg', size: '1760x2368' }]
@@ -238,7 +264,7 @@ describe('DoubaoImageModel', () => {
                     type: 'url',
                     name: 'remote.png',
                     mime: 'image/png',
-                    data: 'https://example.com/reference.png'
+                    data: 'https://example.com/reference image.png\n# clipboard metadata'
                 }
             ]
         })
@@ -246,11 +272,29 @@ describe('DoubaoImageModel', () => {
         expect(mockedSecureAxiosRequest).toHaveBeenCalledWith(
             expect.objectContaining({
                 data: expect.objectContaining({
-                    image: 'https://example.com/reference.png'
+                    image: 'https://example.com/reference%20image.png'
                 })
             })
         )
         expect(result.artifacts).toEqual([{ type: 'png', data: 'https://example.com/generated.jpeg' }])
+    })
+
+    it('rejects non-http URL reference images before calling Doubao', async () => {
+        await expect(
+            createModel({ chatflowid: undefined, orgId: undefined }).invoke({
+                prompt: 'Turn this portrait into an editorial poster',
+                referenceImages: [
+                    {
+                        type: 'url',
+                        name: 'remote.png',
+                        mime: 'image/png',
+                        data: 'blob:https://example.com/reference.png'
+                    }
+                ]
+            })
+        ).rejects.toThrow('Doubao image-to-image reference image URL must use http or https')
+
+        expect(mockedSecureAxiosRequest).not.toHaveBeenCalled()
     })
 
     it('keeps code-level data URI reference images intact', async () => {

@@ -428,6 +428,15 @@ const SpeechToText = ({ dialogProps, onConfirm }) => {
         if (dialogProps.chatflow && dialogProps.chatflow.speechToText) {
             try {
                 const speechToText = JSON.parse(dialogProps.chatflow.speechToText)
+
+                // 兼容旧配置：旧版本使用 credential 字段，这里自动迁移为 credentialId
+                Object.keys(speechToTextProviders).forEach((key) => {
+                    const providerConfig = speechToText[key]
+                    if (providerConfig && !providerConfig.credentialId && providerConfig.credential) {
+                        providerConfig.credentialId = providerConfig.credential
+                    }
+                })
+
                 let selectedProvider = 'none'
                 Object.keys(speechToTextProviders).forEach((key) => {
                     const providerConfig = speechToText[key]

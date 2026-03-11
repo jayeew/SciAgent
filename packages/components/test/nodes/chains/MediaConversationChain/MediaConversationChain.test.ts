@@ -9,6 +9,7 @@ class FakeMediaModel extends BaseMediaModel {
     readonly capabilities: {
         textToImage: boolean
         imageToImage?: boolean
+        imageToVideo?: boolean
         multiTurnPrompting: boolean
     }
 
@@ -26,11 +27,12 @@ class FakeMediaModel extends BaseMediaModel {
         }
     })
 
-    constructor(imageToImage = false) {
+    constructor(imageToImage = false, imageToVideo = false) {
         super()
         this.capabilities = {
             textToImage: true,
             ...(imageToImage ? { imageToImage: true } : {}),
+            ...(imageToVideo ? { imageToVideo: true } : {}),
             multiTurnPrompting: true
         }
     }
@@ -131,6 +133,43 @@ describe('MediaConversationChain', () => {
             expect.objectContaining({
                 prompt: 'Make it watercolor',
                 referenceImages: [{ type: 'stored-file', name: 'base.png', mime: 'image/png' }],
+                conversationContext: []
+            }),
+            expect.objectContaining({
+                shouldStreamResponse: false
+            })
+        )
+    })
+
+    it('passes reference images to media models that support image-to-video', async () => {
+        const mediaModel = new FakeMediaModel(false, true)
+        const memory = {
+            ...createMemory(),
+            getChatMessages: jest.fn().mockResolvedValue([])
+        }
+
+        const chain = new MediaConversationChain()
+        await chain.run(
+            {
+                inputs: {
+                    mediaModel,
+                    memory
+                }
+            },
+            'Make it cinematic',
+            {
+                shouldStreamResponse: false,
+                uploads: [
+                    { type: 'stored-file', name: 'first-frame.png', mime: 'image/png' },
+                    { type: 'file:rag', name: 'notes.txt', mime: 'text/plain' }
+                ]
+            }
+        )
+
+        expect(mediaModel.invoke).toHaveBeenCalledWith(
+            expect.objectContaining({
+                prompt: 'Make it cinematic',
+                referenceImages: [{ type: 'stored-file', name: 'first-frame.png', mime: 'image/png' }],
                 conversationContext: []
             }),
             expect.objectContaining({

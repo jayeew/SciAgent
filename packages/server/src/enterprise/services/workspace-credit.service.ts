@@ -672,7 +672,17 @@ export class WorkspaceCreditService {
     ) {
         const billingUsages = usages
             .filter((usage) => {
+                const usageSource = typeof usage.usageBreakdown?.source === 'string' ? usage.usageBreakdown.source : undefined
                 const generatedImages = Number(usage.usageBreakdown?.generated_images) || Number(usage.usageBreakdown?.generatedimages) || 0
+
+                if (usageSource === 'media_generation') {
+                    logger.info(
+                        `[workspace-credit] skip token charge for separately billed media usage workspaceId=${workspaceId} userId=${userId} credentialId=${
+                            usage.credentialId || '-'
+                        } model=${usage.model || 'unknown'} source=${usageSource}`
+                    )
+                    return false
+                }
 
                 if (generatedImages > 0) {
                     logger.info(

@@ -25,7 +25,7 @@ const enableImageUploads = (imgUploadSizeAndTypes: IUploadFileSizeAndTypes[]) =>
     }
 }
 
-const hasConnectedDoubaoImageMediaModel = (nodes: IReactFlowNode[], edges: IReactFlowEdge[]): boolean => {
+const hasConnectedDoubaoMediaModelWithImageInput = (nodes: IReactFlowNode[], edges: IReactFlowEdge[]): boolean => {
     const mediaConversationNodeIds = new Set(nodes.filter((node) => node.data.name === 'mediaConversationChain').map((node) => node.id))
 
     if (mediaConversationNodeIds.size === 0) return false
@@ -34,7 +34,12 @@ const hasConnectedDoubaoImageMediaModel = (nodes: IReactFlowNode[], edges: IReac
         if (!mediaConversationNodeIds.has(edge.target)) return false
 
         const sourceNode = nodes.find((node) => node.id === edge.source)
-        return sourceNode?.data.name === 'doubaoImage' || sourceNode?.data.type === 'DoubaoImage'
+        return (
+            sourceNode?.data.name === 'doubaoImage' ||
+            sourceNode?.data.type === 'DoubaoImage' ||
+            sourceNode?.data.name === 'doubaoVideo' ||
+            sourceNode?.data.type === 'DoubaoVideo'
+        )
     })
 }
 
@@ -151,7 +156,7 @@ export const utilGetUploadsConfig = async (chatflowid: string): Promise<IUploadC
         }
     }
 
-    if (!isImageUploadAllowed && hasConnectedDoubaoImageMediaModel(nodes, edges)) {
+    if (!isImageUploadAllowed && hasConnectedDoubaoMediaModelWithImageInput(nodes, edges)) {
         enableImageUploads(imgUploadSizeAndTypes)
         isImageUploadAllowed = true
     }
