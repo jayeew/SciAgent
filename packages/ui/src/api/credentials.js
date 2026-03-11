@@ -17,6 +17,7 @@ const updateCredentialMultiplier = (id, creditConsumptionMultiplier) =>
     client.patch(`/credentials/${id}/multiplier`, { creditConsumptionMultiplier })
 const updateCredentialModelMultipliers = (id, modelMultipliers) =>
     client.patch(`/credentials/${id}/model-multipliers`, { modelMultipliers })
+const updateCredentialBillingRules = (id, billingRules) => client.patch(`/credentials/${id}/billing-rules`, { billingRules })
 const getCredentialModels = (id) => client.get(`/credentials/${id}/models`)
 
 const deleteCredential = (id) => client.delete(`/credentials/${id}`)
@@ -31,6 +32,7 @@ export default {
     updateCredential,
     updateCredentialMultiplier,
     updateCredentialModelMultipliers,
+    updateCredentialBillingRules,
     getCredentialModels,
     deleteCredential
 }

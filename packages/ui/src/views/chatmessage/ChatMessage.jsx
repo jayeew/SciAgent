@@ -2352,7 +2352,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
     }
 
     const renderArtifacts = (item, index, isAgentReasoning) => {
-        if (item.type === 'png' || item.type === 'jpeg') {
+        if (item.type === 'png' || item.type === 'jpeg' || item.type === 'jpg') {
             return (
                 <Card
                     key={index}
@@ -2377,6 +2377,34 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                             objectFit: 'cover'
                         }}
                     />
+                </Card>
+            )
+        } else if (item.type === 'mp4' || item.type === 'webm' || item.type === 'mov' || item.type === 'avi') {
+            return (
+                <Card
+                    key={index}
+                    sx={{
+                        p: 0,
+                        m: 0,
+                        mt: 2,
+                        mb: 2,
+                        flex: '0 0 auto'
+                    }}
+                >
+                    <video
+                        controls
+                        preload='metadata'
+                        src={item.data}
+                        style={{
+                            width: isAgentReasoning ? '200px' : '100%',
+                            height: isAgentReasoning ? '200px' : 'auto',
+                            maxHeight: isAgentReasoning ? '200px' : '500px',
+                            objectFit: 'cover',
+                            display: 'block'
+                        }}
+                    >
+                        <track kind='captions' />
+                    </video>
                 </Card>
             )
         } else if (item.type === 'html') {

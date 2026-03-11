@@ -82,9 +82,6 @@ export interface ISpeechToTextResult {
     usage?: {
         seconds?: number
     }
-    billing?: {
-        inputRmbPerSecond?: number
-    }
 }
 
 export const convertSpeechToText = async (
@@ -252,8 +249,6 @@ export const convertSpeechToText = async (
                 const mimeType = upload.mime || 'audio/mpeg'
                 const dataUri = `data:${mimeType};base64,${audio_file.toString('base64')}`
                 const modelName = speechToTextConfig?.model || 'qwen3-asr-flash'
-                const inputRmbPerSecond = Number(credentialData?.inputRmbPerSecond)
-                const normalizedInputRmbPerSecond = Number.isFinite(inputRmbPerSecond) && inputRmbPerSecond >= 0 ? inputRmbPerSecond : 0
 
                 const asrOptions: ICommonObject = {
                     enable_itn: speechToTextConfig?.enableItn ?? false
@@ -325,9 +320,6 @@ export const convertSpeechToText = async (
                         model: modelName,
                         usage: {
                             seconds: normalizedUsageSeconds
-                        },
-                        billing: {
-                            inputRmbPerSecond: normalizedInputRmbPerSecond
                         }
                     }
                 }

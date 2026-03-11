@@ -1,55 +1,93 @@
 import logger from '../../utils/logger'
 import { WorkspaceCreditService } from '../../enterprise/services/workspace-credit.service'
 import { ICommonObject } from 'flowise-components'
+import { CredentialBillingMode, ICredentialBillingUsage } from '../../Interface'
 
-interface IMediaGenerationBillingDetails {
-    provider: string
-    credentialId?: string
-    model?: string
-    generatedImages: number
-    inputRmbPerImage: number
-}
+const BILLING_MODES = new Set<CredentialBillingMode>(['token', 'image_count', 'video_count', 'seconds', 'characters'])
 
 interface IConsumeMediaGenerationCreditParams {
     workspaceId?: string
     userId?: string
-    billingDetails?: IMediaGenerationBillingDetails
+    billingDetails?: ICredentialBillingUsage
 }
 
-const getMediaGenerationBillingDetails = (result?: ICommonObject): IMediaGenerationBillingDetails | undefined => {
+const normalizeUsageMetric = (value: unknown): number | undefined => {
+    const numericValue = Number(value)
+    return Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : undefined
+}
+
+const getUsageMetricValue = (billingMode: CredentialBillingMode, usage: ICredentialBillingUsage['usage']): number => {
+    switch (billingMode) {
+        case 'token':
+            return (
+                normalizeUsageMetric(usage.inputTokens) ||
+                normalizeUsageMetric(usage.outputTokens) ||
+                normalizeUsageMetric(usage.totalTokens) ||
+                0
+            )
+        case 'image_count':
+        case 'video_count':
+            return normalizeUsageMetric(usage.units) || 0
+        case 'seconds':
+            return normalizeUsageMetric(usage.seconds) || 0
+        case 'characters':
+            return normalizeUsageMetric(usage.characters) || 0
+        default:
+            return 0
+    }
+}
+
+const getMediaGenerationBillingDetails = (result?: ICommonObject): ICredentialBillingUsage | undefined => {
     const billingDetails = result?.mediaBilling as ICommonObject | undefined
     if (!billingDetails || typeof billingDetails !== 'object') return undefined
 
-    const generatedImages = Number(billingDetails.generatedImages)
-    const inputRmbPerImage = Number(billingDetails.inputRmbPerImage)
+    const billingMode =
+        typeof billingDetails.billingMode === 'string' && BILLING_MODES.has(billingDetails.billingMode as CredentialBillingMode)
+            ? (billingDetails.billingMode as CredentialBillingMode)
+            : undefined
+    if (!billingMode) return undefined
+
+    const usageRecord = billingDetails.usage && typeof billingDetails.usage === 'object' ? (billingDetails.usage as ICommonObject) : {}
 
     return {
         provider: typeof billingDetails.provider === 'string' ? billingDetails.provider : 'unknown',
         credentialId: typeof billingDetails.credentialId === 'string' ? billingDetails.credentialId : undefined,
         model: typeof billingDetails.model === 'string' ? billingDetails.model : undefined,
-        generatedImages: Number.isFinite(generatedImages) && generatedImages >= 0 ? generatedImages : 0,
-        inputRmbPerImage: Number.isFinite(inputRmbPerImage) && inputRmbPerImage >= 0 ? inputRmbPerImage : 0
+        source: typeof billingDetails.source === 'string' ? billingDetails.source : 'media_generation',
+        billingMode,
+        usage: {
+            ...(typeof normalizeUsageMetric(usageRecord.inputTokens) === 'number'
+                ? { inputTokens: normalizeUsageMetric(usageRecord.inputTokens) }
+                : {}),
+            ...(typeof normalizeUsageMetric(usageRecord.outputTokens) === 'number'
+                ? { outputTokens: normalizeUsageMetric(usageRecord.outputTokens) }
+                : {}),
+            ...(typeof normalizeUsageMetric(usageRecord.totalTokens) === 'number'
+                ? { totalTokens: normalizeUsageMetric(usageRecord.totalTokens) }
+                : {}),
+            ...(typeof normalizeUsageMetric(usageRecord.units) === 'number' ? { units: normalizeUsageMetric(usageRecord.units) } : {}),
+            ...(typeof normalizeUsageMetric(usageRecord.seconds) === 'number'
+                ? { seconds: normalizeUsageMetric(usageRecord.seconds) }
+                : {}),
+            ...(typeof normalizeUsageMetric(usageRecord.characters) === 'number'
+                ? { characters: normalizeUsageMetric(usageRecord.characters) }
+                : {})
+        }
     }
 }
 
 const consumeMediaGenerationCredit = async (params: IConsumeMediaGenerationCreditParams) => {
     const { workspaceId, userId, billingDetails } = params
     if (!workspaceId || !userId || !billingDetails) return undefined
-    if (billingDetails.generatedImages <= 0) return undefined
+    if (getUsageMetricValue(billingDetails.billingMode, billingDetails.usage) <= 0) return undefined
 
     const workspaceCreditService = new WorkspaceCreditService()
-    await workspaceCreditService.consumeCreditByGeneratedImages(workspaceId, userId, {
-        credentialId: billingDetails.credentialId,
-        provider: billingDetails.provider,
-        model: billingDetails.model,
-        generatedImages: billingDetails.generatedImages,
-        inputRmbPerImage: billingDetails.inputRmbPerImage
-    })
+    await workspaceCreditService.consumeCreditByBillingUsages(workspaceId, userId, [billingDetails])
 
     logger.info(
         `[media-generation] credit consumed credentialId=${billingDetails.credentialId || '-'} model=${
             billingDetails.model || '-'
-        } generatedImages=${billingDetails.generatedImages} inputRmbPerImage=${billingDetails.inputRmbPerImage}`
+        } billingMode=${billingDetails.billingMode} usage=${JSON.stringify(billingDetails.usage)}`
     )
 
     return billingDetails

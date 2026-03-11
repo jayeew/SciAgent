@@ -27,6 +27,7 @@ import useNotifier from '@/utils/useNotifier'
 
 // API
 import chatflowsApi from '@/api/chatflows'
+import credentialsApi from '@/api/credentials'
 
 // If implementing a new provider, this must be updated in
 // components/src/speechToText.ts as well
@@ -272,7 +273,7 @@ const speechToTextProviders = {
             {
                 label: 'Model',
                 name: 'model',
-                type: 'string',
+                type: 'options',
                 description: 'Alibaba ASR model name. Defaults to qwen3-asr-flash.',
                 default: 'qwen3-asr-flash',
                 optional: true
@@ -317,6 +318,8 @@ const SpeechToText = ({ dialogProps, onConfirm }) => {
 
     const [speechToText, setSpeechToText] = useState({})
     const [selectedProvider, setSelectedProvider] = useState('none')
+    const [modelOptions, setModelOptions] = useState([])
+    const [loadingModels, setLoadingModels] = useState(false)
 
     const onSave = async () => {
         const speechToText = setValue(true, selectedProvider, 'status')
@@ -384,8 +387,41 @@ const SpeechToText = ({ dialogProps, onConfirm }) => {
         return newVal
     }
 
+    const loadModelsForCredential = async (credentialId) => {
+        if (!credentialId) {
+            setModelOptions([])
+            return
+        }
+
+        setLoadingModels(true)
+        try {
+            const response = await credentialsApi.getCredentialModels(credentialId)
+            const options = Array.isArray(response?.data)
+                ? response.data.map((item) => ({
+                      label: item.label,
+                      name: item.name,
+                      description: item.name
+                  }))
+                : []
+            setModelOptions(options)
+        } catch (error) {
+            console.error('Error loading speech-to-text models:', error)
+            setModelOptions([])
+        } finally {
+            setLoadingModels(false)
+        }
+    }
+
     const handleProviderChange = (event) => {
-        setSelectedProvider(event.target.value)
+        const provider = event.target.value
+        setSelectedProvider(provider)
+
+        const credentialId = speechToText?.[provider]?.credentialId
+        if (provider === SpeechToTextType.ALIBABA_STT && credentialId) {
+            loadModelsForCredential(credentialId)
+        } else {
+            setModelOptions([])
+        }
     }
 
     useEffect(() => {
@@ -401,9 +437,16 @@ const SpeechToText = ({ dialogProps, onConfirm }) => {
                 })
                 setSelectedProvider(selectedProvider)
                 setSpeechToText(speechToText)
+                const credentialId = speechToText?.[selectedProvider]?.credentialId
+                if (selectedProvider === SpeechToTextType.ALIBABA_STT && credentialId) {
+                    loadModelsForCredential(credentialId)
+                } else {
+                    setModelOptions([])
+                }
             } catch (e) {
                 setSpeechToText({})
                 setSelectedProvider('none')
+                setModelOptions([])
                 console.error(e)
             }
         }
@@ -411,7 +454,9 @@ const SpeechToText = ({ dialogProps, onConfirm }) => {
         return () => {
             setSpeechToText({})
             setSelectedProvider('none')
+            setModelOptions([])
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dialogProps])
 
     return (
@@ -504,7 +549,13 @@ const SpeechToText = ({ dialogProps, onConfirm }) => {
                                             : {}
                                     }
                                     inputParam={inputParam}
-                                    onSelect={(newValue) => setValue(newValue, selectedProvider, 'credentialId')}
+                                    onSelect={(newValue) => {
+                                        setValue(newValue, selectedProvider, 'credentialId')
+                                        if (selectedProvider === SpeechToTextType.ALIBABA_STT) {
+                                            setValue('', selectedProvider, 'model')
+                                            loadModelsForCredential(newValue)
+                                        }
+                                    }}
                                 />
                             )}
                             {inputParam.type === 'boolean' && (
@@ -532,12 +583,16 @@ const SpeechToText = ({ dialogProps, onConfirm }) => {
                             {inputParam.type === 'options' && (
                                 <Dropdown
                                     name={inputParam.name}
-                                    options={inputParam.options}
+                                    options={inputParam.name === 'model' ? modelOptions : inputParam.options}
+                                    loading={inputParam.name === 'model' ? loadingModels : false}
                                     onSelect={(newValue) => setValue(newValue, selectedProvider, inputParam.name)}
                                     value={
                                         speechToText[selectedProvider]
                                             ? speechToText[selectedProvider][inputParam.name]
                                             : inputParam.default ?? 'choose an option'
+                                    }
+                                    disabled={
+                                        inputParam.name === 'model' ? loadingModels || !speechToText[selectedProvider]?.credentialId : false
                                     }
                                 />
                             )}

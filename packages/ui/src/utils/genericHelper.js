@@ -563,7 +563,15 @@ export const resolveArtifactDataUrl = (baseURL, artifact, chatflowId, chatId) =>
     const data = artifact.data
     if (typeof data !== 'string') return data
 
-    if (artifact.type === 'png' || artifact.type === 'jpeg') {
+    if (
+        artifact.type === 'png' ||
+        artifact.type === 'jpeg' ||
+        artifact.type === 'jpg' ||
+        artifact.type === 'mp4' ||
+        artifact.type === 'webm' ||
+        artifact.type === 'mov' ||
+        artifact.type === 'avi'
+    ) {
         if (data.startsWith('FILE-STORAGE::') && chatflowId && chatId) {
             const fileName = encodeURIComponent(data.replace('FILE-STORAGE::', ''))
             return `${baseURL}/api/v1/get-upload-file?chatflowId=${chatflowId}&chatId=${chatId}&fileName=${fileName}`

@@ -134,6 +134,7 @@ export interface ICredential {
     credentialName: string
     encryptedData: string
     creditConsumptionMultiplier: number
+    billingRules?: ICredentialBillingRuleMap | string
     creditConsumptionMultiplierByModel?: Record<string, ICredentialModelBillingConfig> | Record<string, number> | string
     updatedDate: Date
     createdDate: Date
@@ -146,6 +147,65 @@ export interface ICredentialModelBillingConfig {
     outputRmbPerMTok: number
     // Legacy field for backward compatibility when parsing older persisted payloads.
     rmbPerMTok?: number
+}
+
+export type CredentialBillingMode = 'token' | 'image_count' | 'video_count' | 'seconds' | 'characters'
+
+interface ICredentialBillingRuleBase {
+    billingMode: CredentialBillingMode
+    multiplier: number
+}
+
+export interface ICredentialTokenBillingRule extends ICredentialBillingRuleBase {
+    billingMode: 'token'
+    inputRmbPerMTok: number
+    outputRmbPerMTok: number
+}
+
+export interface ICredentialUnitBillingRule extends ICredentialBillingRuleBase {
+    billingMode: 'image_count' | 'video_count'
+    rmbPerUnit: number
+}
+
+export interface ICredentialSecondsBillingRule extends ICredentialBillingRuleBase {
+    billingMode: 'seconds'
+    rmbPerSecond: number
+}
+
+export interface ICredentialCharactersBillingRule extends ICredentialBillingRuleBase {
+    billingMode: 'characters'
+    rmbPer10kChars: number
+}
+
+export type ICredentialBillingRule =
+    | ICredentialTokenBillingRule
+    | ICredentialUnitBillingRule
+    | ICredentialSecondsBillingRule
+    | ICredentialCharactersBillingRule
+
+export type ICredentialBillingRuleMap = Record<string, ICredentialBillingRule>
+
+export interface ICredentialLegacyBillingFallback {
+    billingMode: Exclude<CredentialBillingMode, 'token' | 'video_count'>
+    sourceField: 'inputRmbPerImage' | 'inputRmbPerSecond' | 'inputRmbPer10kChars'
+    unitPrice: number
+}
+
+export interface ICredentialBillingUsage {
+    credentialId?: string
+    credentialName?: string
+    provider?: string
+    model?: string
+    source?: string
+    billingMode: CredentialBillingMode
+    usage: {
+        inputTokens?: number
+        outputTokens?: number
+        totalTokens?: number
+        units?: number
+        seconds?: number
+        characters?: number
+    }
 }
 
 export interface IVariable {
@@ -345,12 +405,14 @@ export interface ICredentialReqBody {
     plainDataObj: ICredentialDataDecrypted
     workspaceId: string
     creditConsumptionMultiplier?: number
+    billingRules?: ICredentialBillingRuleMap
     creditConsumptionMultiplierByModel?: Record<string, ICredentialModelBillingConfig> | Record<string, number>
 }
 
 // Decrypted credential object sent back to client
 export interface ICredentialReturnResponse extends ICredential {
     plainDataObj: ICredentialDataDecrypted
+    legacyBillingFallbacks?: ICredentialLegacyBillingFallback[]
 }
 
 export interface IUploadFileSizeAndTypes {

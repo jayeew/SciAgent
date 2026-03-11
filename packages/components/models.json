@@ -2449,5 +2449,57 @@
                 }
             ]
         }
+    ],
+    "textToSpeech": [
+        {
+            "name": "alibabaTTSApi",
+            "models": [
+                {
+                    "label": "qwen3-tts-flash",
+                    "name": "qwen3-tts-flash"
+                }
+            ]
+        }
+    ],
+    "mediaModels": [
+        {
+            "name": "doubaoArkApi",
+            "models": [
+                {
+                    "label": "doubao-seedream-5-0-260128",
+                    "name": "doubao-seedream-5-0-260128"
+                },
+                {
+                    "label": "doubao-seedance-1-0-pro-250528",
+                    "name": "doubao-seedance-1-0-pro-250528"
+                },
+                {
+                    "label": "doubao-seedance-1-5-pro-251215",
+                    "name": "doubao-seedance-1-5-pro-251215"
+                }
+            ]
+        },
+        {
+            "name": "doubaoImage",
+            "models": [
+                {
+                    "label": "doubao-seedream-5-0-260128",
+                    "name": "doubao-seedream-5-0-260128"
+                }
+            ]
+        },
+        {
+            "name": "doubaoVideo",
+            "models": [
+                {
+                    "label": "doubao-seedance-1-0-pro-250528",
+                    "name": "doubao-seedance-1-0-pro-250528"
+                },
+                {
+                    "label": "doubao-seedance-1-5-pro-251215",
+                    "name": "doubao-seedance-1-5-pro-251215"
+                }
+            ]
+        }
     ]
 }

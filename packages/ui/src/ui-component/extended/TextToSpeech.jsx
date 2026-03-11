@@ -39,6 +39,7 @@ import useNotifier from '@/utils/useNotifier'
 // API
 import chatflowsApi from '@/api/chatflows'
 import ttsApi from '@/api/tts'
+import credentialsApi from '@/api/credentials'
 
 const TextToSpeechType = {
     OPENAI_TTS: 'openai',
@@ -115,7 +116,7 @@ const textToSpeechProviders = {
             {
                 label: 'Model',
                 name: 'model',
-                type: 'string',
+                type: 'options',
                 description: 'Alibaba TTS model. Defaults to qwen3-tts-flash.',
                 default: 'qwen3-tts-flash',
                 optional: true
@@ -183,6 +184,8 @@ const TextToSpeech = ({ dialogProps }) => {
     const [selectedProvider, setSelectedProvider] = useState('none')
     const [voices, setVoices] = useState([])
     const [loadingVoices, setLoadingVoices] = useState(false)
+    const [modelOptions, setModelOptions] = useState([])
+    const [loadingModels, setLoadingModels] = useState(false)
     const [testAudioSrc, setTestAudioSrc] = useState(null)
     const [isTestPlaying, setIsTestPlaying] = useState(false)
     const [testAudioRef, setTestAudioRef] = useState(null)
@@ -280,6 +283,7 @@ const TextToSpeech = ({ dialogProps }) => {
     const handleProviderChange = (provider, configOverride = null) => {
         setSelectedProvider(provider)
         setVoices([])
+        setModelOptions([])
         resetTestAudio()
 
         if (provider !== 'none') {
@@ -287,7 +291,35 @@ const TextToSpeech = ({ dialogProps }) => {
             const credentialId = config?.[provider]?.credentialId
             if (credentialId) {
                 loadVoicesForProvider(provider, credentialId)
+                if (provider === TextToSpeechType.ALIBABA_TTS) {
+                    loadModelsForCredential(credentialId)
+                }
             }
+        }
+    }
+
+    const loadModelsForCredential = async (credentialId) => {
+        if (!credentialId) {
+            setModelOptions([])
+            return
+        }
+
+        setLoadingModels(true)
+        try {
+            const response = await credentialsApi.getCredentialModels(credentialId)
+            const options = Array.isArray(response?.data)
+                ? response.data.map((item) => ({
+                      label: item.label,
+                      name: item.name,
+                      description: item.name
+                  }))
+                : []
+            setModelOptions(options)
+        } catch (error) {
+            console.error('Error loading text-to-speech models:', error)
+            setModelOptions([])
+        } finally {
+            setLoadingModels(false)
         }
     }
 
@@ -499,6 +531,7 @@ const TextToSpeech = ({ dialogProps }) => {
             } catch {
                 setTextToSpeech(null)
                 setSelectedProvider('none')
+                setModelOptions([])
             }
         }
 
@@ -506,6 +539,7 @@ const TextToSpeech = ({ dialogProps }) => {
             setTextToSpeech(null)
             setSelectedProvider('none')
             setVoices([])
+            setModelOptions([])
             resetTestAudio()
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -606,6 +640,10 @@ const TextToSpeech = ({ dialogProps }) => {
                                         // Load voices when credential is updated
                                         if (newValue && selectedProvider !== 'none') {
                                             setTimeout(() => loadVoicesForProvider(selectedProvider, newValue), 100)
+                                            if (selectedProvider === TextToSpeechType.ALIBABA_TTS) {
+                                                setValue('', selectedProvider, 'model')
+                                                setTimeout(() => loadModelsForCredential(newValue), 100)
+                                            }
                                         }
                                     }}
                                 />
@@ -634,12 +672,18 @@ const TextToSpeech = ({ dialogProps }) => {
                             {inputParam.type === 'options' && (
                                 <Dropdown
                                     name={inputParam.name}
-                                    options={inputParam.options}
+                                    options={inputParam.name === 'model' ? modelOptions : inputParam.options}
+                                    loading={inputParam.name === 'model' ? loadingModels : false}
                                     onSelect={(newValue) => setValue(newValue, selectedProvider, inputParam.name)}
                                     value={
                                         textToSpeech?.[selectedProvider]
                                             ? textToSpeech[selectedProvider][inputParam.name]
                                             : inputParam.default ?? 'choose an option'
+                                    }
+                                    disabled={
+                                        inputParam.name === 'model'
+                                            ? loadingModels || !textToSpeech?.[selectedProvider]?.credentialId
+                                            : false
                                     }
                                 />
                             )}

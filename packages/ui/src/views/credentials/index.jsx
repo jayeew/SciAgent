@@ -7,6 +7,7 @@ import moment from 'moment'
 import { styled } from '@mui/material/styles'
 import { tableCellClasses } from '@mui/material/TableCell'
 import {
+    Alert,
     Autocomplete,
     Button,
     Box,
@@ -24,6 +25,7 @@ import {
     TableHead,
     TableRow,
     Paper,
+    MenuItem,
     TextField,
     Typography,
     useTheme
@@ -79,11 +81,69 @@ const StyledTableRow = styled(TableRow)(() => ({
     }
 }))
 
-const EMPTY_MODEL_MULTIPLIER_ROW = {
+const EMPTY_BILLING_RULE_ROW = {
     model: '',
+    billingMode: 'token',
     multiplier: 1,
     inputRmbPerMTok: '',
-    outputRmbPerMTok: ''
+    outputRmbPerMTok: '',
+    rmbPerUnit: '',
+    rmbPerSecond: '',
+    rmbPer10kChars: ''
+}
+
+const BILLING_MODE_OPTIONS = [
+    { value: 'token', label: 'Token' },
+    { value: 'image_count', label: 'Image Count' },
+    { value: 'video_count', label: 'Video Count' },
+    { value: 'seconds', label: 'Seconds' },
+    { value: 'characters', label: 'Characters' }
+]
+
+const BILLING_MODE_LABELS = BILLING_MODE_OPTIONS.reduce((acc, option) => ({ ...acc, [option.value]: option.label }), {})
+
+const createEmptyBillingRuleRow = (billingMode = 'token') => ({
+    ...EMPTY_BILLING_RULE_ROW,
+    billingMode
+})
+
+const convertBillingRuleToRow = (model, rule) => {
+    const billingMode = rule?.billingMode || 'token'
+
+    return {
+        ...createEmptyBillingRuleRow(billingMode),
+        model,
+        multiplier: Number.isFinite(Number(rule?.multiplier)) && Number(rule?.multiplier) > 0 ? Number(rule.multiplier) : 1,
+        inputRmbPerMTok:
+            billingMode === 'token' && Number.isFinite(Number(rule?.inputRmbPerMTok)) && Number(rule?.inputRmbPerMTok) >= 0
+                ? Number(rule.inputRmbPerMTok)
+                : '',
+        outputRmbPerMTok:
+            billingMode === 'token' && Number.isFinite(Number(rule?.outputRmbPerMTok)) && Number(rule?.outputRmbPerMTok) >= 0
+                ? Number(rule.outputRmbPerMTok)
+                : '',
+        rmbPerUnit:
+            (billingMode === 'image_count' || billingMode === 'video_count') &&
+            Number.isFinite(Number(rule?.rmbPerUnit)) &&
+            Number(rule?.rmbPerUnit) >= 0
+                ? Number(rule.rmbPerUnit)
+                : '',
+        rmbPerSecond:
+            billingMode === 'seconds' && Number.isFinite(Number(rule?.rmbPerSecond)) && Number(rule?.rmbPerSecond) >= 0
+                ? Number(rule.rmbPerSecond)
+                : '',
+        rmbPer10kChars:
+            billingMode === 'characters' && Number.isFinite(Number(rule?.rmbPer10kChars)) && Number(rule?.rmbPer10kChars) >= 0
+                ? Number(rule.rmbPer10kChars)
+                : ''
+    }
+}
+
+const getLegacyFallbackDescription = (fallback) => {
+    if (!fallback) return ''
+
+    const modeLabel = BILLING_MODE_LABELS[fallback.billingMode] || fallback.billingMode
+    return `${modeLabel}: ${fallback.sourceField} = ${fallback.unitPrice}`
 }
 
 // ==============================|| Credentials ||============================== //
@@ -114,6 +174,8 @@ const Credentials = () => {
     const [availableModelOptions, setAvailableModelOptions] = useState([])
     const [loadingModelOptions, setLoadingModelOptions] = useState(false)
     const [savingModelMultipliers, setSavingModelMultipliers] = useState(false)
+    const [loadingBillingRules, setLoadingBillingRules] = useState(false)
+    const [legacyBillingFallbacks, setLegacyBillingFallbacks] = useState([])
 
     const [showShareCredentialDialog, setShowShareCredentialDialog] = useState(false)
     const [shareCredentialDialogProps, setShareCredentialDialogProps] = useState({})
@@ -281,56 +343,37 @@ const Credentials = () => {
 
     const openModelMultipliersDialog = async (credential) => {
         setActiveModelMultiplierCredential(credential)
-        const existingModelMultipliers = credential.creditConsumptionMultiplierByModel || {}
-        const rows = Object.entries(existingModelMultipliers).map(([model, config]) => {
-            if (config && typeof config === 'object' && !Array.isArray(config)) {
-                const multiplier = Number(config.multiplier)
-                const inputRmbPerMTok = Number(config.inputRmbPerMTok)
-                const outputRmbPerMTok = Number(config.outputRmbPerMTok)
-                const legacyRmbPerMTok = Number(config.rmbPerMTok)
-                const hasInputOutputPrice =
-                    Number.isFinite(inputRmbPerMTok) && inputRmbPerMTok >= 0 && Number.isFinite(outputRmbPerMTok) && outputRmbPerMTok >= 0
-                const normalizedInputRmbPerMTok = hasInputOutputPrice
-                    ? inputRmbPerMTok
-                    : Number.isFinite(legacyRmbPerMTok) && legacyRmbPerMTok >= 0
-                    ? legacyRmbPerMTok
-                    : ''
-                const normalizedOutputRmbPerMTok = hasInputOutputPrice
-                    ? outputRmbPerMTok
-                    : Number.isFinite(legacyRmbPerMTok) && legacyRmbPerMTok >= 0
-                    ? legacyRmbPerMTok
-                    : ''
-
-                return {
-                    model,
-                    multiplier: Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1,
-                    inputRmbPerMTok: normalizedInputRmbPerMTok,
-                    outputRmbPerMTok: normalizedOutputRmbPerMTok
-                }
-            }
-
-            const legacyMultiplier = Number(config)
-            return {
-                model,
-                multiplier: Number.isFinite(legacyMultiplier) && legacyMultiplier > 0 ? legacyMultiplier : 1,
-                inputRmbPerMTok: '',
-                outputRmbPerMTok: ''
-            }
-        })
-        setModelMultiplierRows(rows)
+        setModelMultiplierRows([])
+        setLegacyBillingFallbacks([])
         setShowModelMultipliersDialog(true)
         setAvailableModelOptions([])
 
         try {
+            setLoadingBillingRules(true)
             setLoadingModelOptions(true)
-            const resp = await credentialsApi.getCredentialModels(credential.id)
-            const options = Array.isArray(resp?.data)
-                ? resp.data.map((item) => (typeof item?.name === 'string' ? item.name.trim() : '')).filter((item) => item)
+
+            const [credentialResp, modelResp] = await Promise.all([
+                credentialsApi.getSpecificCredential(credential.id),
+                credentialsApi.getCredentialModels(credential.id)
+            ])
+
+            const credentialDetails = credentialResp?.data || credential
+            const existingBillingRules = credentialDetails.billingRules || {}
+            const rows = Object.entries(existingBillingRules).map(([model, rule]) => convertBillingRuleToRow(model, rule))
+
+            setActiveModelMultiplierCredential(credentialDetails)
+            setModelMultiplierRows(rows)
+            setLegacyBillingFallbacks(
+                Array.isArray(credentialDetails.legacyBillingFallbacks) ? credentialDetails.legacyBillingFallbacks : []
+            )
+
+            const options = Array.isArray(modelResp?.data)
+                ? modelResp.data.map((item) => (typeof item?.name === 'string' ? item.name.trim() : '')).filter((item) => item)
                 : []
             setAvailableModelOptions(Array.from(new Set(options)))
         } catch (error) {
             enqueueSnackbar({
-                message: `Failed to load model list: ${
+                message: `Failed to load billing rules: ${
                     typeof error.response?.data === 'object' ? error.response.data.message : error.message
                 }`,
                 options: {
@@ -345,6 +388,7 @@ const Credentials = () => {
                 }
             })
         } finally {
+            setLoadingBillingRules(false)
             setLoadingModelOptions(false)
         }
     }
@@ -356,10 +400,12 @@ const Credentials = () => {
         setAvailableModelOptions([])
         setLoadingModelOptions(false)
         setSavingModelMultipliers(false)
+        setLoadingBillingRules(false)
+        setLegacyBillingFallbacks([])
     }
 
     const onAddModelMultiplierRow = () => {
-        setModelMultiplierRows((prev) => [...prev, { ...EMPTY_MODEL_MULTIPLIER_ROW }])
+        setModelMultiplierRows((prev) => [...prev, createEmptyBillingRuleRow()])
     }
 
     const onRemoveModelMultiplierRow = (indexToRemove) => {
@@ -373,14 +419,13 @@ const Credentials = () => {
     const onSaveModelMultipliers = async () => {
         if (!activeModelMultiplierCredential) return
 
-        const normalizedModelMultipliers = {}
+        const normalizedBillingRules = {}
         const seenModels = new Set()
 
         for (const row of modelMultiplierRows) {
             const modelName = String(row.model || '').trim()
             const multiplier = Number(row.multiplier)
-            const inputRmbPerMTok = Number(row.inputRmbPerMTok)
-            const outputRmbPerMTok = Number(row.outputRmbPerMTok)
+            const billingMode = row.billingMode || 'token'
 
             if (!modelName) {
                 enqueueSnackbar({
@@ -416,40 +461,119 @@ const Credentials = () => {
                 return
             }
 
-            if (!Number.isFinite(inputRmbPerMTok) || inputRmbPerMTok < 0) {
-                enqueueSnackbar({
-                    message: `Invalid input RMB/MTok for model: ${modelName}`,
-                    options: {
-                        key: new Date().getTime() + Math.random(),
-                        variant: 'error'
-                    }
-                })
-                return
+            if (billingMode === 'token') {
+                const inputRmbPerMTok = Number(row.inputRmbPerMTok)
+                const outputRmbPerMTok = Number(row.outputRmbPerMTok)
+
+                if (!Number.isFinite(inputRmbPerMTok) || inputRmbPerMTok < 0) {
+                    enqueueSnackbar({
+                        message: `Invalid input RMB/MTok for model: ${modelName}`,
+                        options: {
+                            key: new Date().getTime() + Math.random(),
+                            variant: 'error'
+                        }
+                    })
+                    return
+                }
+
+                if (!Number.isFinite(outputRmbPerMTok) || outputRmbPerMTok < 0) {
+                    enqueueSnackbar({
+                        message: `Invalid output RMB/MTok for model: ${modelName}`,
+                        options: {
+                            key: new Date().getTime() + Math.random(),
+                            variant: 'error'
+                        }
+                    })
+                    return
+                }
+
+                normalizedBillingRules[modelName] = {
+                    billingMode,
+                    multiplier,
+                    inputRmbPerMTok,
+                    outputRmbPerMTok
+                }
+                continue
             }
 
-            if (!Number.isFinite(outputRmbPerMTok) || outputRmbPerMTok < 0) {
-                enqueueSnackbar({
-                    message: `Invalid output RMB/MTok for model: ${modelName}`,
-                    options: {
-                        key: new Date().getTime() + Math.random(),
-                        variant: 'error'
-                    }
-                })
-                return
+            if (billingMode === 'image_count' || billingMode === 'video_count') {
+                const rmbPerUnit = Number(row.rmbPerUnit)
+                if (!Number.isFinite(rmbPerUnit) || rmbPerUnit < 0) {
+                    enqueueSnackbar({
+                        message: `Invalid RMB/unit for model: ${modelName}`,
+                        options: {
+                            key: new Date().getTime() + Math.random(),
+                            variant: 'error'
+                        }
+                    })
+                    return
+                }
+
+                normalizedBillingRules[modelName] = {
+                    billingMode,
+                    multiplier,
+                    rmbPerUnit
+                }
+                continue
             }
 
-            normalizedModelMultipliers[modelName] = {
-                multiplier,
-                inputRmbPerMTok,
-                outputRmbPerMTok
+            if (billingMode === 'seconds') {
+                const rmbPerSecond = Number(row.rmbPerSecond)
+                if (!Number.isFinite(rmbPerSecond) || rmbPerSecond < 0) {
+                    enqueueSnackbar({
+                        message: `Invalid RMB/second for model: ${modelName}`,
+                        options: {
+                            key: new Date().getTime() + Math.random(),
+                            variant: 'error'
+                        }
+                    })
+                    return
+                }
+
+                normalizedBillingRules[modelName] = {
+                    billingMode,
+                    multiplier,
+                    rmbPerSecond
+                }
+                continue
             }
+
+            if (billingMode === 'characters') {
+                const rmbPer10kChars = Number(row.rmbPer10kChars)
+                if (!Number.isFinite(rmbPer10kChars) || rmbPer10kChars < 0) {
+                    enqueueSnackbar({
+                        message: `Invalid RMB/10k chars for model: ${modelName}`,
+                        options: {
+                            key: new Date().getTime() + Math.random(),
+                            variant: 'error'
+                        }
+                    })
+                    return
+                }
+
+                normalizedBillingRules[modelName] = {
+                    billingMode,
+                    multiplier,
+                    rmbPer10kChars
+                }
+                continue
+            }
+
+            enqueueSnackbar({
+                message: `Unsupported billing mode for model: ${modelName}`,
+                options: {
+                    key: new Date().getTime() + Math.random(),
+                    variant: 'error'
+                }
+            })
+            return
         }
 
         try {
             setSavingModelMultipliers(true)
-            await credentialsApi.updateCredentialModelMultipliers(activeModelMultiplierCredential.id, normalizedModelMultipliers)
+            await credentialsApi.updateCredentialBillingRules(activeModelMultiplierCredential.id, normalizedBillingRules)
             enqueueSnackbar({
-                message: 'Model billing configuration updated',
+                message: 'Billing rules updated',
                 options: {
                     key: new Date().getTime() + Math.random(),
                     variant: 'success',
@@ -464,7 +588,7 @@ const Credentials = () => {
             getAllCredentialsApi.request()
         } catch (error) {
             enqueueSnackbar({
-                message: `Failed to update model billing configuration: ${
+                message: `Failed to update billing rules: ${
                     typeof error.response?.data === 'object' ? error.response.data.message : error.message
                 }`,
                 options: {
@@ -565,7 +689,7 @@ const Credentials = () => {
                                             <StyledTableCell>Last Updated</StyledTableCell>
                                             <StyledTableCell>Created</StyledTableCell>
                                             {isOwner && <StyledTableCell>Multiplier</StyledTableCell>}
-                                            {isOwner && <StyledTableCell>Model Billing</StyledTableCell>}
+                                            {isOwner && <StyledTableCell>Billing Rules</StyledTableCell>}
                                             <StyledTableCell style={{ width: '5%' }}> </StyledTableCell>
                                             <StyledTableCell style={{ width: '5%' }}> </StyledTableCell>
                                             <StyledTableCell style={{ width: '5%' }}> </StyledTableCell>
@@ -719,7 +843,7 @@ const Credentials = () => {
                                                                     onClick={() => openModelMultipliersDialog(credential)}
                                                                     startIcon={<IconAdjustments size={14} />}
                                                                 >
-                                                                    Configure
+                                                                    Edit Rules
                                                                 </Button>
                                                             </StyledTableCell>
                                                         )}
@@ -805,103 +929,216 @@ const Credentials = () => {
                 sx={{ '& .MuiDialog-paper': { width: 'min(980px, calc(100% - 64px))' } }}
             >
                 <DialogTitle>
-                    Model Billing Configuration{activeModelMultiplierCredential ? ` - ${activeModelMultiplierCredential.name}` : ''}
+                    Billing Rules{activeModelMultiplierCredential ? ` - ${activeModelMultiplierCredential.name}` : ''}
                 </DialogTitle>
                 <DialogContent>
                     <Stack sx={{ mt: 1, gap: 2 }}>
                         <Typography variant='body2' color='text.secondary'>
-                            Exact model name matching. Base cost = inputTokens * input RMB/MTok + outputTokens * output RMB/MTok (per 1M
-                            tokens), then multiplied by model multiplier and credential multiplier.
+                            Exact model matching only. Producers report usage, and pricing is controlled here by billing mode and rule
+                            price. If no exact rule matches, the request still succeeds but no credit is charged.
                         </Typography>
 
-                        {!modelMultiplierRows.length && (
+                        {!!legacyBillingFallbacks.length && (
+                            <Alert severity='warning'>
+                                Legacy fallback pricing is still active for this credential and has not yet been saved as explicit
+                                exact-model rules: {legacyBillingFallbacks.map((item) => getLegacyFallbackDescription(item)).join(' · ')}
+                            </Alert>
+                        )}
+
+                        {loadingBillingRules && (
+                            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                                <CircularProgress size={24} />
+                            </Box>
+                        )}
+
+                        {!loadingBillingRules && !modelMultiplierRows.length && (
                             <Typography variant='body2' color='text.secondary'>
-                                No model overrides configured.
+                                No billing rules configured.
                             </Typography>
                         )}
 
-                        {modelMultiplierRows.map((row, index) => (
-                            <Stack key={`${row.model}_${index}`} direction='row' sx={{ gap: 1, alignItems: 'center' }}>
-                                <Autocomplete
-                                    freeSolo
-                                    fullWidth
-                                    options={availableModelOptions}
-                                    loading={loadingModelOptions}
-                                    value={row.model}
-                                    onChange={(_, value) => {
-                                        onUpdateModelMultiplierRow(index, {
-                                            model: typeof value === 'string' ? value : value || ''
-                                        })
-                                    }}
-                                    onInputChange={(_, value) => {
-                                        onUpdateModelMultiplierRow(index, {
-                                            model: value
-                                        })
-                                    }}
-                                    renderInput={(params) => <TextField {...params} size='small' label='Model' placeholder='gpt-5-mini' />}
-                                />
-                                <TextField
-                                    size='small'
-                                    type='number'
-                                    label='Multiplier'
-                                    value={row.multiplier}
-                                    inputProps={{ min: 0.000001, step: '0.1' }}
-                                    sx={{ width: 160 }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === '-') {
-                                            e.preventDefault()
-                                        }
-                                    }}
-                                    onChange={(e) => {
-                                        const value = Number(e.target.value)
-                                        onUpdateModelMultiplierRow(index, {
-                                            multiplier: Number.isNaN(value) ? '' : value
-                                        })
-                                    }}
-                                />
-                                <TextField
-                                    size='small'
-                                    type='number'
-                                    label='Input RMB/MTok'
-                                    value={row.inputRmbPerMTok}
-                                    inputProps={{ min: 0, step: '0.01' }}
-                                    sx={{ width: 190 }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === '-') {
-                                            e.preventDefault()
-                                        }
-                                    }}
-                                    onChange={(e) => {
-                                        const value = Number(e.target.value)
-                                        onUpdateModelMultiplierRow(index, {
-                                            inputRmbPerMTok: Number.isNaN(value) ? '' : value
-                                        })
-                                    }}
-                                />
-                                <TextField
-                                    size='small'
-                                    type='number'
-                                    label='Output RMB/MTok'
-                                    value={row.outputRmbPerMTok}
-                                    inputProps={{ min: 0, step: '0.01' }}
-                                    sx={{ width: 190 }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === '-') {
-                                            e.preventDefault()
-                                        }
-                                    }}
-                                    onChange={(e) => {
-                                        const value = Number(e.target.value)
-                                        onUpdateModelMultiplierRow(index, {
-                                            outputRmbPerMTok: Number.isNaN(value) ? '' : value
-                                        })
-                                    }}
-                                />
-                                <Button color='error' onClick={() => onRemoveModelMultiplierRow(index)}>
-                                    <IconTrash size={16} />
-                                </Button>
-                            </Stack>
-                        ))}
+                        {!loadingBillingRules &&
+                            modelMultiplierRows.map((row, index) => (
+                                <Stack
+                                    key={`${row.model}_${index}`}
+                                    direction='row'
+                                    sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}
+                                >
+                                    <Autocomplete
+                                        freeSolo
+                                        sx={{ flex: 1, minWidth: 240 }}
+                                        options={availableModelOptions}
+                                        loading={loadingModelOptions}
+                                        value={row.model}
+                                        onChange={(_, value) => {
+                                            onUpdateModelMultiplierRow(index, {
+                                                model: typeof value === 'string' ? value : value || ''
+                                            })
+                                        }}
+                                        onInputChange={(_, value) => {
+                                            onUpdateModelMultiplierRow(index, {
+                                                model: value
+                                            })
+                                        }}
+                                        renderInput={(params) => (
+                                            <TextField {...params} size='small' label='Model' placeholder='gpt-5-mini' />
+                                        )}
+                                    />
+                                    <TextField
+                                        select
+                                        size='small'
+                                        label='Billing Mode'
+                                        value={row.billingMode}
+                                        sx={{ width: 180 }}
+                                        onChange={(e) => {
+                                            const billingMode = e.target.value
+                                            onUpdateModelMultiplierRow(index, {
+                                                billingMode,
+                                                ...(billingMode === 'token'
+                                                    ? { rmbPerUnit: '', rmbPerSecond: '', rmbPer10kChars: '' }
+                                                    : billingMode === 'image_count' || billingMode === 'video_count'
+                                                    ? { inputRmbPerMTok: '', outputRmbPerMTok: '', rmbPerSecond: '', rmbPer10kChars: '' }
+                                                    : billingMode === 'seconds'
+                                                    ? { inputRmbPerMTok: '', outputRmbPerMTok: '', rmbPerUnit: '', rmbPer10kChars: '' }
+                                                    : { inputRmbPerMTok: '', outputRmbPerMTok: '', rmbPerUnit: '', rmbPerSecond: '' })
+                                            })
+                                        }}
+                                    >
+                                        {BILLING_MODE_OPTIONS.map((option) => (
+                                            <MenuItem key={option.value} value={option.value}>
+                                                {option.label}
+                                            </MenuItem>
+                                        ))}
+                                    </TextField>
+                                    <TextField
+                                        size='small'
+                                        type='number'
+                                        label='Multiplier'
+                                        value={row.multiplier}
+                                        inputProps={{ min: 0.000001, step: '0.1' }}
+                                        sx={{ width: 160 }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === '-') {
+                                                e.preventDefault()
+                                            }
+                                        }}
+                                        onChange={(e) => {
+                                            const value = Number(e.target.value)
+                                            onUpdateModelMultiplierRow(index, {
+                                                multiplier: Number.isNaN(value) ? '' : value
+                                            })
+                                        }}
+                                    />
+                                    {row.billingMode === 'token' && (
+                                        <>
+                                            <TextField
+                                                size='small'
+                                                type='number'
+                                                label='Input RMB/MTok'
+                                                value={row.inputRmbPerMTok}
+                                                inputProps={{ min: 0, step: '0.01' }}
+                                                sx={{ width: 190 }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === '-') {
+                                                        e.preventDefault()
+                                                    }
+                                                }}
+                                                onChange={(e) => {
+                                                    const value = Number(e.target.value)
+                                                    onUpdateModelMultiplierRow(index, {
+                                                        inputRmbPerMTok: Number.isNaN(value) ? '' : value
+                                                    })
+                                                }}
+                                            />
+                                            <TextField
+                                                size='small'
+                                                type='number'
+                                                label='Output RMB/MTok'
+                                                value={row.outputRmbPerMTok}
+                                                inputProps={{ min: 0, step: '0.01' }}
+                                                sx={{ width: 190 }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === '-') {
+                                                        e.preventDefault()
+                                                    }
+                                                }}
+                                                onChange={(e) => {
+                                                    const value = Number(e.target.value)
+                                                    onUpdateModelMultiplierRow(index, {
+                                                        outputRmbPerMTok: Number.isNaN(value) ? '' : value
+                                                    })
+                                                }}
+                                            />
+                                        </>
+                                    )}
+                                    {(row.billingMode === 'image_count' || row.billingMode === 'video_count') && (
+                                        <TextField
+                                            size='small'
+                                            type='number'
+                                            label='RMB/Unit'
+                                            value={row.rmbPerUnit}
+                                            inputProps={{ min: 0, step: '0.01' }}
+                                            sx={{ width: 190 }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === '-') {
+                                                    e.preventDefault()
+                                                }
+                                            }}
+                                            onChange={(e) => {
+                                                const value = Number(e.target.value)
+                                                onUpdateModelMultiplierRow(index, {
+                                                    rmbPerUnit: Number.isNaN(value) ? '' : value
+                                                })
+                                            }}
+                                        />
+                                    )}
+                                    {row.billingMode === 'seconds' && (
+                                        <TextField
+                                            size='small'
+                                            type='number'
+                                            label='RMB/Second'
+                                            value={row.rmbPerSecond}
+                                            inputProps={{ min: 0, step: '0.01' }}
+                                            sx={{ width: 190 }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === '-') {
+                                                    e.preventDefault()
+                                                }
+                                            }}
+                                            onChange={(e) => {
+                                                const value = Number(e.target.value)
+                                                onUpdateModelMultiplierRow(index, {
+                                                    rmbPerSecond: Number.isNaN(value) ? '' : value
+                                                })
+                                            }}
+                                        />
+                                    )}
+                                    {row.billingMode === 'characters' && (
+                                        <TextField
+                                            size='small'
+                                            type='number'
+                                            label='RMB/10k Chars'
+                                            value={row.rmbPer10kChars}
+                                            inputProps={{ min: 0, step: '0.01' }}
+                                            sx={{ width: 190 }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === '-') {
+                                                    e.preventDefault()
+                                                }
+                                            }}
+                                            onChange={(e) => {
+                                                const value = Number(e.target.value)
+                                                onUpdateModelMultiplierRow(index, {
+                                                    rmbPer10kChars: Number.isNaN(value) ? '' : value
+                                                })
+                                            }}
+                                        />
+                                    )}
+                                    <Button color='error' onClick={() => onRemoveModelMultiplierRow(index)}>
+                                        <IconTrash size={16} />
+                                    </Button>
+                                </Stack>
+                            ))}
                         <Box>
                             <Button variant='outlined' size='small' onClick={onAddModelMultiplierRow} startIcon={<IconPlus size={14} />}>
                                 Add Row
@@ -911,7 +1148,7 @@ const Credentials = () => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={closeModelMultipliersDialog}>Cancel</Button>
-                    <Button variant='contained' onClick={onSaveModelMultipliers} disabled={savingModelMultipliers}>
+                    <Button variant='contained' onClick={onSaveModelMultipliers} disabled={savingModelMultipliers || loadingBillingRules}>
                         {savingModelMultipliers ? <CircularProgress size={18} /> : 'Save'}
                     </Button>
                 </DialogActions>

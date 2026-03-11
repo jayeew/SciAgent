@@ -20,6 +20,9 @@ export class Credential implements ICredential {
     creditConsumptionMultiplier: number
 
     @Column({ nullable: true, type: 'text' })
+    billingRules?: string
+
+    @Column({ nullable: true, type: 'text' })
     creditConsumptionMultiplierByModel?: string
 
     @Column({ type: 'timestamp' })

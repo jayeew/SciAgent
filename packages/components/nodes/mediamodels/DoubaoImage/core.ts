@@ -52,7 +52,6 @@ export interface IDoubaoImageGenerationConfig {
     size?: string
     outputFormat?: string
     watermark?: boolean
-    inputRmbPerImage?: number
     chatflowid?: string
     orgId?: string
 }
@@ -278,6 +277,7 @@ const getSummaryPayload = (
         provider: DOUBAO_IMAGE_PROVIDER,
         model: response.model || effectiveArgs.model,
         prompt: effectiveArgs.prompt,
+        mediaType: 'image',
         imageCount: images.length,
         images,
         usage: response.usage ?? null,
@@ -409,7 +409,6 @@ export class DoubaoImageModel extends BaseMediaModel {
     private readonly defaultOutputFormat: 'png' | 'jpeg'
     private readonly defaultWatermark: boolean
     private readonly credentialId?: string
-    private readonly inputRmbPerImage: number
     private readonly chatflowid?: string
     private readonly orgId?: string
 
@@ -422,8 +421,6 @@ export class DoubaoImageModel extends BaseMediaModel {
         this.defaultSize = config.size?.trim() || DEFAULT_DOUBAO_IMAGE_SIZE
         this.defaultOutputFormat = normalizeDoubaoOutputFormat(config.outputFormat)
         this.defaultWatermark = config.watermark ?? DEFAULT_DOUBAO_IMAGE_WATERMARK
-        const inputRmbPerImage = Number(config.inputRmbPerImage)
-        this.inputRmbPerImage = Number.isFinite(inputRmbPerImage) && inputRmbPerImage >= 0 ? inputRmbPerImage : 0
         this.chatflowid = config.chatflowid
         this.orgId = config.orgId
     }
@@ -580,8 +577,11 @@ export class DoubaoImageModel extends BaseMediaModel {
                 provider: DOUBAO_IMAGE_PROVIDER,
                 credentialId: this.credentialId,
                 model: metadata.model,
-                generatedImages: normalizedGeneratedImages,
-                inputRmbPerImage: this.inputRmbPerImage
+                source: 'media_generation',
+                billingMode: 'image_count',
+                usage: {
+                    units: normalizedGeneratedImages
+                }
             }
         }
     }

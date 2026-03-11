@@ -1,129 +1,112 @@
 import { StatusCodes } from 'http-status-codes'
 import { DataSource, In } from 'typeorm'
+import { CredentialBillingMode, ICredentialBillingRule, ICredentialBillingUsage, ICredentialTokenBillingRule } from '../../Interface'
 import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import { WorkspaceCreditTransaction, WorkspaceCreditTransactionType } from '../database/entities/workspace-credit-transaction.entity'
 import { WorkspaceUser } from '../database/entities/workspace-user.entity'
 import { Credential } from '../../database/entities/Credential'
+import { decryptCredentialData } from '../../utils'
+import {
+    calculateBaseCreditFromRmb,
+    getNormalizedCredentialMultiplier,
+    getNormalizedTokenUsage,
+    getResolvedRuleForUsage
+} from '../../utils/credentialBilling'
 import logger from '../../utils/logger'
 
-interface IModelBillingConfig {
-    multiplier: number
-    inputRmbPerMTok: number
-    outputRmbPerMTok: number
-}
-
-type ModelMultiplierSource = 'model_config' | 'default'
-type RmbPriceSource = 'model_config' | 'missing'
-
-const LEGACY_DEFAULT_RMB_PER_MTOK = 0
-const ONE_MILLION_TOKENS = 1_000_000
-const TEN_THOUSAND_CHARACTERS = 10_000
-
-const parseModelBillingConfigMap = (value?: string | null): Record<string, IModelBillingConfig> => {
-    if (!value) return {}
-
-    try {
-        const parsed = JSON.parse(value)
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-
-        const result: Record<string, IModelBillingConfig> = {}
-        for (const [modelName, rawValue] of Object.entries(parsed)) {
-            const normalizedModelName = modelName.trim()
-            if (!normalizedModelName) continue
-
-            if (typeof rawValue === 'number' || typeof rawValue === 'string') {
-                const legacyMultiplier = Number(rawValue)
-                if (!Number.isFinite(legacyMultiplier) || legacyMultiplier <= 0) continue
-                result[normalizedModelName] = {
-                    multiplier: legacyMultiplier,
-                    inputRmbPerMTok: LEGACY_DEFAULT_RMB_PER_MTOK,
-                    outputRmbPerMTok: LEGACY_DEFAULT_RMB_PER_MTOK
-                }
-                continue
-            }
-
-            if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) continue
-
-            const config = rawValue as Record<string, unknown>
-            const multiplier = Number(config.multiplier)
-            const inputRmbPerMTok = Number(config.inputRmbPerMTok)
-            const outputRmbPerMTok = Number(config.outputRmbPerMTok)
-            const legacyRmbPerMTok = Number(config.rmbPerMTok)
-
-            if (!Number.isFinite(multiplier) || multiplier <= 0) continue
-            const hasInputOutputPrice =
-                Number.isFinite(inputRmbPerMTok) && inputRmbPerMTok >= 0 && Number.isFinite(outputRmbPerMTok) && outputRmbPerMTok >= 0
-
-            if (hasInputOutputPrice) {
-                result[normalizedModelName] = {
-                    multiplier,
-                    inputRmbPerMTok,
-                    outputRmbPerMTok
-                }
-                continue
-            }
-
-            if (!Number.isFinite(legacyRmbPerMTok) || legacyRmbPerMTok < 0) continue
-
-            result[normalizedModelName] = {
-                multiplier,
-                inputRmbPerMTok: legacyRmbPerMTok,
-                outputRmbPerMTok: legacyRmbPerMTok
-            }
+const getUsageMetricValue = (billingMode: CredentialBillingMode, usage: ICredentialBillingUsage['usage']): number => {
+    switch (billingMode) {
+        case 'token':
+            return getNormalizedTokenUsage(usage).billableTotalTokens
+        case 'image_count':
+        case 'video_count': {
+            const units = Number(usage.units)
+            return Number.isFinite(units) && units > 0 ? units : 0
         }
-        return result
-    } catch {
-        return {}
+        case 'seconds': {
+            const seconds = Number(usage.seconds)
+            return Number.isFinite(seconds) && seconds > 0 ? seconds : 0
+        }
+        case 'characters': {
+            const characters = Number(usage.characters)
+            return Number.isFinite(characters) && characters > 0 ? characters : 0
+        }
+        default:
+            return 0
     }
 }
 
-const resolveBillingConfig = (
-    credential: Credential | undefined,
-    model: string | undefined
-): {
+const buildUsageDescription = (
+    usage: ICredentialBillingUsage,
+    rule: ICredentialBillingRule,
+    ruleSource: string,
     credentialMultiplier: number
-    modelMultiplier: number
-    modelMultiplierSource: ModelMultiplierSource
-    inputRmbPerMTok: number
-    outputRmbPerMTok: number
-    rmbPriceSource: RmbPriceSource
-} => {
-    const defaultCredentialMultiplier = Number(credential?.creditConsumptionMultiplier)
-    const credentialMultiplier =
-        Number.isFinite(defaultCredentialMultiplier) && defaultCredentialMultiplier > 0 ? defaultCredentialMultiplier : 1
-    const normalizedModel = typeof model === 'string' ? model.trim() : ''
+) => {
+    switch (usage.billingMode) {
+        case 'token': {
+            const tokenRule = rule as ICredentialTokenBillingRule
+            const normalizedTokenUsage = getNormalizedTokenUsage(usage.usage)
+            const inputTokenCostRmb = (normalizedTokenUsage.billableInputTokens / 1_000_000) * tokenRule.inputRmbPerMTok
+            const outputTokenCostRmb = (normalizedTokenUsage.billableOutputTokens / 1_000_000) * tokenRule.outputRmbPerMTok
+            const tokenCostRmb = inputTokenCostRmb + outputTokenCostRmb
+            const baseCredit = calculateBaseCreditFromRmb(tokenCostRmb)
 
-    if (credential && normalizedModel) {
-        const modelBillingConfigMap = parseModelBillingConfigMap(credential.creditConsumptionMultiplierByModel)
-        const modelBillingConfig = modelBillingConfigMap[normalizedModel]
-
-        if (modelBillingConfig) {
-            return {
-                credentialMultiplier,
-                modelMultiplier: modelBillingConfig.multiplier,
-                modelMultiplierSource: 'model_config',
-                inputRmbPerMTok: modelBillingConfig.inputRmbPerMTok,
-                outputRmbPerMTok: modelBillingConfig.outputRmbPerMTok,
-                rmbPriceSource: 'model_config'
-            }
+            return `Token consumption: billingMode=token, source=${usage.source || 'unknown'}, model=${
+                usage.model || 'unknown'
+            }, inputTokens=${normalizedTokenUsage.billableInputTokens}, outputTokens=${
+                normalizedTokenUsage.billableOutputTokens
+            }, totalTokens=${normalizedTokenUsage.totalTokens}, inputRmbPerMTok=${tokenRule.inputRmbPerMTok}, outputRmbPerMTok=${
+                tokenRule.outputRmbPerMTok
+            }, tokenCostRmb=${tokenCostRmb.toFixed(6)}, baseCredit=${baseCredit}, ruleMultiplier=${
+                rule.multiplier
+            }, credentialMultiplier=${credentialMultiplier}, ruleSource=${ruleSource}`
         }
-    }
+        case 'image_count':
+        case 'video_count': {
+            const units = getUsageMetricValue(usage.billingMode, usage.usage)
+            const rmbPerUnit = 'rmbPerUnit' in rule ? rule.rmbPerUnit : 0
+            const costRmb = units * rmbPerUnit
+            const baseCredit = calculateBaseCreditFromRmb(costRmb)
 
-    return {
-        credentialMultiplier,
-        modelMultiplier: 1,
-        modelMultiplierSource: 'default',
-        inputRmbPerMTok: 0,
-        outputRmbPerMTok: 0,
-        rmbPriceSource: 'missing'
-    }
-}
+            return `Media consumption: billingMode=${usage.billingMode}, source=${usage.source || 'unknown'}, model=${
+                usage.model || 'unknown'
+            }, units=${units}, rmbPerUnit=${rmbPerUnit}, costRmb=${costRmb.toFixed(6)}, baseCredit=${baseCredit}, ruleMultiplier=${
+                rule.multiplier
+            }, credentialMultiplier=${credentialMultiplier}, ruleSource=${ruleSource}`
+        }
+        case 'seconds': {
+            const seconds = getUsageMetricValue(usage.billingMode, usage.usage)
+            const costRmb = seconds * ('rmbPerSecond' in rule ? rule.rmbPerSecond : 0)
+            const baseCredit = calculateBaseCreditFromRmb(costRmb)
 
-const calculateBaseCreditFromRmb = (tokenCostRmb: number): number => {
-    if (!Number.isFinite(tokenCostRmb) || tokenCostRmb <= 0) return 0
-    // Round up to 2 decimals (1.121 => 1.13), then convert RMB to credits.
-    return Math.ceil(tokenCostRmb * 100 - Number.EPSILON)
+            return `Speech duration consumption: billingMode=seconds, source=${usage.source || 'unknown'}, model=${
+                usage.model || 'unknown'
+            }, seconds=${seconds}, rmbPerSecond=${'rmbPerSecond' in rule ? rule.rmbPerSecond : 0}, costRmb=${costRmb.toFixed(
+                6
+            )}, baseCredit=${baseCredit}, ruleMultiplier=${
+                rule.multiplier
+            }, credentialMultiplier=${credentialMultiplier}, ruleSource=${ruleSource}`
+        }
+        case 'characters': {
+            const characters = getUsageMetricValue(usage.billingMode, usage.usage)
+            const rmbPer10kChars = 'rmbPer10kChars' in rule ? rule.rmbPer10kChars : 0
+            const costRmb = (characters / 10_000) * rmbPer10kChars
+            const baseCredit = calculateBaseCreditFromRmb(costRmb)
+
+            return `Text-to-speech consumption: billingMode=characters, source=${usage.source || 'unknown'}, model=${
+                usage.model || 'unknown'
+            }, characters=${characters}, rmbPer10kChars=${rmbPer10kChars}, costRmb=${costRmb.toFixed(
+                6
+            )}, baseCredit=${baseCredit}, ruleMultiplier=${
+                rule.multiplier
+            }, credentialMultiplier=${credentialMultiplier}, ruleSource=${ruleSource}`
+        }
+        default:
+            return `Billing consumption: billingMode=${usage.billingMode}, source=${usage.source || 'unknown'}, model=${
+                usage.model || 'unknown'
+            }`
+    }
 }
 
 export const enum WorkspaceCreditErrorMessage {
@@ -416,39 +399,27 @@ export class WorkspaceCreditService {
         }
     }
 
-    public async consumeCreditBySpeechSeconds(
-        workspaceId: string,
-        userId: string,
-        usage: {
-            credentialId?: string
-            credentialName?: string
-            provider?: string
-            model?: string
-            seconds: number
-            inputRmbPerSecond: number
-        }
-    ) {
-        const normalizedSeconds = Number(usage.seconds)
-        if (!Number.isFinite(normalizedSeconds) || normalizedSeconds < 0) {
-            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid speech duration in seconds')
-        }
+    public async consumeCreditByBillingUsages(workspaceId: string, userId: string, usages: ICredentialBillingUsage[]) {
+        const normalizedUsages = (Array.isArray(usages) ? usages : []).filter((usage): usage is ICredentialBillingUsage => {
+            if (!usage || typeof usage !== 'object') return false
 
-        const normalizedInputRmbPerSecond = Number(usage.inputRmbPerSecond)
-        if (!Number.isFinite(normalizedInputRmbPerSecond) || normalizedInputRmbPerSecond < 0) {
-            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid input RMB/s')
-        }
+            const usageMetric = getUsageMetricValue(usage.billingMode, usage.usage || {})
+            if (usageMetric <= 0) {
+                logger.info(
+                    `[workspace-credit] skip usage with empty metric workspaceId=${workspaceId} userId=${userId} credentialId=${
+                        usage.credentialId || '-'
+                    } model=${usage.model || 'unknown'} billingMode=${usage.billingMode}`
+                )
+                return false
+            }
 
-        const rawConsumedCredit = normalizedInputRmbPerSecond * normalizedSeconds * 100 + 1
-        const consumedCredit = Math.max(1, Math.ceil(rawConsumedCredit - Number.EPSILON))
-        logger.info(
-            `[workspace-credit] start speech consume workspaceId=${workspaceId} userId=${userId} credentialId=${
-                usage.credentialId || '-'
-            } provider=${usage.provider || 'unknown'} model=${
-                usage.model || 'unknown'
-            } seconds=${normalizedSeconds} inputRmbPerSecond=${normalizedInputRmbPerSecond} rawConsumedCredit=${rawConsumedCredit.toFixed(
-                6
-            )} consumed=${consumedCredit}`
-        )
+            return true
+        })
+
+        if (!normalizedUsages.length) {
+            logger.info(`[workspace-credit] skip consume: no valid billing usages workspaceId=${workspaceId} userId=${userId}`)
+            return { workspaceId, userId, creditConsumed: 0, transactions: [] as WorkspaceCreditTransaction[] }
+        }
 
         const queryRunner = this.dataSource.createQueryRunner()
         await queryRunner.connect()
@@ -465,52 +436,188 @@ export class WorkspaceCreditService {
                 throw new InternalFlowiseError(StatusCodes.NOT_FOUND, WorkspaceCreditErrorMessage.WORKSPACE_USER_NOT_FOUND)
             }
 
-            const credential = usage.credentialId
-                ? await queryRunner.manager.findOneBy(Credential, {
-                      id: usage.credentialId
-                  })
-                : undefined
-            const credentialName = usage.credentialName || credential?.name || credential?.credentialName || 'Unknown Credential'
+            const credentialIds = normalizedUsages.map((usage) => usage.credentialId).filter((id): id is string => !!id)
+            const credentials = credentialIds.length ? await queryRunner.manager.findBy(Credential, { id: In(credentialIds) }) : []
+            const credentialMap = new Map(credentials.map((credential) => [credential.id, credential]))
+            const decryptedCredentialMap = new Map<string, Record<string, unknown>>()
 
-            workspaceUser.credit = (workspaceUser.credit ?? 0) - consumedCredit
+            let totalCreditConsumed = 0
+            const transactions: WorkspaceCreditTransaction[] = []
+
+            for (const usage of normalizedUsages) {
+                const credential = usage.credentialId ? credentialMap.get(usage.credentialId) : undefined
+                let decryptedCredentialData: Record<string, unknown> | undefined
+
+                if (credential?.id) {
+                    if (decryptedCredentialMap.has(credential.id)) {
+                        decryptedCredentialData = decryptedCredentialMap.get(credential.id)
+                    } else {
+                        try {
+                            decryptedCredentialData = await decryptCredentialData(credential.encryptedData)
+                            decryptedCredentialMap.set(credential.id, decryptedCredentialData)
+                        } catch (error) {
+                            logger.warn(
+                                `[workspace-credit] failed to decrypt credential for legacy billing fallback credentialId=${
+                                    credential.id
+                                }: ${error instanceof Error ? error.message : error}`
+                            )
+                            decryptedCredentialData = undefined
+                        }
+                    }
+                }
+
+                const resolvedRule = getResolvedRuleForUsage(credential, decryptedCredentialData, usage)
+                if (!resolvedRule.rule) {
+                    logger.warn(
+                        `[workspace-credit] missing billing rule workspaceId=${workspaceId} userId=${userId} credentialId=${
+                            usage.credentialId || '-'
+                        } provider=${usage.provider || 'unknown'} model=${usage.model || 'unknown'} billingMode=${usage.billingMode}`
+                    )
+                    continue
+                }
+
+                if (resolvedRule.modeMismatch) {
+                    logger.warn(
+                        `[workspace-credit] billing rule mode mismatch workspaceId=${workspaceId} userId=${userId} credentialId=${
+                            usage.credentialId || '-'
+                        } provider=${usage.provider || 'unknown'} model=${usage.model || 'unknown'} usageBillingMode=${
+                            usage.billingMode
+                        } ruleBillingMode=${resolvedRule.rule.billingMode}`
+                    )
+                    continue
+                }
+
+                const credentialMultiplier = getNormalizedCredentialMultiplier(credential)
+                const credentialName = usage.credentialName || credential?.name || credential?.credentialName || 'Unknown Credential'
+
+                let costRmb = 0
+                switch (usage.billingMode) {
+                    case 'token': {
+                        const tokenRule = resolvedRule.rule as ICredentialTokenBillingRule
+                        const normalizedTokenUsage = getNormalizedTokenUsage(usage.usage)
+                        const inputTokenCostRmb = (normalizedTokenUsage.billableInputTokens / 1_000_000) * tokenRule.inputRmbPerMTok
+                        const outputTokenCostRmb = (normalizedTokenUsage.billableOutputTokens / 1_000_000) * tokenRule.outputRmbPerMTok
+                        costRmb = inputTokenCostRmb + outputTokenCostRmb
+                        break
+                    }
+                    case 'image_count':
+                    case 'video_count':
+                        costRmb =
+                            getUsageMetricValue(usage.billingMode, usage.usage) *
+                            ('rmbPerUnit' in resolvedRule.rule ? resolvedRule.rule.rmbPerUnit : 0)
+                        break
+                    case 'seconds':
+                        costRmb =
+                            getUsageMetricValue(usage.billingMode, usage.usage) *
+                            ('rmbPerSecond' in resolvedRule.rule ? resolvedRule.rule.rmbPerSecond : 0)
+                        break
+                    case 'characters':
+                        costRmb =
+                            (getUsageMetricValue(usage.billingMode, usage.usage) / 10_000) *
+                            ('rmbPer10kChars' in resolvedRule.rule ? resolvedRule.rule.rmbPer10kChars : 0)
+                        break
+                    default:
+                        costRmb = 0
+                }
+
+                const baseCredit = calculateBaseCreditFromRmb(costRmb)
+                const consumed = Math.ceil(baseCredit * resolvedRule.rule.multiplier * credentialMultiplier - Number.EPSILON)
+
+                if (consumed <= 0) {
+                    logger.info(
+                        `[workspace-credit] skip usage charge workspaceId=${workspaceId} userId=${userId} credentialId=${
+                            usage.credentialId || '-'
+                        } provider=${usage.provider || 'unknown'} model=${usage.model || 'unknown'} billingMode=${
+                            usage.billingMode
+                        } costRmb=${costRmb.toFixed(6)} baseCredit=${baseCredit} ruleMultiplier=${
+                            resolvedRule.rule.multiplier
+                        } credentialMultiplier=${credentialMultiplier}`
+                    )
+                    continue
+                }
+
+                workspaceUser.credit = (workspaceUser.credit ?? 0) - consumed
+                totalCreditConsumed += consumed
+
+                const transaction = queryRunner.manager.create(WorkspaceCreditTransaction, {
+                    workspaceId,
+                    userId,
+                    type: WorkspaceCreditTransactionType.CONSUME,
+                    amount: -consumed,
+                    balance: workspaceUser.credit,
+                    credentialName,
+                    credentialId: usage.credentialId,
+                    description: `${buildUsageDescription(
+                        usage,
+                        resolvedRule.rule,
+                        resolvedRule.source,
+                        credentialMultiplier
+                    )}, chargedCredit=${consumed}`
+                })
+
+                const savedTransaction = await queryRunner.manager.save(WorkspaceCreditTransaction, transaction)
+                transactions.push(savedTransaction)
+                logger.info(
+                    `[workspace-credit] consumed=${consumed} workspaceId=${workspaceId} userId=${userId} credentialId=${
+                        usage.credentialId || '-'
+                    } provider=${usage.provider || 'unknown'} model=${usage.model || 'unknown'} billingMode=${usage.billingMode} balance=${
+                        workspaceUser.credit
+                    } ruleSource=${resolvedRule.source}`
+                )
+            }
+
             await queryRunner.manager.save(WorkspaceUser, workspaceUser)
-
-            const transaction = queryRunner.manager.create(WorkspaceCreditTransaction, {
-                workspaceId,
-                userId,
-                type: WorkspaceCreditTransactionType.CONSUME,
-                amount: -consumedCredit,
-                balance: workspaceUser.credit,
-                credentialName,
-                credentialId: usage.credentialId,
-                description: `Speech duration consumption: provider=${usage.provider || 'unknown'}, model=${
-                    usage.model || 'unknown'
-                }, seconds=${normalizedSeconds}, inputRmbPerSecond=${normalizedInputRmbPerSecond}, formula=inputRmbPerSecond*seconds*100+1, rawConsumedCredit=${rawConsumedCredit.toFixed(
-                    6
-                )}, chargedCredit=${consumedCredit}`
-            })
-            const savedTransaction = await queryRunner.manager.save(WorkspaceCreditTransaction, transaction)
-
             await queryRunner.commitTransaction()
-            logger.info(
-                `[workspace-credit] speech consume done workspaceId=${workspaceId} userId=${userId} consumed=${consumedCredit} balance=${
-                    workspaceUser.credit ?? 0
-                }`
-            )
 
             return {
                 workspaceId,
                 userId,
-                creditConsumed: consumedCredit,
+                creditConsumed: totalCreditConsumed,
                 creditBalance: workspaceUser.credit,
-                transaction: savedTransaction
+                transactions
             }
         } catch (error) {
             if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction()
-            logger.error(`[workspace-credit] speech consume failed workspaceId=${workspaceId} userId=${userId}`, error)
+            logger.error(`[workspace-credit] unified consume failed workspaceId=${workspaceId} userId=${userId}`, error)
             throw error
         } finally {
             if (!queryRunner.isReleased) await queryRunner.release()
+        }
+    }
+
+    public async consumeCreditBySpeechSeconds(
+        workspaceId: string,
+        userId: string,
+        usage: {
+            credentialId?: string
+            credentialName?: string
+            provider?: string
+            model?: string
+            seconds: number
+        }
+    ) {
+        const normalizedSeconds = Number(usage.seconds)
+        if (!Number.isFinite(normalizedSeconds) || normalizedSeconds < 0) {
+            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid speech duration in seconds')
+        }
+
+        const result = await this.consumeCreditByBillingUsages(workspaceId, userId, [
+            {
+                credentialId: usage.credentialId,
+                credentialName: usage.credentialName,
+                provider: usage.provider,
+                model: usage.model,
+                source: 'speech_to_text',
+                billingMode: 'seconds',
+                usage: {
+                    seconds: normalizedSeconds
+                }
+            }
+        ])
+
+        return {
+            ...result,
+            transaction: result.transactions?.[0] || null
         }
     }
 
@@ -523,7 +630,6 @@ export class WorkspaceCreditService {
             provider?: string
             model?: string
             characters: number
-            inputRmbPer10kChars: number
         }
     ) {
         const normalizedCharacters = Number(usage.characters)
@@ -531,102 +637,23 @@ export class WorkspaceCreditService {
             throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid text-to-speech character count')
         }
 
-        const normalizedInputRmbPer10kChars = Number(usage.inputRmbPer10kChars)
-        if (!Number.isFinite(normalizedInputRmbPer10kChars) || normalizedInputRmbPer10kChars < 0) {
-            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid input RMB/10k chars')
-        }
-
-        const queryRunner = this.dataSource.createQueryRunner()
-        await queryRunner.connect()
-
-        try {
-            await queryRunner.startTransaction()
-
-            const workspaceUser = await queryRunner.manager.findOneBy(WorkspaceUser, {
-                workspaceId,
-                userId
-            })
-
-            if (!workspaceUser) {
-                throw new InternalFlowiseError(StatusCodes.NOT_FOUND, WorkspaceCreditErrorMessage.WORKSPACE_USER_NOT_FOUND)
-            }
-
-            const credential = usage.credentialId
-                ? await queryRunner.manager.findOneBy(Credential, {
-                      id: usage.credentialId
-                  })
-                : undefined
-            const credentialName = usage.credentialName || credential?.name || credential?.credentialName || 'Unknown Credential'
-            const credentialMultiplierValue = Number(credential?.creditConsumptionMultiplier)
-            const credentialMultiplier =
-                Number.isFinite(credentialMultiplierValue) && credentialMultiplierValue > 0 ? credentialMultiplierValue : 1
-            const textCostRmb = (normalizedCharacters / TEN_THOUSAND_CHARACTERS) * normalizedInputRmbPer10kChars
-            const baseCredit = calculateBaseCreditFromRmb(textCostRmb)
-            const consumedCredit = Math.ceil(baseCredit * credentialMultiplier - Number.EPSILON)
-
-            if (consumedCredit <= 0) {
-                await queryRunner.rollbackTransaction()
-                logger.info(
-                    `[workspace-credit] skip tts consume workspaceId=${workspaceId} userId=${userId} credentialId=${
-                        usage.credentialId || '-'
-                    } model=${
-                        usage.model || 'unknown'
-                    } characters=${normalizedCharacters} inputRmbPer10kChars=${normalizedInputRmbPer10kChars} textCostRmb=${textCostRmb.toFixed(
-                        6
-                    )} baseCredit=${baseCredit} credentialMultiplier=${credentialMultiplier}`
-                )
-                return {
-                    workspaceId,
-                    userId,
-                    creditConsumed: 0,
-                    creditBalance: workspaceUser.credit,
-                    transaction: null
+        const result = await this.consumeCreditByBillingUsages(workspaceId, userId, [
+            {
+                credentialId: usage.credentialId,
+                credentialName: usage.credentialName,
+                provider: usage.provider,
+                model: usage.model,
+                source: 'text_to_speech',
+                billingMode: 'characters',
+                usage: {
+                    characters: normalizedCharacters
                 }
             }
+        ])
 
-            workspaceUser.credit = (workspaceUser.credit ?? 0) - consumedCredit
-            await queryRunner.manager.save(WorkspaceUser, workspaceUser)
-
-            const transaction = queryRunner.manager.create(WorkspaceCreditTransaction, {
-                workspaceId,
-                userId,
-                type: WorkspaceCreditTransactionType.CONSUME,
-                amount: -consumedCredit,
-                balance: workspaceUser.credit,
-                credentialName,
-                credentialId: usage.credentialId,
-                description: `Text-to-speech consumption: provider=${usage.provider || 'unknown'}, model=${
-                    usage.model || 'unknown'
-                }, characters=${normalizedCharacters}, inputRmbPer10kChars=${normalizedInputRmbPer10kChars}, formula=characters/10000*inputRmbPer10kChars, textCostRmb=${textCostRmb.toFixed(
-                    6
-                )}, baseCredit=${baseCredit}, credentialMultiplier=${credentialMultiplier}, chargedCredit=${consumedCredit}`
-            })
-            const savedTransaction = await queryRunner.manager.save(WorkspaceCreditTransaction, transaction)
-
-            await queryRunner.commitTransaction()
-            logger.info(
-                `[workspace-credit] tts consume done workspaceId=${workspaceId} userId=${userId} credentialId=${
-                    usage.credentialId || '-'
-                } provider=${usage.provider || 'unknown'} model=${
-                    usage.model || 'unknown'
-                } characters=${normalizedCharacters} inputRmbPer10kChars=${normalizedInputRmbPer10kChars} consumed=${consumedCredit} balance=${
-                    workspaceUser.credit ?? 0
-                }`
-            )
-
-            return {
-                workspaceId,
-                userId,
-                creditConsumed: consumedCredit,
-                creditBalance: workspaceUser.credit,
-                transaction: savedTransaction
-            }
-        } catch (error) {
-            if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction()
-            logger.error(`[workspace-credit] tts consume failed workspaceId=${workspaceId} userId=${userId}`, error)
-            throw error
-        } finally {
-            if (!queryRunner.isReleased) await queryRunner.release()
+        return {
+            ...result,
+            transaction: result.transactions?.[0] || null
         }
     }
 
@@ -643,151 +670,40 @@ export class WorkspaceCreditService {
             usageBreakdown?: Record<string, any>
         }>
     ) {
-        const normalizedUsages = usages.map((usage) => {
-            const inputTokens = Number(usage.inputTokens)
-            const outputTokens = Number(usage.outputTokens)
-            const totalTokens = Number(usage.totalTokens)
+        const billingUsages = usages
+            .filter((usage) => {
+                const generatedImages = Number(usage.usageBreakdown?.generated_images) || Number(usage.usageBreakdown?.generatedimages) || 0
 
-            const normalizedInputTokens = Number.isFinite(inputTokens) && inputTokens > 0 ? inputTokens : 0
-            const normalizedOutputTokens = Number.isFinite(outputTokens) && outputTokens > 0 ? outputTokens : 0
-            const normalizedTotalTokens = Number.isFinite(totalTokens) && totalTokens > 0 ? totalTokens : 0
-            const hasDirectionalTokens = normalizedInputTokens > 0 || normalizedOutputTokens > 0
-            const billableInputTokens = hasDirectionalTokens ? normalizedInputTokens : normalizedTotalTokens
-            const billableOutputTokens = hasDirectionalTokens ? normalizedOutputTokens : 0
-
-            return {
-                ...usage,
-                inputTokens: normalizedInputTokens,
-                outputTokens: normalizedOutputTokens,
-                totalTokens: normalizedTotalTokens,
-                billableInputTokens,
-                billableOutputTokens,
-                billableTotalTokens: billableInputTokens + billableOutputTokens
-            }
-        })
-
-        const validUsages = normalizedUsages.filter((usage) => {
-            const generatedImages = Number(usage.usageBreakdown?.generated_images) || Number(usage.usageBreakdown?.generatedimages) || 0
-
-            if (generatedImages > 0) {
-                logger.info(
-                    `[workspace-credit] skip token charge for media usage workspaceId=${workspaceId} userId=${userId} credentialId=${
-                        usage.credentialId || '-'
-                    } model=${usage.model || 'unknown'} generatedImages=${generatedImages}`
-                )
-                return false
-            }
-
-            return usage.billableTotalTokens > 0
-        })
-        if (!validUsages.length) {
-            logger.info(`[workspace-credit] skip consume: no valid usages workspaceId=${workspaceId} userId=${userId}`)
-            return { workspaceId, userId, creditConsumed: 0, transactions: [] as WorkspaceCreditTransaction[] }
-        }
-        const requestedTokenTotal = validUsages.reduce((sum, usage) => sum + usage.billableTotalTokens, 0)
-        logger.info(
-            `[workspace-credit] start consume workspaceId=${workspaceId} userId=${userId} usageCount=${validUsages.length} requestedTokens=${requestedTokenTotal}`
-        )
-
-        const queryRunner = this.dataSource.createQueryRunner()
-        await queryRunner.connect()
-
-        try {
-            await queryRunner.startTransaction()
-
-            const workspaceUser = await queryRunner.manager.findOneBy(WorkspaceUser, {
-                workspaceId,
-                userId
-            })
-
-            if (!workspaceUser) {
-                throw new InternalFlowiseError(StatusCodes.NOT_FOUND, WorkspaceCreditErrorMessage.WORKSPACE_USER_NOT_FOUND)
-            }
-            const startCredit = workspaceUser.credit ?? 0
-
-            const credentialIds = validUsages.map((usage) => usage.credentialId).filter((id): id is string => !!id)
-            const credentials = credentialIds.length ? await queryRunner.manager.findBy(Credential, { id: In(credentialIds) }) : []
-            const credentialMap = new Map(credentials.map((credential) => [credential.id, credential]))
-
-            let totalCreditConsumed = 0
-            const transactions: WorkspaceCreditTransaction[] = []
-
-            for (const usage of validUsages) {
-                const credential = usage.credentialId ? credentialMap.get(usage.credentialId) : undefined
-                const { credentialMultiplier, modelMultiplier, modelMultiplierSource, inputRmbPerMTok, outputRmbPerMTok, rmbPriceSource } =
-                    resolveBillingConfig(credential, usage.model)
-
-                const inputTokenCostRmb = (usage.billableInputTokens / ONE_MILLION_TOKENS) * inputRmbPerMTok
-                const outputTokenCostRmb = (usage.billableOutputTokens / ONE_MILLION_TOKENS) * outputRmbPerMTok
-                const tokenCostRmb = inputTokenCostRmb + outputTokenCostRmb
-                const baseCredit = calculateBaseCreditFromRmb(tokenCostRmb)
-                const consumed = Math.ceil(baseCredit * modelMultiplier * credentialMultiplier - Number.EPSILON)
-                if (consumed <= 0) {
+                if (generatedImages > 0) {
                     logger.info(
-                        `[workspace-credit] skip usage charge workspaceId=${workspaceId} userId=${userId} credentialId=${
+                        `[workspace-credit] skip token charge for media usage workspaceId=${workspaceId} userId=${userId} credentialId=${
                             usage.credentialId || '-'
-                        } model=${usage.model || 'unknown'} inputTokens=${usage.billableInputTokens} outputTokens=${
-                            usage.billableOutputTokens
-                        } inputRmbPerMTok=${inputRmbPerMTok} outputRmbPerMTok=${outputRmbPerMTok} baseCredit=${baseCredit}`
+                        } model=${usage.model || 'unknown'} generatedImages=${generatedImages}`
                     )
-                    continue
+                    return false
                 }
 
-                workspaceUser.credit = (workspaceUser.credit ?? 0) - consumed
-                totalCreditConsumed += consumed
+                return true
+            })
+            .map((usage) => ({
+                credentialId: usage.credentialId,
+                credentialName: usage.credentialName,
+                model: usage.model,
+                source: typeof usage.usageBreakdown?.source === 'string' ? usage.usageBreakdown.source : undefined,
+                billingMode: 'token' as const,
+                usage: {
+                    inputTokens: usage.inputTokens,
+                    outputTokens: usage.outputTokens,
+                    totalTokens: usage.totalTokens
+                }
+            }))
 
-                const transaction = queryRunner.manager.create(WorkspaceCreditTransaction, {
-                    workspaceId,
-                    userId,
-                    type: WorkspaceCreditTransactionType.CONSUME,
-                    amount: -consumed,
-                    balance: workspaceUser.credit,
-                    credentialName: usage.credentialName || credential?.name || 'Unknown Credential',
-                    credentialId: usage.credentialId,
-                    description: `Token consumption: inputTokens=${usage.billableInputTokens}, outputTokens=${
-                        usage.billableOutputTokens
-                    }, totalTokens=${usage.totalTokens}, model=${
-                        usage.model || 'unknown'
-                    }, inputRmbPerMTok=${inputRmbPerMTok}, outputRmbPerMTok=${outputRmbPerMTok}, inputTokenCostRmb=${inputTokenCostRmb.toFixed(
-                        6
-                    )}, outputTokenCostRmb=${outputTokenCostRmb.toFixed(6)}, tokenCostRmb=${tokenCostRmb.toFixed(
-                        6
-                    )}, baseCredit=${baseCredit}, modelMultiplier=${modelMultiplier}, modelMultiplierSource=${modelMultiplierSource}, credentialMultiplier=${credentialMultiplier}, rmbPriceSource=${rmbPriceSource}`
-                })
+        const requestedTokenTotal = billingUsages.reduce((sum, usage) => sum + getNormalizedTokenUsage(usage.usage).billableTotalTokens, 0)
+        logger.info(
+            `[workspace-credit] start consume workspaceId=${workspaceId} userId=${userId} usageCount=${billingUsages.length} requestedTokens=${requestedTokenTotal}`
+        )
 
-                const saved = await queryRunner.manager.save(WorkspaceCreditTransaction, transaction)
-                transactions.push(saved)
-                logger.info(
-                    `[workspace-credit] consumed=${consumed} workspaceId=${workspaceId} userId=${userId} credentialId=${
-                        usage.credentialId || '-'
-                    } model=${usage.model || 'unknown'} inputTokens=${usage.billableInputTokens} outputTokens=${
-                        usage.billableOutputTokens
-                    } balance=${workspaceUser.credit}`
-                )
-            }
-
-            await queryRunner.manager.save(WorkspaceUser, workspaceUser)
-            await queryRunner.commitTransaction()
-            logger.info(
-                `[workspace-credit] consume done workspaceId=${workspaceId} userId=${userId} startCredit=${startCredit} consumed=${totalCreditConsumed} endCredit=${
-                    workspaceUser.credit ?? 0
-                } transactions=${transactions.length}`
-            )
-
-            return {
-                workspaceId,
-                userId,
-                creditConsumed: totalCreditConsumed,
-                creditBalance: workspaceUser.credit,
-                transactions
-            }
-        } catch (error) {
-            if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction()
-            logger.error(`[workspace-credit] consume failed workspaceId=${workspaceId} userId=${userId}`, error)
-            throw error
-        } finally {
-            if (!queryRunner.isReleased) await queryRunner.release()
-        }
+        return this.consumeCreditByBillingUsages(workspaceId, userId, billingUsages)
     }
 
     public async consumeCreditByGeneratedImages(
@@ -799,7 +715,6 @@ export class WorkspaceCreditService {
             provider?: string
             model?: string
             generatedImages: number
-            inputRmbPerImage: number
         }
     ) {
         const normalizedGeneratedImages = Number(usage.generatedImages)
@@ -807,102 +722,23 @@ export class WorkspaceCreditService {
             throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid generated image count')
         }
 
-        const normalizedInputRmbPerImage = Number(usage.inputRmbPerImage)
-        if (!Number.isFinite(normalizedInputRmbPerImage) || normalizedInputRmbPerImage < 0) {
-            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid input RMB/image')
-        }
-
-        const queryRunner = this.dataSource.createQueryRunner()
-        await queryRunner.connect()
-
-        try {
-            await queryRunner.startTransaction()
-
-            const workspaceUser = await queryRunner.manager.findOneBy(WorkspaceUser, {
-                workspaceId,
-                userId
-            })
-
-            if (!workspaceUser) {
-                throw new InternalFlowiseError(StatusCodes.NOT_FOUND, WorkspaceCreditErrorMessage.WORKSPACE_USER_NOT_FOUND)
-            }
-
-            const credential = usage.credentialId
-                ? await queryRunner.manager.findOneBy(Credential, {
-                      id: usage.credentialId
-                  })
-                : undefined
-            const credentialName = usage.credentialName || credential?.name || credential?.credentialName || 'Unknown Credential'
-            const credentialMultiplierValue = Number(credential?.creditConsumptionMultiplier)
-            const credentialMultiplier =
-                Number.isFinite(credentialMultiplierValue) && credentialMultiplierValue > 0 ? credentialMultiplierValue : 1
-            const imageCostRmb = normalizedGeneratedImages * normalizedInputRmbPerImage
-            const baseCredit = imageCostRmb * 100
-            const consumedCredit = Math.ceil(baseCredit * credentialMultiplier - Number.EPSILON)
-
-            if (consumedCredit <= 0) {
-                await queryRunner.rollbackTransaction()
-                logger.info(
-                    `[workspace-credit] skip image consume workspaceId=${workspaceId} userId=${userId} credentialId=${
-                        usage.credentialId || '-'
-                    } model=${
-                        usage.model || 'unknown'
-                    } generatedImages=${normalizedGeneratedImages} inputRmbPerImage=${normalizedInputRmbPerImage} imageCostRmb=${imageCostRmb.toFixed(
-                        6
-                    )} baseCredit=${baseCredit} credentialMultiplier=${credentialMultiplier}`
-                )
-                return {
-                    workspaceId,
-                    userId,
-                    creditConsumed: 0,
-                    creditBalance: workspaceUser.credit,
-                    transaction: null
+        const result = await this.consumeCreditByBillingUsages(workspaceId, userId, [
+            {
+                credentialId: usage.credentialId,
+                credentialName: usage.credentialName,
+                provider: usage.provider,
+                model: usage.model,
+                source: 'media_generation',
+                billingMode: 'image_count',
+                usage: {
+                    units: normalizedGeneratedImages
                 }
             }
+        ])
 
-            workspaceUser.credit = (workspaceUser.credit ?? 0) - consumedCredit
-            await queryRunner.manager.save(WorkspaceUser, workspaceUser)
-
-            const transaction = queryRunner.manager.create(WorkspaceCreditTransaction, {
-                workspaceId,
-                userId,
-                type: WorkspaceCreditTransactionType.CONSUME,
-                amount: -consumedCredit,
-                balance: workspaceUser.credit,
-                credentialName,
-                credentialId: usage.credentialId,
-                description: `Image generation consumption: provider=${usage.provider || 'unknown'}, model=${
-                    usage.model || 'unknown'
-                }, generatedImages=${normalizedGeneratedImages}, inputRmbPerImage=${normalizedInputRmbPerImage}, formula=inputRmbPerImage*generatedImages*100*credentialMultiplier, imageCostRmb=${imageCostRmb.toFixed(
-                    6
-                )}, baseCredit=${baseCredit.toFixed(6)}, credentialMultiplier=${credentialMultiplier}, chargedCredit=${consumedCredit}`
-            })
-            const savedTransaction = await queryRunner.manager.save(WorkspaceCreditTransaction, transaction)
-
-            await queryRunner.commitTransaction()
-            logger.info(
-                `[workspace-credit] image consume done workspaceId=${workspaceId} userId=${userId} credentialId=${
-                    usage.credentialId || '-'
-                } provider=${usage.provider || 'unknown'} model=${
-                    usage.model || 'unknown'
-                } generatedImages=${normalizedGeneratedImages} inputRmbPerImage=${normalizedInputRmbPerImage} consumed=${consumedCredit} balance=${
-                    workspaceUser.credit ?? 0
-                }`
-            )
-
-            return {
-                workspaceId,
-                userId,
-                creditConsumed: consumedCredit,
-                creditBalance: workspaceUser.credit,
-                transaction: savedTransaction
-            }
-        } catch (error) {
-            if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction()
-            logger.error(`[workspace-credit] image consume failed workspaceId=${workspaceId} userId=${userId}`, error)
-            throw error
-        } finally {
-            if (!queryRunner.isReleased) await queryRunner.release()
+        return {
+            ...result,
+            transaction: result.transactions?.[0] || null
         }
     }
 }

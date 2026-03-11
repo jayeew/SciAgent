@@ -23,6 +23,11 @@ router.patch(
     checkAnyPermission('credentials:create,credentials:update'),
     credentialsController.updateCredentialModelMultipliers
 )
+router.patch(
+    '/:id/billing-rules',
+    checkAnyPermission('credentials:create,credentials:update'),
+    credentialsController.updateCredentialBillingRules
+)
 
 // DELETE
 router.delete(['/', '/:id'], checkPermission('credentials:delete'), credentialsController.deleteCredentials)

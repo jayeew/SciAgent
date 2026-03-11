@@ -36,8 +36,13 @@ import { JSONViewer } from '@/ui-component/json/JsonViewer'
 import ReactJson from 'flowise-react-json-view'
 import { CodeEditor } from '@/ui-component/editor/CodeEditor'
 import SourceDocDialog from '@/ui-component/dialog/SourceDocDialog'
+import { resolveArtifactDataUrl } from '@/utils/genericHelper'
 
 import predictionApi from '@/api/prediction'
+
+const isImageArtifact = (artifactType) => artifactType === 'png' || artifactType === 'jpeg' || artifactType === 'jpg'
+const isVideoArtifact = (artifactType) =>
+    artifactType === 'mp4' || artifactType === 'webm' || artifactType === 'mov' || artifactType === 'avi'
 
 export const NodeExecutionDetails = ({ data, label, status, metadata, isPublic, onProceedSuccess }) => {
     const [dataView, setDataView] = useState('rendered')
@@ -723,7 +728,14 @@ export const NodeExecutionDetails = ({ data, label, status, metadata, isPublic, 
                                     <Box sx={{ mt: 2, mb: 1 }}>
                                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                             {message.additional_kwargs.artifacts.map((artifact, artifactIndex) => {
-                                                if (artifact.type === 'png' || artifact.type === 'jpeg') {
+                                                const artifactUrl = resolveArtifactDataUrl(
+                                                    baseURL,
+                                                    artifact,
+                                                    metadata?.agentflowId,
+                                                    metadata?.sessionId
+                                                )
+
+                                                if (isImageArtifact(artifact.type)) {
                                                     return (
                                                         <Card
                                                             key={`artifact-${artifactIndex}`}
@@ -739,19 +751,39 @@ export const NodeExecutionDetails = ({ data, label, status, metadata, isPublic, 
                                                         >
                                                             <CardMedia
                                                                 component='img'
-                                                                image={
-                                                                    artifact.data.startsWith('FILE-STORAGE::')
-                                                                        ? `${baseURL}/api/v1/get-upload-file?chatflowId=${
-                                                                              metadata?.agentflowId
-                                                                          }&chatId=${metadata?.sessionId}&fileName=${artifact.data.replace(
-                                                                              'FILE-STORAGE::',
-                                                                              ''
-                                                                          )}`
-                                                                        : artifact.data
-                                                                }
+                                                                image={artifactUrl}
                                                                 sx={{ height: 'auto', maxHeight: '500px', objectFit: 'contain' }}
                                                                 alt={`artifact-${artifactIndex}`}
                                                             />
+                                                        </Card>
+                                                    )
+                                                } else if (isVideoArtifact(artifact.type)) {
+                                                    return (
+                                                        <Card
+                                                            key={`artifact-${artifactIndex}`}
+                                                            sx={{
+                                                                p: 0,
+                                                                m: 0,
+                                                                flex: '0 0 auto',
+                                                                border: 1,
+                                                                borderColor: 'divider',
+                                                                borderRadius: 1,
+                                                                overflow: 'hidden'
+                                                            }}
+                                                        >
+                                                            <video
+                                                                controls
+                                                                preload='metadata'
+                                                                src={artifactUrl}
+                                                                style={{
+                                                                    width: '100%',
+                                                                    maxHeight: '500px',
+                                                                    objectFit: 'contain',
+                                                                    display: 'block'
+                                                                }}
+                                                            >
+                                                                <track kind='captions' />
+                                                            </video>
                                                         </Card>
                                                     )
                                                 } else if (artifact.type === 'html') {
@@ -982,7 +1014,14 @@ export const NodeExecutionDetails = ({ data, label, status, metadata, isPublic, 
                                 <Box sx={{ mt: 2, mb: 1 }}>
                                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                         {data.output.artifacts.map((artifact, artifactIndex) => {
-                                            if (artifact.type === 'png' || artifact.type === 'jpeg' || artifact.type === 'jpg') {
+                                            const artifactUrl = resolveArtifactDataUrl(
+                                                baseURL,
+                                                artifact,
+                                                metadata?.agentflowId,
+                                                metadata?.sessionId
+                                            )
+
+                                            if (isImageArtifact(artifact.type)) {
                                                 return (
                                                     <Card
                                                         key={`artifact-${artifactIndex}`}
@@ -998,19 +1037,39 @@ export const NodeExecutionDetails = ({ data, label, status, metadata, isPublic, 
                                                     >
                                                         <CardMedia
                                                             component='img'
-                                                            image={
-                                                                artifact.data.startsWith('FILE-STORAGE::')
-                                                                    ? `${baseURL}/api/v1/get-upload-file?chatflowId=${
-                                                                          metadata?.agentflowId
-                                                                      }&chatId=${metadata?.sessionId}&fileName=${artifact.data.replace(
-                                                                          'FILE-STORAGE::',
-                                                                          ''
-                                                                      )}`
-                                                                    : artifact.data
-                                                            }
+                                                            image={artifactUrl}
                                                             sx={{ height: 'auto', maxHeight: '500px', objectFit: 'contain' }}
                                                             alt={`artifact-${artifactIndex}`}
                                                         />
+                                                    </Card>
+                                                )
+                                            } else if (isVideoArtifact(artifact.type)) {
+                                                return (
+                                                    <Card
+                                                        key={`artifact-${artifactIndex}`}
+                                                        sx={{
+                                                            p: 0,
+                                                            m: 0,
+                                                            flex: '0 0 auto',
+                                                            border: 1,
+                                                            borderColor: 'divider',
+                                                            borderRadius: 1,
+                                                            overflow: 'hidden'
+                                                        }}
+                                                    >
+                                                        <video
+                                                            controls
+                                                            preload='metadata'
+                                                            src={artifactUrl}
+                                                            style={{
+                                                                width: '100%',
+                                                                maxHeight: '500px',
+                                                                objectFit: 'contain',
+                                                                display: 'block'
+                                                            }}
+                                                        >
+                                                            <track kind='captions' />
+                                                        </video>
                                                     </Card>
                                                 )
                                             } else if (artifact.type === 'html') {

@@ -6,7 +6,8 @@ import { INodeOptionsValue } from './Interface'
 export enum MODEL_TYPE {
     CHAT = 'chat',
     LLM = 'llm',
-    EMBEDDING = 'embedding'
+    EMBEDDING = 'embedding',
+    MEDIA = 'mediaModels'
 }
 
 const DEFAULT_MODEL_LIST_FETCH_TIMEOUT_MS = 10000

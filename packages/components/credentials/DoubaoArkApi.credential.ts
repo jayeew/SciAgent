@@ -22,14 +22,6 @@ class DoubaoArkApi implements INodeCredential {
                 type: 'string',
                 optional: true,
                 placeholder: 'https://ark.cn-beijing.volces.com/api/v3'
-            },
-            {
-                label: 'Input RMB/Image',
-                name: 'inputRmbPerImage',
-                type: 'number',
-                step: 0.01,
-                default: 0,
-                description: 'Image generation billing unit price in RMB per generated image.'
             }
         ]
     }

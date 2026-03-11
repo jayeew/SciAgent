@@ -45,6 +45,7 @@ import { FixDocumentStoreFileChunkLongText1765000000000 } from './1765000000000-
 import { AddApiKeyPermission1765360298674 } from './1765360298674-AddApiKeyPermission'
 import { AddCredentialConsumptionMultiplier1765700000000 } from './1765700000000-AddCredentialConsumptionMultiplier'
 import { AddCredentialModelConsumptionMultiplier1765900000000 } from './1765900000000-AddCredentialModelConsumptionMultiplier'
+import { AddCredentialBillingRules1766000000000 } from './1766000000000-AddCredentialBillingRules'
 import { AddTokenUsageAudit1765800000000 } from '../../../enterprise/database/migrations/mysql/1765800000000-AddTokenUsageAudit'
 
 import { AddAuthTables1720230151482 } from '../../../enterprise/database/migrations/mysql/1720230151482-AddAuthTables'
@@ -121,6 +122,7 @@ export const mysqlMigrations = [
     AddApiKeyPermission1765360298674,
     AddCredentialConsumptionMultiplier1765700000000,
     AddCredentialModelConsumptionMultiplier1765900000000,
+    AddCredentialBillingRules1766000000000,
     OwnerRoleFullPermissions1765400000000,
     CredentialOwnerOnlyAndSharedWorkspace1765500000000,
     AddWorkspaceCredit1765600000000,

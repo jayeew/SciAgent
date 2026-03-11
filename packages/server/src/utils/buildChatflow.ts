@@ -595,24 +595,18 @@ export const executeFlow = async ({
                         typeof speechToTextResult === 'object'
                     ) {
                         const seconds = Number(speechToTextResult?.usage?.seconds)
-                        const inputRmbPerSecond = Number(speechToTextResult?.billing?.inputRmbPerSecond)
                         const normalizedSeconds = Number.isFinite(seconds) && seconds >= 0 ? seconds : 0
-                        const normalizedInputRmbPerSecond =
-                            Number.isFinite(inputRmbPerSecond) && inputRmbPerSecond >= 0 ? inputRmbPerSecond : 0
 
                         await workspaceCreditService.consumeCreditBySpeechSeconds(workspaceId, userId, {
                             credentialId: speechToTextResult.credentialId || speechToTextConfig.credentialId,
                             provider: speechToTextResult.provider || 'alibabaSTT',
                             model: speechToTextResult.model,
-                            seconds: normalizedSeconds,
-                            inputRmbPerSecond: normalizedInputRmbPerSecond
+                            seconds: normalizedSeconds
                         })
                         logger.info(
                             `[server]: [${orgId}]: Alibaba STT credit consumed credentialId=${
                                 speechToTextResult.credentialId || speechToTextConfig.credentialId || '-'
-                            } model=${
-                                speechToTextResult.model || '-'
-                            } seconds=${normalizedSeconds} inputRmbPerSecond=${normalizedInputRmbPerSecond}`
+                            } model=${speechToTextResult.model || '-'} seconds=${normalizedSeconds}`
                         )
                     } else if (speechToTextConfig.name === 'alibabaSTT') {
                         logger.warn(

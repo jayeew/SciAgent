@@ -10,19 +10,21 @@ import { WorkspaceService } from '../../enterprise/services/workspace.service'
 import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import { getErrorMessage } from '../../errors/utils'
 import { decryptCredentialData, getNodeModulesPackagePath, transformToCredentialEntity } from '../../utils'
+import {
+    getCredentialBillingRulesForStorage,
+    getEffectiveCredentialBillingRules,
+    getLegacyBillingFallbacks,
+    mergeBillingRuleMaps,
+    MODEL_NAME_MAX_LENGTH,
+    validateAndNormalizeBillingRules,
+    validateAndNormalizeLegacyModelMultipliers
+} from '../../utils/credentialBilling'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import logger from '../../utils/logger'
 
-const MODEL_NAME_MAX_LENGTH = 255
-
-interface ICredentialModelBillingConfig {
-    multiplier: number
-    inputRmbPerMTok: number
-    outputRmbPerMTok: number
-}
-
-const LEGACY_DEFAULT_RMB_PER_MTOK = 0
 let cachedSpeechToTextModelMap: Map<string, INodeOptionsValue[]> | undefined
+let cachedTextToSpeechModelMap: Map<string, INodeOptionsValue[]> | undefined
+let cachedMediaModelMap: Map<string, INodeOptionsValue[]> | undefined
 
 const appendModelOptions = (modelOptionMap: Map<string, { name: string; label: string }>, models: INodeOptionsValue[] | undefined) => {
     if (!Array.isArray(models)) return
@@ -37,100 +39,25 @@ const appendModelOptions = (modelOptionMap: Map<string, { name: string; label: s
     }
 }
 
-const normalizeModelBillingConfig = (rawValue: unknown): ICredentialModelBillingConfig | null => {
-    if (typeof rawValue === 'number' || typeof rawValue === 'string') {
-        const multiplier = Number(rawValue)
-        if (!Number.isFinite(multiplier) || multiplier <= 0) return null
-        return {
-            multiplier,
-            inputRmbPerMTok: LEGACY_DEFAULT_RMB_PER_MTOK,
-            outputRmbPerMTok: LEGACY_DEFAULT_RMB_PER_MTOK
-        }
+const normalizeBillingRulePayload = (requestBody: Record<string, any>): Record<string, any> => {
+    const normalizedRequestBody = { ...requestBody }
+    const hasBillingRules = typeof normalizedRequestBody.billingRules !== 'undefined'
+    const hasLegacyModelMultipliers = typeof normalizedRequestBody.creditConsumptionMultiplierByModel !== 'undefined'
+
+    if (!hasBillingRules && !hasLegacyModelMultipliers) {
+        return normalizedRequestBody
     }
 
-    if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) return null
+    const explicitRules = hasBillingRules ? validateAndNormalizeBillingRules(normalizedRequestBody.billingRules) : {}
+    const legacyCompatRules = hasLegacyModelMultipliers
+        ? validateAndNormalizeLegacyModelMultipliers(normalizedRequestBody.creditConsumptionMultiplierByModel)
+        : {}
+    const mergedRules = mergeBillingRuleMaps(explicitRules, legacyCompatRules)
 
-    const config = rawValue as Record<string, unknown>
-    const multiplier = Number(config.multiplier)
-    const inputRmbPerMTok = Number(config.inputRmbPerMTok)
-    const outputRmbPerMTok = Number(config.outputRmbPerMTok)
-    const legacyRmbPerMTok = Number(config.rmbPerMTok)
+    normalizedRequestBody.billingRules = mergedRules
+    normalizedRequestBody.creditConsumptionMultiplierByModel = undefined
 
-    if (!Number.isFinite(multiplier) || multiplier <= 0) return null
-
-    const hasInputOutputPrice =
-        Number.isFinite(inputRmbPerMTok) && inputRmbPerMTok >= 0 && Number.isFinite(outputRmbPerMTok) && outputRmbPerMTok >= 0
-    if (hasInputOutputPrice) {
-        return {
-            multiplier,
-            inputRmbPerMTok,
-            outputRmbPerMTok
-        }
-    }
-
-    if (!Number.isFinite(legacyRmbPerMTok) || legacyRmbPerMTok < 0) return null
-
-    return {
-        multiplier,
-        inputRmbPerMTok: legacyRmbPerMTok,
-        outputRmbPerMTok: legacyRmbPerMTok
-    }
-}
-
-const parseCredentialModelMultipliers = (value?: string | null): Record<string, ICredentialModelBillingConfig> => {
-    if (!value) return {}
-
-    try {
-        const parsed = JSON.parse(value)
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-
-        const result: Record<string, ICredentialModelBillingConfig> = {}
-        for (const [rawModelName, rawConfig] of Object.entries(parsed)) {
-            const modelName = String(rawModelName).trim()
-            if (!modelName || modelName.length > MODEL_NAME_MAX_LENGTH) continue
-
-            const normalizedConfig = normalizeModelBillingConfig(rawConfig)
-            if (!normalizedConfig) continue
-
-            result[modelName] = normalizedConfig
-        }
-        return result
-    } catch {
-        return {}
-    }
-}
-
-const validateAndNormalizeModelMultipliers = (modelMultipliers: unknown): Record<string, ICredentialModelBillingConfig> => {
-    if (!modelMultipliers || typeof modelMultipliers !== 'object' || Array.isArray(modelMultipliers)) {
-        throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid model multipliers payload')
-    }
-
-    const normalizedModelMultipliers: Record<string, ICredentialModelBillingConfig> = {}
-
-    for (const [rawModelName, rawConfig] of Object.entries(modelMultipliers)) {
-        const modelName = rawModelName.trim()
-        if (!modelName) {
-            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Model name cannot be empty')
-        }
-        if (modelName.length > MODEL_NAME_MAX_LENGTH) {
-            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, `Model name "${modelName}" exceeds max length ${MODEL_NAME_MAX_LENGTH}`)
-        }
-        if (Object.prototype.hasOwnProperty.call(normalizedModelMultipliers, modelName)) {
-            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, `Duplicate model name: ${modelName}`)
-        }
-
-        const normalizedConfig = normalizeModelBillingConfig(rawConfig)
-        if (!normalizedConfig) {
-            throw new InternalFlowiseError(
-                StatusCodes.BAD_REQUEST,
-                `Invalid model billing config for "${modelName}". Expect { multiplier > 0, inputRmbPerMTok >= 0, outputRmbPerMTok >= 0 }`
-            )
-        }
-
-        normalizedModelMultipliers[modelName] = normalizedConfig
-    }
-
-    return normalizedModelMultipliers
+    return normalizedRequestBody
 }
 
 const maskCredentialResponse = (
@@ -138,26 +65,28 @@ const maskCredentialResponse = (
     isOwner?: boolean,
     plainDataObj?: Record<string, unknown>
 ) => {
-    const modelMultipliers = parseCredentialModelMultipliers(credential.creditConsumptionMultiplierByModel)
+    const billingRules = getEffectiveCredentialBillingRules(credential)
     const responsePayload: any = {
         ...credential,
         ...(plainDataObj !== undefined && { plainDataObj }),
-        ...(isOwner ? { creditConsumptionMultiplierByModel: modelMultipliers } : {})
+        ...(isOwner
+            ? {
+                  billingRules,
+                  creditConsumptionMultiplierByModel: undefined,
+                  ...(plainDataObj !== undefined ? { legacyBillingFallbacks: getLegacyBillingFallbacks(plainDataObj) } : {})
+              }
+            : {})
     }
 
     return omit(responsePayload, [
         'encryptedData',
-        ...(isOwner ? [] : ['creditConsumptionMultiplier', 'creditConsumptionMultiplierByModel'])
+        ...(isOwner ? [] : ['creditConsumptionMultiplier', 'creditConsumptionMultiplierByModel', 'billingRules'])
     ])
 }
 
 const createCredential = async (requestBody: any) => {
     try {
-        if (typeof requestBody?.creditConsumptionMultiplierByModel !== 'undefined') {
-            requestBody.creditConsumptionMultiplierByModel = validateAndNormalizeModelMultipliers(
-                requestBody.creditConsumptionMultiplierByModel
-            )
-        }
+        requestBody = normalizeBillingRulePayload(requestBody)
 
         const appServer = getRunningExpressApp()
         const newCredential = await transformToCredentialEntity(requestBody)
@@ -342,11 +271,10 @@ const getCredentialById = async (
 
 const updateCredential = async (credentialId: string, requestBody: any, workspaceIds: string[]): Promise<any> => {
     try {
-        if (typeof requestBody?.creditConsumptionMultiplierByModel !== 'undefined') {
-            requestBody.creditConsumptionMultiplierByModel = validateAndNormalizeModelMultipliers(
-                requestBody.creditConsumptionMultiplierByModel
-            )
-        }
+        const shouldClearLegacyModelMultipliers =
+            Object.prototype.hasOwnProperty.call(requestBody, 'billingRules') ||
+            Object.prototype.hasOwnProperty.call(requestBody, 'creditConsumptionMultiplierByModel')
+        requestBody = normalizeBillingRulePayload(requestBody)
 
         const appServer = getRunningExpressApp()
         const credential = await appServer.AppDataSource.getRepository(Credential).findOne({
@@ -360,6 +288,9 @@ const updateCredential = async (credentialId: string, requestBody: any, workspac
         const updateCredential = await transformToCredentialEntity(requestBody)
         updateCredential.workspaceId = credential.workspaceId
         await appServer.AppDataSource.getRepository(Credential).merge(credential, updateCredential)
+        if (shouldClearLegacyModelMultipliers) {
+            credential.creditConsumptionMultiplierByModel = undefined
+        }
         const dbResponse = await appServer.AppDataSource.getRepository(Credential).save(credential)
         return dbResponse
     } catch (error) {
@@ -402,7 +333,7 @@ const updateCredentialModelMultipliers = async (
     workspaceIds: string[]
 ): Promise<Record<string, unknown>> => {
     try {
-        const normalizedModelMultipliers = validateAndNormalizeModelMultipliers(modelMultipliers)
+        const normalizedBillingRules = validateAndNormalizeLegacyModelMultipliers(modelMultipliers)
         const appServer = getRunningExpressApp()
         const credential = await appServer.AppDataSource.getRepository(Credential).findOne({
             where: { id: credentialId, workspaceId: In(workspaceIds) }
@@ -411,9 +342,8 @@ const updateCredentialModelMultipliers = async (
             throw new InternalFlowiseError(StatusCodes.NOT_FOUND, `Credential ${credentialId} not found`)
         }
 
-        credential.creditConsumptionMultiplierByModel = Object.keys(normalizedModelMultipliers).length
-            ? JSON.stringify(normalizedModelMultipliers)
-            : undefined
+        credential.billingRules = getCredentialBillingRulesForStorage(normalizedBillingRules)
+        credential.creditConsumptionMultiplierByModel = undefined
 
         const dbResponse = await appServer.AppDataSource.getRepository(Credential).save(credential)
         return maskCredentialResponse(dbResponse, true)
@@ -422,6 +352,35 @@ const updateCredentialModelMultipliers = async (
         throw new InternalFlowiseError(
             StatusCodes.INTERNAL_SERVER_ERROR,
             `Error: credentialsService.updateCredentialModelMultipliers - ${getErrorMessage(error)}`
+        )
+    }
+}
+
+const updateCredentialBillingRules = async (
+    credentialId: string,
+    billingRules: unknown,
+    workspaceIds: string[]
+): Promise<Record<string, unknown>> => {
+    try {
+        const normalizedBillingRules = validateAndNormalizeBillingRules(billingRules)
+        const appServer = getRunningExpressApp()
+        const credential = await appServer.AppDataSource.getRepository(Credential).findOne({
+            where: { id: credentialId, workspaceId: In(workspaceIds) }
+        })
+        if (!credential) {
+            throw new InternalFlowiseError(StatusCodes.NOT_FOUND, `Credential ${credentialId} not found`)
+        }
+
+        credential.billingRules = getCredentialBillingRulesForStorage(normalizedBillingRules)
+        credential.creditConsumptionMultiplierByModel = undefined
+
+        const dbResponse = await appServer.AppDataSource.getRepository(Credential).save(credential)
+        return maskCredentialResponse(dbResponse, true)
+    } catch (error) {
+        if (error instanceof InternalFlowiseError) throw error
+        throw new InternalFlowiseError(
+            StatusCodes.INTERNAL_SERVER_ERROR,
+            `Error: credentialsService.updateCredentialBillingRules - ${getErrorMessage(error)}`
         )
     }
 }
@@ -483,13 +442,12 @@ const getCredentialModels = async (
         }
 
         try {
-            const speechToTextModels = getSpeechToTextModelsByCredentialName(credential.credentialName)
-            appendModelOptions(modelOptionMap, speechToTextModels)
+            appendModelOptions(modelOptionMap, getSpeechToTextModelsByCredentialName(credential.credentialName))
+            appendModelOptions(modelOptionMap, getTextToSpeechModelsByCredentialName(credential.credentialName))
+            appendModelOptions(modelOptionMap, getMediaModelsByCredentialName(credential.credentialName))
         } catch (error) {
             logger.warn(
-                `[credentialsService]: Failed to load speech-to-text models for credential=${credential.credentialName}: ${getErrorMessage(
-                    error
-                )}`
+                `[credentialsService]: Failed to load bundled models for credential=${credential.credentialName}: ${getErrorMessage(error)}`
             )
         }
 
@@ -507,16 +465,36 @@ const getSpeechToTextModelsByCredentialName = (credentialName: string): INodeOpt
     if (!credentialName) return []
 
     if (!cachedSpeechToTextModelMap) {
-        cachedSpeechToTextModelMap = loadSpeechToTextModelMap()
+        cachedSpeechToTextModelMap = loadCredentialModelMap('speechToText')
     }
 
     return cachedSpeechToTextModelMap.get(credentialName) ?? []
 }
 
-const loadSpeechToTextModelMap = (): Map<string, INodeOptionsValue[]> => {
-    const speechToTextModelMap = new Map<string, INodeOptionsValue[]>()
+const getTextToSpeechModelsByCredentialName = (credentialName: string): INodeOptionsValue[] => {
+    if (!credentialName) return []
+
+    if (!cachedTextToSpeechModelMap) {
+        cachedTextToSpeechModelMap = loadCredentialModelMap('textToSpeech')
+    }
+
+    return cachedTextToSpeechModelMap.get(credentialName) ?? []
+}
+
+const getMediaModelsByCredentialName = (credentialName: string): INodeOptionsValue[] => {
+    if (!credentialName) return []
+
+    if (!cachedMediaModelMap) {
+        cachedMediaModelMap = loadCredentialModelMap('mediaModels')
+    }
+
+    return cachedMediaModelMap.get(credentialName) ?? []
+}
+
+const loadCredentialModelMap = (sectionKey: 'speechToText' | 'textToSpeech' | 'mediaModels'): Map<string, INodeOptionsValue[]> => {
+    const modelMap = new Map<string, INodeOptionsValue[]>()
     const componentsPackagePath = getNodeModulesPackagePath('flowise-components')
-    if (!componentsPackagePath) return speechToTextModelMap
+    if (!componentsPackagePath) return modelMap
 
     const modelFilesToCheck = [path.join(componentsPackagePath, 'models.json'), path.join(componentsPackagePath, 'dist', 'models.json')]
     let modelFilePath = ''
@@ -526,25 +504,25 @@ const loadSpeechToTextModelMap = (): Map<string, INodeOptionsValue[]> => {
             break
         }
     }
-    if (!modelFilePath) return speechToTextModelMap
+    if (!modelFilePath) return modelMap
 
     try {
         const raw = fs.readFileSync(modelFilePath, 'utf8')
         const parsed = JSON.parse(raw)
-        const speechToTextConfigs = Array.isArray(parsed?.speechToText) ? parsed.speechToText : []
+        const providerConfigs = Array.isArray(parsed?.[sectionKey]) ? parsed[sectionKey] : []
 
-        for (const config of speechToTextConfigs) {
+        for (const config of providerConfigs) {
             const providerName = typeof config?.name === 'string' ? config.name.trim() : ''
             if (!providerName) continue
 
             const providerModels = Array.isArray(config?.models) ? (config.models as INodeOptionsValue[]) : []
-            speechToTextModelMap.set(providerName, providerModels)
+            modelMap.set(providerName, providerModels)
         }
     } catch (error) {
-        logger.warn(`[credentialsService]: Failed to parse speech-to-text model config: ${getErrorMessage(error)}`)
+        logger.warn(`[credentialsService]: Failed to parse ${sectionKey} model config: ${getErrorMessage(error)}`)
     }
 
-    return speechToTextModelMap
+    return modelMap
 }
 
 export default {
@@ -555,5 +533,6 @@ export default {
     updateCredential,
     updateCredentialMultiplier,
     updateCredentialModelMultipliers,
+    updateCredentialBillingRules,
     getCredentialModels
 }

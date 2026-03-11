@@ -15,14 +15,6 @@ class AlibabaSTTApi implements INodeCredential {
                 label: 'Alibaba Api Key',
                 name: 'alibabaApiKey',
                 type: 'password'
-            },
-            {
-                label: 'Input RMB/s',
-                name: 'inputRmbPerSecond',
-                type: 'number',
-                step: 0.01,
-                default: 0,
-                description: 'Speech-to-text billing unit price in RMB per second.'
             }
         ]
     }

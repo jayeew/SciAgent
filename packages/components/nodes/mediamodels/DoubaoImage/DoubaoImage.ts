@@ -1,4 +1,5 @@
-import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
+import { ICommonObject, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
+import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
 import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
 import {
     DEFAULT_DOUBAO_ARK_BASE_URL,
@@ -43,7 +44,8 @@ class DoubaoImage_MediaModels implements INode {
             {
                 label: 'Model',
                 name: 'model',
-                type: 'string',
+                type: 'asyncOptions',
+                loadMethod: 'listModels',
                 default: DEFAULT_DOUBAO_IMAGE_MODEL
             },
             {
@@ -85,6 +87,12 @@ class DoubaoImage_MediaModels implements INode {
         ]
     }
 
+    loadMethods = {
+        async listModels(): Promise<INodeOptionsValue[]> {
+            return await getModels(MODEL_TYPE.MEDIA, 'doubaoImage')
+        }
+    }
+
     async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
         const model = (nodeData.inputs?.model as string)?.trim() || DEFAULT_DOUBAO_IMAGE_MODEL
         const size = normalizeDoubaoImageSize(nodeData.inputs?.size as string) || DEFAULT_DOUBAO_IMAGE_SIZE
@@ -95,7 +103,6 @@ class DoubaoImage_MediaModels implements INode {
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const arkApiKey = getCredentialParam('arkApiKey', credentialData, nodeData)
         const baseUrl = getCredentialParam('baseUrl', credentialData, nodeData, DEFAULT_DOUBAO_ARK_BASE_URL)
-        const inputRmbPerImage = Number(getCredentialParam('inputRmbPerImage', credentialData, nodeData, 0))
 
         return new DoubaoImageModel({
             apiKey: arkApiKey,
@@ -105,7 +112,6 @@ class DoubaoImage_MediaModels implements INode {
             size,
             outputFormat,
             watermark,
-            inputRmbPerImage,
             chatflowid: options.chatflowid,
             orgId: options.orgId
         })

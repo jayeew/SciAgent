@@ -163,6 +163,16 @@ describe('DoubaoImageModel', () => {
             })
         )
         expect(result.artifacts).toEqual([{ type: 'png', data: 'FILE-STORAGE::doubao_generated_image_1700000000000_1.png' }])
+        expect(result.mediaBilling).toEqual({
+            provider: 'doubao-ark',
+            credentialId: 'credential-1',
+            model: DEFAULT_DOUBAO_IMAGE_MODEL,
+            source: 'media_generation',
+            billingMode: 'image_count',
+            usage: {
+                units: 1
+            }
+        })
     })
 
     it('retries image-to-image requests with raw base64 when Ark returns a 5xx for data URI input', async () => {

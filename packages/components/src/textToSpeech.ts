@@ -19,9 +19,6 @@ export interface ITextToSpeechBillingResult {
     usage?: {
         characters?: number
     }
-    billing?: {
-        inputRmbPer10kChars?: number
-    }
 }
 
 interface ITextToSpeechVoiceOption {
@@ -154,16 +151,13 @@ const countTextToSpeechCharacters = (text: string): number => {
 export const getTextToSpeechBillingDetails = async (
     text: string,
     textToSpeechConfig: ICommonObject,
-    options: ICommonObject
+    _options: ICommonObject
 ): Promise<ITextToSpeechBillingResult | undefined> => {
     if (!textToSpeechConfig || textToSpeechConfig.name !== TextToSpeechType.ALIBABA_TTS) {
         return undefined
     }
 
     const credentialId = textToSpeechConfig.credentialId as string
-    const credentialData = await getCredentialData(credentialId ?? '', options)
-    const inputRmbPer10kChars = Number(credentialData?.inputRmbPer10kChars)
-    const normalizedInputRmbPer10kChars = Number.isFinite(inputRmbPer10kChars) && inputRmbPer10kChars >= 0 ? inputRmbPer10kChars : 0
     const model = (textToSpeechConfig.model as string) || 'qwen3-tts-flash'
 
     return {
@@ -172,9 +166,6 @@ export const getTextToSpeechBillingDetails = async (
         model,
         usage: {
             characters: countTextToSpeechCharacters(text)
-        },
-        billing: {
-            inputRmbPer10kChars: normalizedInputRmbPer10kChars
         }
     }
 }

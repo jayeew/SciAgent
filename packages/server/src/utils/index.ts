@@ -1755,6 +1755,16 @@ export const transformToCredentialEntity = async (body: ICredentialReqBody): Pro
         credentialBody.creditConsumptionMultiplier = body.creditConsumptionMultiplier
     }
 
+    if (typeof body.billingRules !== 'undefined') {
+        if (typeof body.billingRules === 'string') {
+            credentialBody.billingRules = body.billingRules
+        } else if (body.billingRules && typeof body.billingRules === 'object') {
+            credentialBody.billingRules = JSON.stringify(body.billingRules)
+        } else {
+            credentialBody.billingRules = undefined
+        }
+    }
+
     if (typeof body.creditConsumptionMultiplierByModel !== 'undefined') {
         if (typeof body.creditConsumptionMultiplierByModel === 'string') {
             credentialBody.creditConsumptionMultiplierByModel = body.creditConsumptionMultiplierByModel

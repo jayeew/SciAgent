@@ -143,23 +143,20 @@ const consumeTextToSpeechCredit = async (params: IConsumeTextToSpeechCreditParam
     if (!billingDetails) return undefined
 
     const characters = Number(billingDetails.usage?.characters)
-    const inputRmbPer10kChars = Number(billingDetails.billing?.inputRmbPer10kChars)
     const normalizedCharacters = Number.isFinite(characters) && characters >= 0 ? characters : 0
-    const normalizedInputRmbPer10kChars = Number.isFinite(inputRmbPer10kChars) && inputRmbPer10kChars >= 0 ? inputRmbPer10kChars : 0
 
     const workspaceCreditService = new WorkspaceCreditService()
     await workspaceCreditService.consumeCreditByTextCharacters(workspaceId, userId, {
         credentialId: billingDetails.credentialId || credentialId,
         provider: billingDetails.provider || provider,
         model: billingDetails.model || model,
-        characters: normalizedCharacters,
-        inputRmbPer10kChars: normalizedInputRmbPer10kChars
+        characters: normalizedCharacters
     })
 
     logger.info(
         `[text-to-speech] Alibaba TTS credit consumed credentialId=${billingDetails.credentialId || credentialId || '-'} model=${
             billingDetails.model || model || '-'
-        } characters=${normalizedCharacters} inputRmbPer10kChars=${normalizedInputRmbPer10kChars}`
+        } characters=${normalizedCharacters}`
     )
 
     return billingDetails

@@ -17,7 +17,9 @@ const createCredential = async (req: Request, res: Response, next: NextFunction)
         const body = req.body
         const user = req.user as LoggedInUser | undefined
         if (
-            (typeof body?.creditConsumptionMultiplier !== 'undefined' || typeof body?.creditConsumptionMultiplierByModel !== 'undefined') &&
+            (typeof body?.creditConsumptionMultiplier !== 'undefined' ||
+                typeof body?.creditConsumptionMultiplierByModel !== 'undefined' ||
+                typeof body?.billingRules !== 'undefined') &&
             !user?.isOrganizationAdmin
         ) {
             throw new InternalFlowiseError(StatusCodes.FORBIDDEN, `Only owner can set credit consumption multiplier`)
@@ -133,10 +135,11 @@ const updateCredential = async (req: Request, res: Response, next: NextFunction)
             throw new InternalFlowiseError(StatusCodes.NOT_FOUND, `Error: credentialsController.updateCredential - workspace not found!`)
         }
         const user = req.user as LoggedInUser | undefined
-        // creditConsumptionMultiplier and creditConsumptionMultiplierByModel are owner-only
+        // creditConsumptionMultiplier, creditConsumptionMultiplierByModel and billingRules are owner-only
         if (
             (typeof req.body?.creditConsumptionMultiplier !== 'undefined' ||
-                typeof req.body?.creditConsumptionMultiplierByModel !== 'undefined') &&
+                typeof req.body?.creditConsumptionMultiplierByModel !== 'undefined' ||
+                typeof req.body?.billingRules !== 'undefined') &&
             !user?.isOrganizationAdmin
         ) {
             throw new InternalFlowiseError(StatusCodes.FORBIDDEN, `Only owner can update credit consumption multiplier`)
@@ -220,6 +223,38 @@ const updateCredentialModelMultipliers = async (req: Request, res: Response, nex
     }
 }
 
+const updateCredentialBillingRules = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (typeof req.params === 'undefined' || !req.params.id) {
+            throw new InternalFlowiseError(
+                StatusCodes.PRECONDITION_FAILED,
+                `Error: credentialsController.updateCredentialBillingRules - id not provided!`
+            )
+        }
+        if (!req.body || typeof req.body.billingRules === 'undefined') {
+            throw new InternalFlowiseError(
+                StatusCodes.PRECONDITION_FAILED,
+                `Error: credentialsController.updateCredentialBillingRules - billingRules not provided!`
+            )
+        }
+        const user = req.user as LoggedInUser | undefined
+        if (!user?.isOrganizationAdmin) {
+            throw new InternalFlowiseError(StatusCodes.FORBIDDEN, `Only owner can update credit consumption multiplier`)
+        }
+        const workspaceIds = await getCredentialWorkspaceIds(req)
+        if (!workspaceIds.length) {
+            throw new InternalFlowiseError(
+                StatusCodes.NOT_FOUND,
+                `Error: credentialsController.updateCredentialBillingRules - workspace not found!`
+            )
+        }
+        const apiResponse = await credentialsService.updateCredentialBillingRules(req.params.id, req.body.billingRules, workspaceIds)
+        return res.json(apiResponse)
+    } catch (error) {
+        next(error)
+    }
+}
+
 const getCredentialModels = async (req: Request, res: Response, next: NextFunction) => {
     try {
         if (typeof req.params === 'undefined' || !req.params.id) {
@@ -249,5 +284,6 @@ export default {
     updateCredential,
     updateCredentialMultiplier,
     updateCredentialModelMultipliers,
+    updateCredentialBillingRules,
     getCredentialModels
 }

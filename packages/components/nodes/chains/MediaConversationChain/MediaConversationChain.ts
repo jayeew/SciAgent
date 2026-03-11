@@ -12,7 +12,7 @@ import { checkInputs, Moderation, streamResponse } from '../../moderation/Modera
 import { formatResponse } from '../../outputparsers/OutputParserHelpers'
 
 const DEFAULT_PROMPT_REFINER_SYSTEM_MESSAGE =
-    'You convert a multi-turn conversation into a structured request for an image generation model.'
+    'You convert a multi-turn conversation into a structured request for a media generation model.'
 
 const FOLLOW_UP_PROMPT_REGEX =
     /\b(make|change|modify|turn|add|remove|keep|same|variation|version|based on|using the previous|previous image)\b|改成|换成|修改|调整|再来|上一张|上一个|保留|基于/i
@@ -39,6 +39,44 @@ const normalizePromptRefinerOutput = (value: string): Partial<IMediaGenerationIn
             typeof parsedValue.outputFormat === 'string' && ['png', 'jpeg', 'jpg'].includes(parsedValue.outputFormat.trim().toLowerCase())
                 ? (parsedValue.outputFormat.trim().toLowerCase() as 'png' | 'jpeg' | 'jpg')
                 : undefined
+        const ratio = typeof parsedValue.ratio === 'string' ? parsedValue.ratio.trim() : undefined
+        const resolution = typeof parsedValue.resolution === 'string' ? parsedValue.resolution.trim() : undefined
+        const duration =
+            typeof parsedValue.duration === 'number'
+                ? parsedValue.duration
+                : typeof parsedValue.duration === 'string' && parsedValue.duration.trim()
+                ? Number(parsedValue.duration)
+                : undefined
+        const frames =
+            typeof parsedValue.frames === 'number'
+                ? parsedValue.frames
+                : typeof parsedValue.frames === 'string' && parsedValue.frames.trim()
+                ? Number(parsedValue.frames)
+                : undefined
+        const seed =
+            typeof parsedValue.seed === 'number'
+                ? parsedValue.seed
+                : typeof parsedValue.seed === 'string' && parsedValue.seed.trim()
+                ? Number(parsedValue.seed)
+                : undefined
+        const cameraFixed =
+            typeof parsedValue.cameraFixed === 'boolean'
+                ? parsedValue.cameraFixed
+                : typeof parsedValue.camera_fixed === 'boolean'
+                ? parsedValue.camera_fixed
+                : typeof parsedValue.cameraFixed === 'string'
+                ? parsedValue.cameraFixed.toLowerCase() === 'true'
+                    ? true
+                    : parsedValue.cameraFixed.toLowerCase() === 'false'
+                    ? false
+                    : undefined
+                : typeof parsedValue.camera_fixed === 'string'
+                ? parsedValue.camera_fixed.toLowerCase() === 'true'
+                    ? true
+                    : parsedValue.camera_fixed.toLowerCase() === 'false'
+                    ? false
+                    : undefined
+                : undefined
         const watermark =
             typeof parsedValue.watermark === 'boolean'
                 ? parsedValue.watermark
@@ -56,6 +94,12 @@ const normalizePromptRefinerOutput = (value: string): Partial<IMediaGenerationIn
             prompt,
             ...(size ? { size } : {}),
             ...(outputFormat ? { outputFormat } : {}),
+            ...(ratio ? { ratio } : {}),
+            ...(resolution ? { resolution } : {}),
+            ...(typeof duration === 'number' && Number.isFinite(duration) ? { duration } : {}),
+            ...(typeof frames === 'number' && Number.isFinite(frames) ? { frames } : {}),
+            ...(typeof seed === 'number' && Number.isFinite(seed) ? { seed } : {}),
+            ...(typeof cameraFixed === 'boolean' ? { cameraFixed } : {}),
             ...(typeof watermark === 'boolean' ? { watermark } : {})
         }
     } catch (error) {
@@ -103,8 +147,12 @@ const buildHeuristicMediaInput = (history: BaseMessage[], input: string): IMedia
 }
 
 const buildMemorySummary = (resolvedInput: IMediaGenerationInput, result: IMediaGenerationResult): string => {
-    const imageCount = result.artifacts?.length ?? 0
-    return `Generated ${imageCount} image${imageCount === 1 ? '' : 's'}. Prompt: ${resolvedInput.prompt}`
+    const artifactCount = result.artifacts?.length ?? 0
+    const mediaType =
+        result.metadata?.mediaType ||
+        (result.artifacts?.some((artifact) => ['mp4', 'webm', 'mov', 'avi'].includes(artifact.type)) ? 'video' : 'image')
+
+    return `Generated ${artifactCount} ${mediaType}${artifactCount === 1 ? '' : 's'}. Prompt: ${resolvedInput.prompt}`
 }
 
 const resolveMediaInput = async (
@@ -130,7 +178,7 @@ const resolveMediaInput = async (
                 'Latest user request:',
                 '{input}',
                 '',
-                'Return JSON only with keys prompt, size, outputFormat, watermark.',
+                'Return JSON only with relevant keys from prompt, size, outputFormat, ratio, resolution, duration, frames, seed, cameraFixed, watermark.',
                 'Use null for values you cannot infer.',
                 'The prompt must be detailed, production-ready, and preserve relevant context from prior messages.'
             ].join('\n')
@@ -208,7 +256,7 @@ class MediaConversationChain_Chains implements INode {
         this.type = 'MediaConversationChain'
         this.icon = 'conv.svg'
         this.category = 'Chains'
-        this.description = 'Conversational chain for media models that returns text and image artifacts'
+        this.description = 'Conversational chain for media models that returns text and media artifacts'
         this.baseClasses = Array.from(new Set([this.type, 'BaseChain', ...getBaseClasses(RunnableLambda)]))
         this.inputs = [
             {
