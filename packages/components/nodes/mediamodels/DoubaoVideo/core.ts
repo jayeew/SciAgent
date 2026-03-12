@@ -81,6 +81,7 @@ interface IDoubaoArkVideoImageUrlContent {
     image_url: {
         url: string
     }
+    role: 'first_frame' | 'last_frame'
 }
 
 type IDoubaoArkVideoContent = IDoubaoArkVideoTextContent | IDoubaoArkVideoImageUrlContent
@@ -132,6 +133,7 @@ interface IStorageContext {
 
 interface IResolvedReferenceFrame {
     url: string
+    role: 'first_frame' | 'last_frame'
 }
 
 const VIDEO_ARTIFACT_TYPES = new Set(['mp4', 'webm', 'mov', 'avi'])
@@ -475,18 +477,7 @@ const resolveStorageContext = (
     }
 }
 
-const resolveReferenceFramePayload = async (
-    referenceImages: IFileUpload[] | undefined,
-    storageContext: IStorageContext
-): Promise<IResolvedReferenceFrame | undefined> => {
-    if (!referenceImages?.length) return undefined
-
-    if (referenceImages.length > 1) {
-        throw new Error('Doubao image-to-video supports exactly one reference image')
-    }
-
-    const referenceImage = referenceImages[0]
-
+const resolveSingleReferenceFrameUrl = async (referenceImage: IFileUpload, storageContext: IStorageContext): Promise<string> => {
     if (referenceImage.type === 'stored-file') {
         if (!hasStorageContext(storageContext)) {
             throw new Error('Doubao image-to-video requires chat storage context for uploaded reference images')
@@ -500,13 +491,11 @@ const resolveReferenceFramePayload = async (
         const fileBuffer = await getFileFromStorage(fileName, storageContext.orgId, storageContext.chatflowid, storageContext.chatId)
         const base64Payload = fileBuffer.toString('base64')
         const mimeType = referenceImage.mime?.trim() || 'image/png'
-        return {
-            url: `data:${mimeType};base64,${base64Payload}`
-        }
+        return `data:${mimeType};base64,${base64Payload}`
     }
 
     if (referenceImage.type === 'url') {
-        return { url: normalizeReferenceFrameUrl(referenceImage.data || '') }
+        return normalizeReferenceFrameUrl(referenceImage.data || '')
     }
 
     const rawData = referenceImage.data?.trim()
@@ -515,22 +504,43 @@ const resolveReferenceFramePayload = async (
     }
 
     if (rawData.startsWith('data:image/')) {
-        return { url: rawData }
+        return rawData
     }
 
     const mimeType = referenceImage.mime?.trim()
     if (mimeType?.startsWith('image/')) {
-        return {
-            url: `data:${mimeType};base64,${rawData}`
-        }
+        return `data:${mimeType};base64,${rawData}`
     }
 
-    return { url: rawData }
+    return rawData
+}
+
+const resolveReferenceFramesPayload = async (
+    referenceImages: IFileUpload[] | undefined,
+    storageContext: IStorageContext
+): Promise<IResolvedReferenceFrame[] | undefined> => {
+    if (!referenceImages?.length) return undefined
+
+    if (referenceImages.length > 2) {
+        throw new Error('Doubao image-to-video supports up to two reference images: first frame and optional last frame')
+    }
+
+    const roles: Array<IResolvedReferenceFrame['role']> = ['first_frame', 'last_frame']
+    const resolvedReferenceFrames: IResolvedReferenceFrame[] = []
+
+    for (const [index, referenceImage] of referenceImages.entries()) {
+        resolvedReferenceFrames.push({
+            url: await resolveSingleReferenceFrameUrl(referenceImage, storageContext),
+            role: roles[index]
+        })
+    }
+
+    return resolvedReferenceFrames
 }
 
 const buildDoubaoVideoRequestPayload = (
     effectiveArgs: IDoubaoVideoGenerationArgs,
-    referenceFrame?: IResolvedReferenceFrame
+    referenceFrames?: IResolvedReferenceFrame[]
 ): IDoubaoArkVideoRequest => {
     const content: IDoubaoArkVideoContent[] = [
         {
@@ -539,12 +549,13 @@ const buildDoubaoVideoRequestPayload = (
         }
     ]
 
-    if (referenceFrame?.url) {
+    for (const referenceFrame of referenceFrames || []) {
         content.push({
             type: 'image_url',
             image_url: {
                 url: referenceFrame.url
-            }
+            },
+            role: referenceFrame.role
         })
     }
 
@@ -650,7 +661,7 @@ export class DoubaoVideoModel extends BaseMediaModel {
             },
             options
         )
-        const referenceFrame = await resolveReferenceFramePayload(input.referenceImages, storageContext)
+        const referenceFrames = await resolveReferenceFramesPayload(input.referenceImages, storageContext)
 
         const createTaskResponse = await secureAxiosRequest({
             method: 'POST',
@@ -659,7 +670,7 @@ export class DoubaoVideoModel extends BaseMediaModel {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${this.apiKey}`
             },
-            data: buildDoubaoVideoRequestPayload(effectiveArgs, referenceFrame),
+            data: buildDoubaoVideoRequestPayload(effectiveArgs, referenceFrames),
             responseType: 'json'
         })
 

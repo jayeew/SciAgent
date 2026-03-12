@@ -10,6 +10,8 @@ export interface IMediaGenerationInput {
     prompt: string
     size?: string
     outputFormat?: 'png' | 'jpeg' | 'jpg'
+    sequentialImageGeneration?: 'disabled' | 'auto'
+    sequentialImageGenerationMaxImages?: number
     ratio?: string
     resolution?: string
     duration?: number

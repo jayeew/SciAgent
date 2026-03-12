@@ -12,7 +12,7 @@ import {
 import { AIMessage, AIMessageChunk, BaseMessage, ToolMessage } from '@langchain/core/messages'
 import { StructuredTool } from '@langchain/core/tools'
 import { RunnableConfig } from '@langchain/core/runnables'
-import { ARTIFACTS_PREFIX, SOURCE_DOCUMENTS_PREFIX, TOOL_ARGS_PREFIX } from '../../../src/agents'
+import { parseToolOutput } from '../../../src/agents'
 import { Document } from '@langchain/core/documents'
 import { DataSource } from 'typeorm'
 import { MessagesState, RunnableCallable, customGet } from '../commonUtils'
@@ -411,6 +411,8 @@ class ToolNode<T extends IStateWithMessages | BaseMessage[] | MessagesState> ext
         const ChannelsWithoutMessages = {
             chatId: this.options.chatId,
             sessionId: this.options.sessionId,
+            chatflowId: this.options.chatflowid,
+            orgId: this.options.orgId,
             input: this.inputQuery,
             state: inputWithoutMessages
         }
@@ -427,36 +429,16 @@ class ToolNode<T extends IStateWithMessages | BaseMessage[] | MessagesState> ext
                 }
                 let output = await tool.invoke(call.args, config)
                 let sourceDocuments: Document[] = []
-                let artifacts = []
-                if (output?.includes(SOURCE_DOCUMENTS_PREFIX)) {
-                    const outputArray = output.split(SOURCE_DOCUMENTS_PREFIX)
-                    output = outputArray[0]
-                    const docs = outputArray[1]
-                    try {
-                        sourceDocuments = JSON.parse(docs)
-                    } catch (e) {
-                        console.error('Error parsing source documents from tool')
-                    }
-                }
-                if (output?.includes(ARTIFACTS_PREFIX)) {
-                    const outputArray = output.split(ARTIFACTS_PREFIX)
-                    output = outputArray[0]
-                    try {
-                        artifacts = JSON.parse(outputArray[1])
-                    } catch (e) {
-                        console.error('Error parsing artifacts from tool')
-                    }
-                }
-
+                let artifacts: any[] = []
+                let fileAnnotations: any[] = []
                 let toolInput
-                if (typeof output === 'string' && output.includes(TOOL_ARGS_PREFIX)) {
-                    const outputArray = output.split(TOOL_ARGS_PREFIX)
-                    output = outputArray[0]
-                    try {
-                        toolInput = JSON.parse(outputArray[1])
-                    } catch (e) {
-                        console.error('Error parsing tool input from tool')
-                    }
+                if (typeof output === 'string') {
+                    const parsedToolOutput = parseToolOutput(output)
+                    output = parsedToolOutput.output
+                    sourceDocuments = parsedToolOutput.sourceDocuments as Document[]
+                    artifacts = parsedToolOutput.artifacts
+                    fileAnnotations = parsedToolOutput.fileAnnotations
+                    toolInput = parsedToolOutput.toolArgs
                 }
 
                 return new ToolMessage({
@@ -466,6 +448,7 @@ class ToolNode<T extends IStateWithMessages | BaseMessage[] | MessagesState> ext
                     additional_kwargs: {
                         sourceDocuments,
                         artifacts,
+                        fileAnnotations,
                         args: toolInput ?? call.args,
                         usedTools: [
                             {
@@ -517,7 +500,8 @@ const getReturnOutput = async (
             toolInput: output.additional_kwargs.args,
             toolOutput: output.content,
             sourceDocuments: output.additional_kwargs.sourceDocuments,
-            artifacts: output.additional_kwargs.artifacts
+            artifacts: output.additional_kwargs.artifacts,
+            fileAnnotations: output.additional_kwargs.fileAnnotations
         } as IUsedTool
     })
 

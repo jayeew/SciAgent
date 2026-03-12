@@ -178,6 +178,47 @@ describe('MediaConversationChain', () => {
         )
     })
 
+    it('passes multiple reference images to media models that support image-to-video', async () => {
+        const mediaModel = new FakeMediaModel(false, true)
+        const memory = {
+            ...createMemory(),
+            getChatMessages: jest.fn().mockResolvedValue([])
+        }
+
+        const chain = new MediaConversationChain()
+        await chain.run(
+            {
+                inputs: {
+                    mediaModel,
+                    memory
+                }
+            },
+            'Make it cinematic',
+            {
+                shouldStreamResponse: false,
+                uploads: [
+                    { type: 'stored-file', name: 'first-frame.png', mime: 'image/png' },
+                    { type: 'stored-file', name: 'last-frame.png', mime: 'image/png' },
+                    { type: 'file:rag', name: 'notes.txt', mime: 'text/plain' }
+                ]
+            }
+        )
+
+        expect(mediaModel.invoke).toHaveBeenCalledWith(
+            expect.objectContaining({
+                prompt: 'Make it cinematic',
+                referenceImages: [
+                    { type: 'stored-file', name: 'first-frame.png', mime: 'image/png' },
+                    { type: 'stored-file', name: 'last-frame.png', mime: 'image/png' }
+                ],
+                conversationContext: []
+            }),
+            expect.objectContaining({
+                shouldStreamResponse: false
+            })
+        )
+    })
+
     it('does not pass reference images to media models without image-to-image support', async () => {
         const mediaModel = new FakeMediaModel(false)
         const memory = {
@@ -210,5 +251,49 @@ describe('MediaConversationChain', () => {
             })
         )
         expect((mediaModel.invoke.mock.calls[0]?.[0] as IMediaGenerationInput).referenceImages).toBeUndefined()
+    })
+
+    it('passes sequential image generation options parsed by prompt refiner', async () => {
+        const mediaModel = new FakeMediaModel()
+        const memory = {
+            ...createMemory(),
+            getChatMessages: jest.fn().mockResolvedValue([])
+        }
+        const promptRefinerModel = {
+            invoke: jest
+                .fn()
+                .mockResolvedValue(
+                    new AIMessage(
+                        '{"prompt":"生成3张女孩和奶牛玩偶在游乐园开心地坐过山车的图片","sequential_image_generation":"auto","sequential_image_generation_options":{"max_images":3}}'
+                    )
+                )
+        }
+
+        const chain = new MediaConversationChain()
+        await chain.run(
+            {
+                inputs: {
+                    mediaModel,
+                    memory,
+                    promptRefinerModel
+                }
+            },
+            '生成3张图',
+            {
+                shouldStreamResponse: false
+            }
+        )
+
+        expect(mediaModel.invoke).toHaveBeenCalledWith(
+            expect.objectContaining({
+                prompt: '生成3张女孩和奶牛玩偶在游乐园开心地坐过山车的图片',
+                sequentialImageGeneration: 'auto',
+                sequentialImageGenerationMaxImages: 3,
+                conversationContext: []
+            }),
+            expect.objectContaining({
+                shouldStreamResponse: false
+            })
+        )
     })
 })

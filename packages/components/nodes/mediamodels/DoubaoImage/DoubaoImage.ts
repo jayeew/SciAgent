@@ -5,12 +5,18 @@ import {
     DEFAULT_DOUBAO_ARK_BASE_URL,
     DEFAULT_DOUBAO_IMAGE_MODEL,
     DEFAULT_DOUBAO_IMAGE_OUTPUT_FORMAT,
+    DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION,
+    DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES,
     DEFAULT_DOUBAO_IMAGE_SIZE,
     DEFAULT_DOUBAO_IMAGE_WATERMARK,
     DOUBAO_IMAGE_SIZE_OPTIONS,
+    MAX_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES,
+    MIN_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES,
     DoubaoImageModel,
     normalizeDoubaoImageSize,
-    normalizeDoubaoOutputFormat
+    normalizeDoubaoOutputFormat,
+    normalizeDoubaoSequentialImageGeneration,
+    normalizeDoubaoSequentialImageGenerationMaxImages
 } from './core'
 
 class DoubaoImage_MediaModels implements INode {
@@ -32,7 +38,7 @@ class DoubaoImage_MediaModels implements INode {
         this.type = 'DoubaoImage'
         this.icon = 'doubao.svg'
         this.category = 'Media Models'
-        this.description = 'Generate or edit images with Doubao Ark from conversational prompts and a single reference image'
+        this.description = 'Generate or edit images with Doubao Ark from conversational prompts and reference images'
         this.baseClasses = Array.from(new Set([this.type, ...getBaseClasses(DoubaoImageModel), 'Runnable']))
         this.credential = {
             label: 'Connect Credential',
@@ -83,6 +89,37 @@ class DoubaoImage_MediaModels implements INode {
                 default: DEFAULT_DOUBAO_IMAGE_WATERMARK,
                 optional: true,
                 additionalParams: true
+            },
+            {
+                label: 'Sequential Image Generation',
+                name: 'sequentialImageGeneration',
+                type: 'options',
+                options: [
+                    {
+                        label: 'Disabled',
+                        name: 'disabled'
+                    },
+                    {
+                        label: 'Auto',
+                        name: 'auto'
+                    }
+                ],
+                default: DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION,
+                optional: true,
+                additionalParams: true,
+                description: 'Group image generation mode. Only doubao-seedream-5.0-lite/4.5/4.0 models officially support this parameter.'
+            },
+            {
+                label: 'Sequential Max Images',
+                name: 'sequentialImageGenerationMaxImages',
+                type: 'number',
+                default: DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES,
+                optional: true,
+                additionalParams: true,
+                show: {
+                    sequentialImageGeneration: 'auto'
+                },
+                description: `Maximum generated images for sequential mode. Effective only when Sequential Image Generation is auto. Range: ${MIN_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES}-${MAX_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES}.`
             }
         ]
     }
@@ -99,6 +136,10 @@ class DoubaoImage_MediaModels implements INode {
         const outputFormat = normalizeDoubaoOutputFormat(nodeData.inputs?.outputFormat as string)
         const watermark =
             typeof nodeData.inputs?.watermark === 'boolean' ? (nodeData.inputs?.watermark as boolean) : DEFAULT_DOUBAO_IMAGE_WATERMARK
+        const sequentialImageGeneration = normalizeDoubaoSequentialImageGeneration(nodeData.inputs?.sequentialImageGeneration as string)
+        const sequentialImageGenerationMaxImages =
+            normalizeDoubaoSequentialImageGenerationMaxImages(Number(nodeData.inputs?.sequentialImageGenerationMaxImages)) ??
+            DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES
 
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const arkApiKey = getCredentialParam('arkApiKey', credentialData, nodeData)
@@ -112,6 +153,8 @@ class DoubaoImage_MediaModels implements INode {
             size,
             outputFormat,
             watermark,
+            sequentialImageGeneration,
+            sequentialImageGenerationMaxImages,
             chatflowid: options.chatflowid,
             orgId: options.orgId
         })

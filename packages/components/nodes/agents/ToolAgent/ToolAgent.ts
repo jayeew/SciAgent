@@ -116,7 +116,13 @@ class ToolAgent_Agents implements INode {
     }
 
     async init(nodeData: INodeData, input: string, options: ICommonObject): Promise<any> {
-        return prepareAgent(nodeData, options, { sessionId: this.sessionId, chatId: options.chatId, input })
+        return prepareAgent(nodeData, options, {
+            sessionId: this.sessionId,
+            chatId: options.chatId,
+            chatflowId: options.chatflowid,
+            orgId: options.orgId,
+            input
+        })
     }
 
     async run(nodeData: INodeData, input: string, options: ICommonObject): Promise<string | ICommonObject> {
@@ -141,7 +147,13 @@ class ToolAgent_Agents implements INode {
             }
         }
 
-        const executor = await prepareAgent(nodeData, options, { sessionId: this.sessionId, chatId: options.chatId, input })
+        const executor = await prepareAgent(nodeData, options, {
+            sessionId: this.sessionId,
+            chatId: options.chatId,
+            chatflowId: options.chatflowid,
+            orgId: options.orgId,
+            input
+        })
 
         const loggerHandler = new ConsoleCallbackHandler(options.logger, options?.orgId)
         const callbacks = await additionalCallbacks(nodeData, options)
@@ -157,6 +169,7 @@ class ToolAgent_Agents implements INode {
         let sourceDocuments: ICommonObject[] = []
         let usedTools: IUsedTool[] = []
         let artifacts = []
+        let fileAnnotations = []
 
         if (shouldStreamResponse) {
             const handler = new CustomChainHandler(sseStreamer, chatId)
@@ -186,6 +199,12 @@ class ToolAgent_Agents implements INode {
                 }
                 artifacts = res.artifacts
             }
+            if (res.fileAnnotations) {
+                if (sseStreamer) {
+                    sseStreamer.streamFileAnnotationsEvent(chatId, flatten(res.fileAnnotations))
+                }
+                fileAnnotations = res.fileAnnotations
+            }
             // If the tool is set to returnDirect, stream the output to the client
             if (res.usedTools && res.usedTools.length) {
                 let inputTools = nodeData.inputs?.tools
@@ -214,6 +233,9 @@ class ToolAgent_Agents implements INode {
             }
             if (res.artifacts) {
                 artifacts = res.artifacts
+            }
+            if (res.fileAnnotations) {
+                fileAnnotations = res.fileAnnotations
             }
         }
 
@@ -247,7 +269,7 @@ class ToolAgent_Agents implements INode {
 
         let finalRes = output
 
-        if (sourceDocuments.length || usedTools.length || artifacts.length) {
+        if (sourceDocuments.length || usedTools.length || artifacts.length || fileAnnotations.length) {
             const finalRes: ICommonObject = { text: output }
             if (sourceDocuments.length) {
                 finalRes.sourceDocuments = flatten(sourceDocuments)
@@ -257,6 +279,9 @@ class ToolAgent_Agents implements INode {
             }
             if (artifacts.length) {
                 finalRes.artifacts = artifacts
+            }
+            if (fileAnnotations.length) {
+                finalRes.fileAnnotations = flatten(fileAnnotations)
             }
             return finalRes
         }
@@ -268,7 +293,7 @@ class ToolAgent_Agents implements INode {
 const prepareAgent = async (
     nodeData: INodeData,
     options: ICommonObject,
-    flowObj: { sessionId?: string; chatId?: string; input?: string }
+    flowObj: { sessionId?: string; chatId?: string; chatflowId?: string; orgId?: string; input?: string }
 ) => {
     const model = nodeData.inputs?.model as BaseChatModel
     const maxIterations = nodeData.inputs?.maxIterations as string
@@ -369,6 +394,8 @@ const prepareAgent = async (
         tools,
         sessionId: flowObj?.sessionId,
         chatId: flowObj?.chatId,
+        chatflowId: flowObj?.chatflowId,
+        orgId: flowObj?.orgId,
         input: flowObj?.input,
         verbose: process.env.DEBUG === 'true' ? true : false,
         maxIterations: maxIterations ? parseFloat(maxIterations) : undefined

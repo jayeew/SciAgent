@@ -24,6 +24,7 @@ import { Organization } from '../../enterprise/database/entities/organization.en
 
 const SOURCE_DOCUMENTS_PREFIX = '\n\n----FLOWISE_SOURCE_DOCUMENTS----\n\n'
 const ARTIFACTS_PREFIX = '\n\n----FLOWISE_ARTIFACTS----\n\n'
+const FILE_ANNOTATIONS_PREFIX = '\n\n----FLOWISE_FILE_ANNOTATIONS----\n\n'
 const TOOL_ARGS_PREFIX = '\n\n----FLOWISE_TOOL_ARGS----\n\n'
 
 const buildAndInitTool = async (chatflowid: string, _chatId?: string, _apiMessageId?: string) => {
@@ -153,12 +154,12 @@ const buildAndInitTool = async (chatflowid: string, _chatId?: string, _apiMessag
         analytic: chatflow.analytic
     })
 
-    return agent
+    return { agent, orgId }
 }
 
 const getAgentTools = async (chatflowid: string): Promise<any> => {
     try {
-        const agent = await buildAndInitTool(chatflowid)
+        const { agent } = await buildAndInitTool(chatflowid)
         const tools = agent.tools
         return tools.map(convertToOpenAIFunction)
     } catch (error) {
@@ -177,7 +178,7 @@ const executeAgentTool = async (
     apiMessageId?: string
 ): Promise<any> => {
     try {
-        const agent = await buildAndInitTool(chatflowid, chatId, apiMessageId)
+        const { agent, orgId } = await buildAndInitTool(chatflowid, chatId, apiMessageId)
         const tools = agent.tools
         const tool = tools.find((tool: any) => tool.name === toolName)
 
@@ -187,21 +188,26 @@ const executeAgentTool = async (
 
         const inputArgsObj = typeof inputArgs === 'string' ? JSON.parse(inputArgs) : inputArgs
 
-        let toolOutput = await tool.call(inputArgsObj, undefined, undefined, { chatId })
+        let toolOutput = await tool.call(inputArgsObj, undefined, undefined, { chatId, chatflowId: chatflowid, orgId })
 
         if (typeof toolOutput === 'object') {
             toolOutput = JSON.stringify(toolOutput)
         }
 
-        let sourceDocuments = []
-        if (typeof toolOutput === 'string' && toolOutput.includes(SOURCE_DOCUMENTS_PREFIX)) {
-            const _splitted = toolOutput.split(SOURCE_DOCUMENTS_PREFIX)
+        if (typeof toolOutput === 'string' && toolOutput.includes(TOOL_ARGS_PREFIX)) {
+            const _splitted = toolOutput.split(TOOL_ARGS_PREFIX)
             toolOutput = _splitted[0]
-            const _sourceDocuments = JSON.parse(_splitted[1].trim())
-            if (Array.isArray(_sourceDocuments)) {
-                sourceDocuments = _sourceDocuments
+        }
+
+        let fileAnnotations = []
+        if (typeof toolOutput === 'string' && toolOutput.includes(FILE_ANNOTATIONS_PREFIX)) {
+            const _splitted = toolOutput.split(FILE_ANNOTATIONS_PREFIX)
+            toolOutput = _splitted[0]
+            const _fileAnnotations = JSON.parse(_splitted[1].trim())
+            if (Array.isArray(_fileAnnotations)) {
+                fileAnnotations = _fileAnnotations
             } else {
-                sourceDocuments.push(_sourceDocuments)
+                fileAnnotations.push(_fileAnnotations)
             }
         }
 
@@ -217,15 +223,23 @@ const executeAgentTool = async (
             }
         }
 
-        if (typeof toolOutput === 'string' && toolOutput.includes(TOOL_ARGS_PREFIX)) {
-            const _splitted = toolOutput.split(TOOL_ARGS_PREFIX)
+        let sourceDocuments = []
+        if (typeof toolOutput === 'string' && toolOutput.includes(SOURCE_DOCUMENTS_PREFIX)) {
+            const _splitted = toolOutput.split(SOURCE_DOCUMENTS_PREFIX)
             toolOutput = _splitted[0]
+            const _sourceDocuments = JSON.parse(_splitted[1].trim())
+            if (Array.isArray(_sourceDocuments)) {
+                sourceDocuments = _sourceDocuments
+            } else {
+                sourceDocuments.push(_sourceDocuments)
+            }
         }
 
         return {
             output: toolOutput,
             sourceDocuments,
-            artifacts
+            artifacts,
+            fileAnnotations
         }
     } catch (error) {
         throw new InternalFlowiseError(

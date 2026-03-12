@@ -22,13 +22,7 @@ import {
     IStateWithMessages,
     ConversationHistorySelection
 } from '../../../src/Interface'
-import {
-    ToolCallingAgentOutputParser,
-    AgentExecutor,
-    SOURCE_DOCUMENTS_PREFIX,
-    ARTIFACTS_PREFIX,
-    TOOL_ARGS_PREFIX
-} from '../../../src/agents'
+import { ToolCallingAgentOutputParser, AgentExecutor, parseToolOutput } from '../../../src/agents'
 import {
     extractOutputFromArray,
     getInputVariables,
@@ -629,7 +623,7 @@ async function createAgent(
     multiModalMessageContent: MessageContentImageUrl[],
     agentInputVariablesValues: ICommonObject,
     maxIterations?: string,
-    flowObj?: { sessionId?: string; chatId?: string; input?: string }
+    flowObj?: { sessionId?: string; chatId?: string; chatflowId?: string; orgId?: string; input?: string }
 ): Promise<any> {
     if (tools.length && !interrupt) {
         const promptArrays = [
@@ -686,6 +680,8 @@ async function createAgent(
             tools,
             sessionId: flowObj?.sessionId,
             chatId: flowObj?.chatId,
+            chatflowId: flowObj?.chatflowId,
+            orgId: flowObj?.orgId,
             input: flowObj?.input,
             verbose: process.env.DEBUG === 'true' ? true : false,
             maxIterations: maxIterations ? parseFloat(maxIterations) : undefined
@@ -808,6 +804,7 @@ async function agentNode(
                     usedTools?: IUsedTool[]
                     sourceDocuments?: IDocument[]
                     artifacts?: ICommonObject[]
+                    fileAnnotations?: ICommonObject[]
                 } = {}
                 formattedAgentResult.output = result.content
                 if (lastMessage.additional_kwargs?.usedTools) {
@@ -818,6 +815,9 @@ async function agentNode(
                 }
                 if (lastMessage.additional_kwargs?.artifacts) {
                     formattedAgentResult.artifacts = lastMessage.additional_kwargs.artifacts as ICommonObject[]
+                }
+                if (lastMessage.additional_kwargs?.fileAnnotations) {
+                    formattedAgentResult.fileAnnotations = lastMessage.additional_kwargs.fileAnnotations as ICommonObject[]
                 }
                 result = formattedAgentResult
             } else {
@@ -839,6 +839,9 @@ async function agentNode(
         }
         if (result.artifacts) {
             additional_kwargs.artifacts = result.artifacts
+        }
+        if (result.fileAnnotations) {
+            additional_kwargs.fileAnnotations = result.fileAnnotations
         }
         if (result.output) {
             result.content = result.output
@@ -1012,6 +1015,8 @@ class ToolNode<T extends BaseMessage[] | MessagesState> extends RunnableCallable
         const ChannelsWithoutMessages = {
             chatId: this.options.chatId,
             sessionId: this.options.sessionId,
+            chatflowId: this.options.chatflowid,
+            orgId: this.options.orgId,
             input: this.inputQuery,
             state: inputWithoutMessages
         }
@@ -1028,37 +1033,17 @@ class ToolNode<T extends BaseMessage[] | MessagesState> extends RunnableCallable
                 }
                 let output = await tool.invoke(call.args, config)
                 let sourceDocuments: Document[] = []
-                let artifacts = []
-
-                if (output?.includes(SOURCE_DOCUMENTS_PREFIX)) {
-                    const outputArray = output.split(SOURCE_DOCUMENTS_PREFIX)
-                    output = outputArray[0]
-                    const docs = outputArray[1]
-                    try {
-                        sourceDocuments = JSON.parse(docs)
-                    } catch (e) {
-                        console.error('Error parsing source documents from tool')
-                    }
-                }
-                if (output?.includes(ARTIFACTS_PREFIX)) {
-                    const outputArray = output.split(ARTIFACTS_PREFIX)
-                    output = outputArray[0]
-                    try {
-                        artifacts = JSON.parse(outputArray[1])
-                    } catch (e) {
-                        console.error('Error parsing artifacts from tool')
-                    }
-                }
-
+                let artifacts: any[] = []
+                let fileAnnotations: any[] = []
                 let toolInput
-                if (typeof output === 'string' && output.includes(TOOL_ARGS_PREFIX)) {
-                    const outputArray = output.split(TOOL_ARGS_PREFIX)
-                    output = outputArray[0]
-                    try {
-                        toolInput = JSON.parse(outputArray[1])
-                    } catch (e) {
-                        console.error('Error parsing tool input from tool')
-                    }
+
+                if (typeof output === 'string') {
+                    const parsedToolOutput = parseToolOutput(output)
+                    output = parsedToolOutput.output
+                    sourceDocuments = parsedToolOutput.sourceDocuments as Document[]
+                    artifacts = parsedToolOutput.artifacts
+                    fileAnnotations = parsedToolOutput.fileAnnotations
+                    toolInput = parsedToolOutput.toolArgs
                 }
 
                 return new ToolMessage({
@@ -1068,6 +1053,7 @@ class ToolNode<T extends BaseMessage[] | MessagesState> extends RunnableCallable
                     additional_kwargs: {
                         sourceDocuments,
                         artifacts,
+                        fileAnnotations,
                         args: toolInput ?? call.args,
                         usedTools: [
                             {

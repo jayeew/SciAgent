@@ -17,6 +17,10 @@ export const DEFAULT_DOUBAO_IMAGE_MODEL = 'doubao-seedream-5-0-260128'
 export const DEFAULT_DOUBAO_IMAGE_SIZE = '2048x2048'
 export const DEFAULT_DOUBAO_IMAGE_OUTPUT_FORMAT = 'png'
 export const DEFAULT_DOUBAO_IMAGE_WATERMARK = false
+export const DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION = 'disabled'
+export const DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES = 15
+export const MIN_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES = 1
+export const MAX_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES = 15
 export const DOUBAO_IMAGE_PROVIDER = 'doubao-ark'
 const MAX_DOUBAO_IMAGE_REQUEST_ATTEMPTS = 3
 const RETRYABLE_DOUBAO_IMAGE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504])
@@ -44,6 +48,8 @@ export interface IDoubaoImageGenerationSchema {
     size?: string
     outputFormat?: 'png' | 'jpeg' | 'jpg'
     watermark?: boolean
+    sequentialImageGeneration?: 'disabled' | 'auto'
+    sequentialImageGenerationMaxImages?: number
 }
 
 export interface IDoubaoImageGenerationConfig {
@@ -54,6 +60,8 @@ export interface IDoubaoImageGenerationConfig {
     size?: string
     outputFormat?: string
     watermark?: boolean
+    sequentialImageGeneration?: string
+    sequentialImageGenerationMaxImages?: number
     chatflowid?: string
     orgId?: string
 }
@@ -64,6 +72,8 @@ export interface IDoubaoImageGenerationArgs {
     size: string
     outputFormat: 'png' | 'jpeg'
     watermark: boolean
+    sequentialImageGeneration: 'disabled' | 'auto'
+    sequentialImageGenerationMaxImages?: number
 }
 
 interface IDoubaoArkImageRequest {
@@ -72,7 +82,11 @@ interface IDoubaoArkImageRequest {
     size: string
     output_format: 'png' | 'jpeg'
     watermark: boolean
-    image?: string
+    image?: string | string[]
+    sequential_image_generation?: 'disabled' | 'auto'
+    sequential_image_generation_options?: {
+        max_images?: number
+    }
 }
 
 interface IDoubaoArkImageResponseItem {
@@ -98,6 +112,10 @@ interface IResolvedReferenceImage {
     fallback?: string
 }
 
+interface IResolvedReferenceImages {
+    primaryList: string[]
+}
+
 export const normalizeDoubaoBaseUrl = (baseUrl?: string): string => {
     const normalizedBaseUrl = baseUrl?.trim() || DEFAULT_DOUBAO_ARK_BASE_URL
     return normalizedBaseUrl.replace(/\/+$/, '')
@@ -111,6 +129,105 @@ export const normalizeDoubaoOutputFormat = (outputFormat?: string): 'png' | 'jpe
     if (normalized === 'jpeg' || normalized === 'jpg') return 'jpeg'
 
     throw new Error(`Unsupported output format: ${outputFormat}. Only png and jpeg are supported.`)
+}
+
+export const normalizeDoubaoSequentialImageGeneration = (value?: string): 'disabled' | 'auto' => {
+    if (!value?.trim()) return DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION as 'disabled'
+
+    const normalizedValue = value.trim().toLowerCase()
+    if (normalizedValue === 'disabled' || normalizedValue === 'auto') {
+        return normalizedValue
+    }
+
+    throw new Error(`Unsupported sequential image generation mode: ${value}. Only disabled and auto are supported.`)
+}
+
+export const normalizeDoubaoSequentialImageGenerationMaxImages = (value?: number): number | undefined => {
+    if (value === undefined || value === null || Number.isNaN(value)) {
+        return undefined
+    }
+
+    const normalizedValue = Math.floor(value)
+    if (normalizedValue < MIN_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES) {
+        return MIN_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES
+    }
+    if (normalizedValue > MAX_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES) {
+        return MAX_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES
+    }
+
+    return normalizedValue
+}
+
+const ENGLISH_IMAGE_COUNT_WORDS: Record<string, number> = {
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
+    fifteen: 15
+}
+
+const CHINESE_IMAGE_COUNT_WORDS: Record<string, number> = {
+    一: 1,
+    二: 2,
+    两: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+    十: 10,
+    十一: 11,
+    十二: 12,
+    十三: 13,
+    十四: 14,
+    十五: 15
+}
+
+const normalizeRequestedImageCount = (value?: number): number | undefined => {
+    const normalized = normalizeDoubaoSequentialImageGenerationMaxImages(value)
+    if (typeof normalized !== 'number' || normalized < 2) {
+        return undefined
+    }
+
+    return normalized
+}
+
+const inferSequentialImageCountFromPrompt = (prompt: string): number | undefined => {
+    const trimmedPrompt = prompt.trim()
+    if (!trimmedPrompt) return undefined
+    if (!/(生成|创建|制作|输出|给我|帮我|画|draw|generate|create|make|produce|render)/i.test(trimmedPrompt)) {
+        return undefined
+    }
+
+    const arabicCountMatch = trimmedPrompt.match(/(\d{1,2})\s*(?:张|幅|images?|pictures?|pics?)/i)
+    if (arabicCountMatch?.[1]) {
+        return normalizeRequestedImageCount(Number(arabicCountMatch[1]))
+    }
+
+    const englishCountMatch = trimmedPrompt.match(
+        /\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen)\b\s*(?:images?|pictures?|pics?)\b/i
+    )
+    if (englishCountMatch?.[1]) {
+        return normalizeRequestedImageCount(ENGLISH_IMAGE_COUNT_WORDS[englishCountMatch[1].toLowerCase()])
+    }
+
+    const chineseCountMatch = trimmedPrompt.match(/(十[一二三四五]?|[一二两三四五六七八九十])\s*(?:张|幅)/)
+    if (chineseCountMatch?.[1]) {
+        return normalizeRequestedImageCount(CHINESE_IMAGE_COUNT_WORDS[chineseCountMatch[1]])
+    }
+
+    return undefined
 }
 
 const LEGACY_DOUBAO_IMAGE_SIZE_MAP: Record<string, string> = {
@@ -151,12 +268,48 @@ export const resolveDoubaoImageGenerationArgs = (
         throw new Error('Prompt is required')
     }
 
+    const hasRuntimeSequentialImageGeneration =
+        typeof input.sequentialImageGeneration === 'string' && input.sequentialImageGeneration.trim().length > 0
+    const runtimeSequentialImageGenerationMaxImages = normalizeDoubaoSequentialImageGenerationMaxImages(
+        typeof input.sequentialImageGenerationMaxImages === 'number'
+            ? input.sequentialImageGenerationMaxImages
+            : input.sequentialImageGenerationMaxImages !== undefined && input.sequentialImageGenerationMaxImages !== null
+            ? Number(input.sequentialImageGenerationMaxImages)
+            : undefined
+    )
+    const hasRuntimeSequentialImageGenerationMaxImages = typeof runtimeSequentialImageGenerationMaxImages === 'number'
+
+    let sequentialImageGeneration = normalizeDoubaoSequentialImageGeneration(
+        hasRuntimeSequentialImageGeneration ? input.sequentialImageGeneration : config.sequentialImageGeneration
+    )
+    let sequentialImageGenerationMaxImages =
+        (hasRuntimeSequentialImageGenerationMaxImages
+            ? runtimeSequentialImageGenerationMaxImages
+            : normalizeDoubaoSequentialImageGenerationMaxImages(config.sequentialImageGenerationMaxImages)) ??
+        DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES
+
+    if (!hasRuntimeSequentialImageGeneration && sequentialImageGeneration === 'disabled') {
+        if (hasRuntimeSequentialImageGenerationMaxImages && sequentialImageGenerationMaxImages > 1) {
+            sequentialImageGeneration = 'auto'
+        } else {
+            const inferredSequentialImageCount = inferSequentialImageCountFromPrompt(prompt)
+            if (inferredSequentialImageCount) {
+                sequentialImageGeneration = 'auto'
+                if (!hasRuntimeSequentialImageGenerationMaxImages) {
+                    sequentialImageGenerationMaxImages = inferredSequentialImageCount
+                }
+            }
+        }
+    }
+
     return {
         prompt,
         model: config.model?.trim() || DEFAULT_DOUBAO_IMAGE_MODEL,
         size: normalizeDoubaoImageSize(input.size) || normalizeDoubaoImageSize(config.size) || DEFAULT_DOUBAO_IMAGE_SIZE,
         outputFormat: normalizeDoubaoOutputFormat(input.outputFormat || config.outputFormat),
-        watermark: typeof input.watermark === 'boolean' ? input.watermark : config.watermark ?? DEFAULT_DOUBAO_IMAGE_WATERMARK
+        watermark: typeof input.watermark === 'boolean' ? input.watermark : config.watermark ?? DEFAULT_DOUBAO_IMAGE_WATERMARK,
+        sequentialImageGeneration,
+        ...(sequentialImageGeneration === 'auto' ? { sequentialImageGenerationMaxImages } : {})
     }
 }
 
@@ -350,18 +503,10 @@ const resolveStorageContext = (config: IDoubaoImageGenerationConfig, options?: I
     }
 }
 
-const resolveReferenceImagePayload = async (
-    referenceImages: IFileUpload[] | undefined,
+const resolveSingleReferenceImagePayload = async (
+    referenceImage: IFileUpload,
     storageContext: IStorageContext
-): Promise<IResolvedReferenceImage | undefined> => {
-    if (!referenceImages?.length) return undefined
-
-    if (referenceImages.length > 1) {
-        throw new Error('Doubao image-to-image supports exactly one reference image')
-    }
-
-    const referenceImage = referenceImages[0]
-
+): Promise<IResolvedReferenceImage> => {
     if (referenceImage.type === 'stored-file') {
         if (!hasStorageContext(storageContext)) {
             throw new Error('Doubao image-to-image requires chat storage context for uploaded reference images')
@@ -409,6 +554,36 @@ const resolveReferenceImagePayload = async (
     return { primary: rawData }
 }
 
+const resolveMultipleReferenceImagesPayload = async (
+    referenceImages: IFileUpload[],
+    storageContext: IStorageContext
+): Promise<IResolvedReferenceImages> => {
+    if (referenceImages.length < 2) {
+        throw new Error('Doubao multi-image generation requires at least two reference images')
+    }
+
+    const resolved: string[] = []
+    for (const referenceImage of referenceImages) {
+        const single = await resolveSingleReferenceImagePayload(referenceImage, storageContext)
+        resolved.push(single.primary)
+    }
+
+    return { primaryList: resolved }
+}
+
+const resolveReferenceImagePayload = async (
+    referenceImages: IFileUpload[] | undefined,
+    storageContext: IStorageContext
+): Promise<IResolvedReferenceImage | IResolvedReferenceImages | undefined> => {
+    if (!referenceImages?.length) return undefined
+
+    if (referenceImages.length === 1) {
+        return await resolveSingleReferenceImagePayload(referenceImages[0], storageContext)
+    }
+
+    return await resolveMultipleReferenceImagesPayload(referenceImages, storageContext)
+}
+
 const buildDoubaoRequestPayload = (effectiveArgs: IDoubaoImageGenerationArgs, referenceImage?: string): IDoubaoArkImageRequest => {
     return {
         model: effectiveArgs.model,
@@ -416,7 +591,37 @@ const buildDoubaoRequestPayload = (effectiveArgs: IDoubaoImageGenerationArgs, re
         size: effectiveArgs.size,
         output_format: effectiveArgs.outputFormat,
         watermark: effectiveArgs.watermark,
+        sequential_image_generation: effectiveArgs.sequentialImageGeneration,
+        ...(effectiveArgs.sequentialImageGeneration === 'auto'
+            ? {
+                  sequential_image_generation_options: {
+                      max_images: effectiveArgs.sequentialImageGenerationMaxImages
+                  }
+              }
+            : {}),
         ...(referenceImage ? { image: referenceImage } : {})
+    }
+}
+
+const buildDoubaoMultiImageRequestPayload = (
+    effectiveArgs: IDoubaoImageGenerationArgs,
+    referenceImages: string[]
+): IDoubaoArkImageRequest => {
+    return {
+        model: effectiveArgs.model,
+        prompt: effectiveArgs.prompt,
+        size: effectiveArgs.size,
+        output_format: effectiveArgs.outputFormat,
+        watermark: effectiveArgs.watermark,
+        image: referenceImages,
+        sequential_image_generation: effectiveArgs.sequentialImageGeneration,
+        ...(effectiveArgs.sequentialImageGeneration === 'auto'
+            ? {
+                  sequential_image_generation_options: {
+                      max_images: effectiveArgs.sequentialImageGenerationMaxImages
+                  }
+              }
+            : {})
     }
 }
 
@@ -445,6 +650,8 @@ export class DoubaoImageModel extends BaseMediaModel {
     private readonly defaultSize: string
     private readonly defaultOutputFormat: 'png' | 'jpeg'
     private readonly defaultWatermark: boolean
+    private readonly defaultSequentialImageGeneration: 'disabled' | 'auto'
+    private readonly defaultSequentialImageGenerationMaxImages: number
     private readonly credentialId?: string
     private readonly chatflowid?: string
     private readonly orgId?: string
@@ -458,6 +665,10 @@ export class DoubaoImageModel extends BaseMediaModel {
         this.defaultSize = config.size?.trim() || DEFAULT_DOUBAO_IMAGE_SIZE
         this.defaultOutputFormat = normalizeDoubaoOutputFormat(config.outputFormat)
         this.defaultWatermark = config.watermark ?? DEFAULT_DOUBAO_IMAGE_WATERMARK
+        this.defaultSequentialImageGeneration = normalizeDoubaoSequentialImageGeneration(config.sequentialImageGeneration)
+        this.defaultSequentialImageGenerationMaxImages =
+            normalizeDoubaoSequentialImageGenerationMaxImages(config.sequentialImageGenerationMaxImages) ??
+            DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES
         this.chatflowid = config.chatflowid
         this.orgId = config.orgId
     }
@@ -475,6 +686,8 @@ export class DoubaoImageModel extends BaseMediaModel {
                 size: this.defaultSize,
                 outputFormat: this.defaultOutputFormat,
                 watermark: this.defaultWatermark,
+                sequentialImageGeneration: this.defaultSequentialImageGeneration,
+                sequentialImageGenerationMaxImages: this.defaultSequentialImageGenerationMaxImages,
                 chatflowid: this.chatflowid,
                 orgId: this.orgId
             },
@@ -485,15 +698,20 @@ export class DoubaoImageModel extends BaseMediaModel {
             model: this.modelName,
             size: this.defaultSize,
             outputFormat: this.defaultOutputFormat,
-            watermark: this.defaultWatermark
+            watermark: this.defaultWatermark,
+            sequentialImageGeneration: this.defaultSequentialImageGeneration,
+            sequentialImageGenerationMaxImages: this.defaultSequentialImageGenerationMaxImages
         })
-        const resolvedReferenceImage = await resolveReferenceImagePayload(input.referenceImages, storageContext)
-        const payloads = resolvedReferenceImage?.fallback
-            ? [
-                  buildDoubaoRequestPayload(effectiveArgs, resolvedReferenceImage.primary),
-                  buildDoubaoRequestPayload(effectiveArgs, resolvedReferenceImage.fallback)
-              ]
-            : [buildDoubaoRequestPayload(effectiveArgs, resolvedReferenceImage?.primary)]
+        const resolvedReferenceImagePayload = await resolveReferenceImagePayload(input.referenceImages, storageContext)
+        const payloads =
+            resolvedReferenceImagePayload && 'primaryList' in resolvedReferenceImagePayload
+                ? [buildDoubaoMultiImageRequestPayload(effectiveArgs, resolvedReferenceImagePayload.primaryList)]
+                : resolvedReferenceImagePayload?.fallback
+                ? [
+                      buildDoubaoRequestPayload(effectiveArgs, resolvedReferenceImagePayload.primary),
+                      buildDoubaoRequestPayload(effectiveArgs, resolvedReferenceImagePayload.fallback)
+                  ]
+                : [buildDoubaoRequestPayload(effectiveArgs, resolvedReferenceImagePayload?.primary)]
 
         let response: AxiosResponse<IDoubaoArkImageResponse> | undefined
         let lastError: unknown

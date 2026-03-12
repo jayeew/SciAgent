@@ -2,7 +2,7 @@ import { ICommonObject, INode, INodeData, INodeOptionsValue, INodeParams, IServe
 import { updateFlowState } from '../utils'
 import { processTemplateVariables } from '../../../src/utils'
 import { Tool } from '@langchain/core/tools'
-import { ARTIFACTS_PREFIX, TOOL_ARGS_PREFIX } from '../../../src/agents'
+import { parseToolOutput } from '../../../src/agents'
 import zodToJsonSchema from 'zod-to-json-schema'
 
 interface IToolInputArgs {
@@ -277,6 +277,7 @@ class Tool_Agentflow implements INode {
             chatflowId: options.chatflowid,
             sessionId: options.sessionId,
             chatId: options.chatId,
+            orgId: options.orgId,
             input: input,
             state: options.agentflowRuntime?.state
         }
@@ -297,28 +298,16 @@ class Tool_Agentflow implements INode {
                 toolOutput = await toolInstance.call(toolCallArgs, { signal: abortController?.signal }, undefined, flowConfig)
             }
 
-            let parsedArtifacts
-
-            // Extract artifacts if present
-            if (typeof toolOutput === 'string' && toolOutput.includes(ARTIFACTS_PREFIX)) {
-                const [output, artifact] = toolOutput.split(ARTIFACTS_PREFIX)
-                toolOutput = output
-                try {
-                    parsedArtifacts = JSON.parse(artifact)
-                } catch (e) {
-                    console.error('Error parsing artifacts from tool:', e)
-                }
-            }
-
+            let parsedArtifacts: any[] = []
+            let parsedFileAnnotations: any[] = []
             let toolInput
-            if (typeof toolOutput === 'string' && toolOutput.includes(TOOL_ARGS_PREFIX)) {
-                const [output, args] = toolOutput.split(TOOL_ARGS_PREFIX)
-                toolOutput = output
-                try {
-                    toolInput = JSON.parse(args)
-                } catch (e) {
-                    console.error('Error parsing tool input from tool:', e)
-                }
+
+            if (typeof toolOutput === 'string') {
+                const parsedToolOutput = parseToolOutput(toolOutput)
+                toolOutput = parsedToolOutput.output
+                parsedArtifacts = parsedToolOutput.artifacts
+                parsedFileAnnotations = parsedToolOutput.fileAnnotations
+                toolInput = parsedToolOutput.toolArgs
             }
 
             if (typeof toolOutput === 'object') {
@@ -328,6 +317,9 @@ class Tool_Agentflow implements INode {
             if (isStreamable) {
                 const sseStreamer: IServerSideEventStreamer = options.sseStreamer
                 sseStreamer.streamTokenEvent(chatId, toolOutput)
+                if (parsedFileAnnotations.length > 0) {
+                    sseStreamer.streamFileAnnotationsEvent(chatId, parsedFileAnnotations)
+                }
             }
 
             newState = processTemplateVariables(newState, toolOutput)
@@ -341,7 +333,8 @@ class Tool_Agentflow implements INode {
                 },
                 output: {
                     content: toolOutput,
-                    artifacts: parsedArtifacts
+                    artifacts: parsedArtifacts,
+                    fileAnnotations: parsedFileAnnotations
                 },
                 state: newState
             }

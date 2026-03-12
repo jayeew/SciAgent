@@ -11,10 +11,12 @@ type IUploadConfig = {
     isRAGFileUploadAllowed: boolean
     imgUploadSizeAndTypes: IUploadFileSizeAndTypes[]
     fileUploadSizeAndTypes: IUploadFileSizeAndTypes[]
+    imageUploadHint?: string
 }
 
 const DEFAULT_IMAGE_UPLOAD_TYPES = ['image/gif', 'image/jpeg', 'image/png', 'image/webp']
 const DEFAULT_IMAGE_UPLOAD_MAX_SIZE_MB = 5
+const DOUBAO_VIDEO_IMAGE_UPLOAD_HINT = 'Doubao Video 上传提示：最多上传两张图片，第一张=首帧，第二张=尾帧。'
 
 const enableImageUploads = (imgUploadSizeAndTypes: IUploadFileSizeAndTypes[]) => {
     if (imgUploadSizeAndTypes.length === 0) {
@@ -43,6 +45,19 @@ const hasConnectedDoubaoMediaModelWithImageInput = (nodes: IReactFlowNode[], edg
     })
 }
 
+const hasConnectedDoubaoVideoWithImageInput = (nodes: IReactFlowNode[], edges: IReactFlowEdge[]): boolean => {
+    const mediaConversationNodeIds = new Set(nodes.filter((node) => node.data.name === 'mediaConversationChain').map((node) => node.id))
+
+    if (mediaConversationNodeIds.size === 0) return false
+
+    return edges.some((edge) => {
+        if (!mediaConversationNodeIds.has(edge.target)) return false
+
+        const sourceNode = nodes.find((node) => node.id === edge.source)
+        return sourceNode?.data.name === 'doubaoVideo' || sourceNode?.data.type === 'DoubaoVideo'
+    })
+}
+
 /**
  * Method that checks if uploads are enabled in the chatflow
  * @param {string} chatflowid
@@ -63,6 +78,7 @@ export const utilGetUploadsConfig = async (chatflowid: string): Promise<IUploadC
     let isSpeechToTextEnabled = false
     let isImageUploadAllowed = false
     let isRAGFileUploadAllowed = false
+    let imageUploadHint: string | undefined
 
     /*
      * Check for STT
@@ -161,11 +177,16 @@ export const utilGetUploadsConfig = async (chatflowid: string): Promise<IUploadC
         isImageUploadAllowed = true
     }
 
+    if (isImageUploadAllowed && hasConnectedDoubaoVideoWithImageInput(nodes, edges)) {
+        imageUploadHint = DOUBAO_VIDEO_IMAGE_UPLOAD_HINT
+    }
+
     return {
         isSpeechToTextEnabled,
         isImageUploadAllowed,
         isRAGFileUploadAllowed,
         imgUploadSizeAndTypes,
-        fileUploadSizeAndTypes
+        fileUploadSizeAndTypes,
+        ...(imageUploadHint ? { imageUploadHint } : {})
     }
 }

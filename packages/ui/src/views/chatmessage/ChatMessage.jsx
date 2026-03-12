@@ -3054,6 +3054,11 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                         ))}
                     </Box>
                 )}
+                {isChatFlowAvailableForImageUploads && getAllowChatFlowUploads.data?.imageUploadHint && (
+                    <Typography variant='caption' sx={{ display: 'block', mb: 1, px: 0.5, color: 'text.secondary' }}>
+                        {getAllowChatFlowUploads.data.imageUploadHint}
+                    </Typography>
+                )}
                 {isRecording ? (
                     <>
                         {recordingNotSupported ? (

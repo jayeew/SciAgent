@@ -4,11 +4,12 @@ import openaiAssistantsService from '../../services/openai-assistants'
 import contentDisposition from 'content-disposition'
 import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import { StatusCodes } from 'http-status-codes'
-import { streamStorageFile } from 'flowise-components'
+import { isUnsafeFilePath, streamStorageFile } from 'flowise-components'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import { ChatFlow } from '../../database/entities/ChatFlow'
 import { Workspace } from '../../enterprise/database/entities/workspace.entity'
 import { validateFileMimeTypeAndExtensionMatch } from '../../utils/fileValidation'
+import { getContentTypeFromFileName } from '../../utils/fileMime'
 
 // List available assistants
 const getAllOpenaiAssistants = async (req: Request, res: Response, next: NextFunction) => {
@@ -59,6 +60,10 @@ const getFileFromAssistant = async (req: Request, res: Response, next: NextFunct
         const chatId = req.body.chatId as string
         const fileName = req.body.fileName as string
 
+        if (isUnsafeFilePath(fileName)) {
+            return res.status(400).send(`Invalid path characters detected in filename`)
+        }
+
         // This can be public API, so we can only get orgId from the chatflow
         const chatflow = await appServer.AppDataSource.getRepository(ChatFlow).findOneBy({
             id: chatflowId
@@ -76,6 +81,10 @@ const getFileFromAssistant = async (req: Request, res: Response, next: NextFunct
         const orgId = workspace.organizationId as string
 
         res.setHeader('Content-Disposition', contentDisposition(fileName))
+        const contentType = getContentTypeFromFileName(fileName)
+        if (contentType) {
+            res.setHeader('Content-Type', contentType)
+        }
         const fileStream = await streamStorageFile(chatflowId, chatId, fileName, orgId)
 
         if (!fileStream) throw new InternalFlowiseError(StatusCodes.INTERNAL_SERVER_ERROR, `Error: getFileFromAssistant`)

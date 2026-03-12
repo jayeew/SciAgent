@@ -152,6 +152,7 @@
         "pdfjs-dist": "^5.3.93",
         "pg": "^8.11.2",
         "playwright": "^1.35.0",
+        "pptxgenjs": "^4.0.1",
         "puppeteer": "^20.7.1",
         "pyodide": ">=0.21.0-alpha.2",
         "redis": "^4.6.7",

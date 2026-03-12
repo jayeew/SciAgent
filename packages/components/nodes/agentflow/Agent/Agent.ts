@@ -16,7 +16,7 @@ import { AnalyticHandler } from '../../../src/handler'
 import { DEFAULT_SUMMARIZER_TEMPLATE } from '../prompt'
 import { ILLMMessage } from '../Interface.Agentflow'
 import { Tool } from '@langchain/core/tools'
-import { ARTIFACTS_PREFIX, SOURCE_DOCUMENTS_PREFIX, TOOL_ARGS_PREFIX } from '../../../src/agents'
+import { parseToolOutput, TOOL_ARGS_PREFIX } from '../../../src/agents'
 import { flatten } from 'lodash'
 import zodToJsonSchema from 'zod-to-json-schema'
 import { getErrorMessage } from '../../../src/error'
@@ -2007,6 +2007,7 @@ class Agent_Agentflow implements INode {
         usedTools: IUsedTool[]
         sourceDocuments: Array<any>
         artifacts: any[]
+        fileAnnotations: any[]
         totalTokens: number
         isWaitingForHumanInput?: boolean
     }> {
@@ -2015,10 +2016,11 @@ class Agent_Agentflow implements INode {
         const usedTools: IUsedTool[] = []
         let sourceDocuments: Array<any> = []
         let artifacts: any[] = []
+        let fileAnnotations: any[] = []
         let isWaitingForHumanInput: boolean | undefined
 
         if (!response.tool_calls || response.tool_calls.length === 0) {
-            return { response, usedTools: [], sourceDocuments: [], artifacts: [], totalTokens }
+            return { response, usedTools: [], sourceDocuments: [], artifacts: [], fileAnnotations: [], totalTokens }
         }
 
         // Stream tool calls if available
@@ -2073,6 +2075,7 @@ class Agent_Agentflow implements INode {
                     chatflowId: options.chatflowid,
                     sessionId: options.sessionId,
                     chatId: options.chatId,
+                    orgId: options.orgId,
                     input: input,
                     state: options.agentflowRuntime?.state
                 }
@@ -2084,7 +2087,7 @@ class Agent_Agentflow implements INode {
                     if (!isStructuredOutput) {
                         sseStreamer?.streamTokenEvent(chatId, responseContent)
                     }
-                    return { response, usedTools, sourceDocuments, artifacts, totalTokens, isWaitingForHumanInput: true }
+                    return { response, usedTools, sourceDocuments, artifacts, fileAnnotations, totalTokens, isWaitingForHumanInput: true }
                 }
 
                 let toolIds: ICommonObject | undefined
@@ -2100,38 +2103,24 @@ class Agent_Agentflow implements INode {
                         await options.analyticHandlers.onToolEnd(toolIds, toolOutput)
                     }
 
-                    // Extract source documents if present
-                    if (typeof toolOutput === 'string' && toolOutput.includes(SOURCE_DOCUMENTS_PREFIX)) {
-                        const [output, docs] = toolOutput.split(SOURCE_DOCUMENTS_PREFIX)
-                        toolOutput = output
-                        try {
-                            parsedDocs = JSON.parse(docs)
-                            sourceDocuments.push(parsedDocs)
-                        } catch (e) {
-                            console.error('Error parsing source documents from tool:', e)
-                        }
-                    }
-
-                    // Extract artifacts if present
-                    if (typeof toolOutput === 'string' && toolOutput.includes(ARTIFACTS_PREFIX)) {
-                        const [output, artifact] = toolOutput.split(ARTIFACTS_PREFIX)
-                        toolOutput = output
-                        try {
-                            parsedArtifacts = JSON.parse(artifact)
-                            artifacts.push(parsedArtifacts)
-                        } catch (e) {
-                            console.error('Error parsing artifacts from tool:', e)
-                        }
-                    }
-
+                    let parsedFileAnnotations
                     let toolInput
-                    if (typeof toolOutput === 'string' && toolOutput.includes(TOOL_ARGS_PREFIX)) {
-                        const [output, args] = toolOutput.split(TOOL_ARGS_PREFIX)
-                        toolOutput = output
-                        try {
-                            toolInput = JSON.parse(args)
-                        } catch (e) {
-                            console.error('Error parsing tool input from tool:', e)
+                    if (typeof toolOutput === 'string') {
+                        const parsedToolOutput = parseToolOutput(toolOutput)
+                        toolOutput = parsedToolOutput.output
+                        parsedDocs = parsedToolOutput.sourceDocuments
+                        parsedArtifacts = parsedToolOutput.artifacts
+                        parsedFileAnnotations = parsedToolOutput.fileAnnotations
+                        toolInput = parsedToolOutput.toolArgs
+
+                        if (parsedDocs.length > 0) {
+                            sourceDocuments.push(parsedDocs)
+                        }
+                        if (parsedArtifacts.length > 0) {
+                            artifacts.push(parsedArtifacts)
+                        }
+                        if (parsedFileAnnotations.length > 0) {
+                            fileAnnotations.push(parsedFileAnnotations)
                         }
                     }
 
@@ -2143,7 +2132,8 @@ class Agent_Agentflow implements INode {
                         name: toolCall.name,
                         additional_kwargs: {
                             artifacts: parsedArtifacts,
-                            sourceDocuments: parsedDocs
+                            sourceDocuments: parsedDocs,
+                            fileAnnotations: parsedFileAnnotations
                         }
                     })
 
@@ -2198,6 +2188,7 @@ class Agent_Agentflow implements INode {
                     usedTools,
                     sourceDocuments,
                     artifacts,
+                    fileAnnotations,
                     totalTokens
                 }
             }
@@ -2210,6 +2201,7 @@ class Agent_Agentflow implements INode {
                 usedTools,
                 sourceDocuments,
                 artifacts,
+                fileAnnotations,
                 totalTokens
             }
         }
@@ -2251,6 +2243,7 @@ class Agent_Agentflow implements INode {
                 usedTools: recursiveUsedTools,
                 sourceDocuments: recursiveSourceDocuments,
                 artifacts: recursiveArtifacts,
+                fileAnnotations: recursiveFileAnnotations,
                 totalTokens: recursiveTokens,
                 isWaitingForHumanInput: recursiveIsWaitingForHumanInput
             } = await this.handleToolCalls({
@@ -2274,11 +2267,12 @@ class Agent_Agentflow implements INode {
             usedTools.push(...recursiveUsedTools)
             sourceDocuments = [...sourceDocuments, ...recursiveSourceDocuments]
             artifacts = [...artifacts, ...recursiveArtifacts]
+            fileAnnotations = [...fileAnnotations, ...recursiveFileAnnotations]
             totalTokens += recursiveTokens
             isWaitingForHumanInput = recursiveIsWaitingForHumanInput
         }
 
-        return { response: newResponse, usedTools, sourceDocuments, artifacts, totalTokens, isWaitingForHumanInput }
+        return { response: newResponse, usedTools, sourceDocuments, artifacts, fileAnnotations, totalTokens, isWaitingForHumanInput }
     }
 
     /**
@@ -2319,6 +2313,7 @@ class Agent_Agentflow implements INode {
         usedTools: IUsedTool[]
         sourceDocuments: Array<any>
         artifacts: any[]
+        fileAnnotations: any[]
         totalTokens: number
         isWaitingForHumanInput?: boolean
     }> {
@@ -2326,11 +2321,19 @@ class Agent_Agentflow implements INode {
         const usedTools: IUsedTool[] = []
         let sourceDocuments: Array<any> = []
         let artifacts: any[] = []
+        let fileAnnotations: any[] = []
         let isWaitingForHumanInput: boolean | undefined
 
         const lastCheckpointMessages = humanInputAction?.data?.input?.messages ?? []
         if (!lastCheckpointMessages.length) {
-            return { response: new AIMessageChunk(''), usedTools: [], sourceDocuments: [], artifacts: [], totalTokens: 0 }
+            return {
+                response: new AIMessageChunk(''),
+                usedTools: [],
+                sourceDocuments: [],
+                artifacts: [],
+                fileAnnotations: [],
+                totalTokens: 0
+            }
         }
 
         // Use the last message as the response
@@ -2344,7 +2347,7 @@ class Agent_Agentflow implements INode {
         let totalTokens = response.usage_metadata?.total_tokens || 0
 
         if (!response.tool_calls || response.tool_calls.length === 0) {
-            return { response, usedTools: [], sourceDocuments: [], artifacts: [], totalTokens }
+            return { response, usedTools: [], sourceDocuments: [], artifacts: [], fileAnnotations: [], totalTokens }
         }
 
         // Stream tool calls if available
@@ -2397,6 +2400,7 @@ class Agent_Agentflow implements INode {
                     chatflowId: options.chatflowid,
                     sessionId: options.sessionId,
                     chatId: options.chatId,
+                    orgId: options.orgId,
                     input: input,
                     state: options.agentflowRuntime?.state
                 }
@@ -2426,38 +2430,24 @@ class Agent_Agentflow implements INode {
                             await options.analyticHandlers.onToolEnd(toolIds, toolOutput)
                         }
 
-                        // Extract source documents if present
-                        if (typeof toolOutput === 'string' && toolOutput.includes(SOURCE_DOCUMENTS_PREFIX)) {
-                            const [output, docs] = toolOutput.split(SOURCE_DOCUMENTS_PREFIX)
-                            toolOutput = output
-                            try {
-                                parsedDocs = JSON.parse(docs)
-                                sourceDocuments.push(parsedDocs)
-                            } catch (e) {
-                                console.error('Error parsing source documents from tool:', e)
-                            }
-                        }
-
-                        // Extract artifacts if present
-                        if (typeof toolOutput === 'string' && toolOutput.includes(ARTIFACTS_PREFIX)) {
-                            const [output, artifact] = toolOutput.split(ARTIFACTS_PREFIX)
-                            toolOutput = output
-                            try {
-                                parsedArtifacts = JSON.parse(artifact)
-                                artifacts.push(parsedArtifacts)
-                            } catch (e) {
-                                console.error('Error parsing artifacts from tool:', e)
-                            }
-                        }
-
+                        let parsedFileAnnotations
                         let toolInput
-                        if (typeof toolOutput === 'string' && toolOutput.includes(TOOL_ARGS_PREFIX)) {
-                            const [output, args] = toolOutput.split(TOOL_ARGS_PREFIX)
-                            toolOutput = output
-                            try {
-                                toolInput = JSON.parse(args)
-                            } catch (e) {
-                                console.error('Error parsing tool input from tool:', e)
+                        if (typeof toolOutput === 'string') {
+                            const parsedToolOutput = parseToolOutput(toolOutput)
+                            toolOutput = parsedToolOutput.output
+                            parsedDocs = parsedToolOutput.sourceDocuments
+                            parsedArtifacts = parsedToolOutput.artifacts
+                            parsedFileAnnotations = parsedToolOutput.fileAnnotations
+                            toolInput = parsedToolOutput.toolArgs
+
+                            if (parsedDocs.length > 0) {
+                                sourceDocuments.push(parsedDocs)
+                            }
+                            if (parsedArtifacts.length > 0) {
+                                artifacts.push(parsedArtifacts)
+                            }
+                            if (parsedFileAnnotations.length > 0) {
+                                fileAnnotations.push(parsedFileAnnotations)
                             }
                         }
 
@@ -2469,7 +2459,8 @@ class Agent_Agentflow implements INode {
                             name: toolCall.name,
                             additional_kwargs: {
                                 artifacts: parsedArtifacts,
-                                sourceDocuments: parsedDocs
+                                sourceDocuments: parsedDocs,
+                                fileAnnotations: parsedFileAnnotations
                             }
                         })
 
@@ -2525,6 +2516,7 @@ class Agent_Agentflow implements INode {
                     usedTools,
                     sourceDocuments,
                     artifacts,
+                    fileAnnotations,
                     totalTokens
                 }
             }
@@ -2580,6 +2572,7 @@ class Agent_Agentflow implements INode {
                 usedTools: recursiveUsedTools,
                 sourceDocuments: recursiveSourceDocuments,
                 artifacts: recursiveArtifacts,
+                fileAnnotations: recursiveFileAnnotations,
                 totalTokens: recursiveTokens,
                 isWaitingForHumanInput: recursiveIsWaitingForHumanInput
             } = await this.handleToolCalls({
@@ -2603,11 +2596,12 @@ class Agent_Agentflow implements INode {
             usedTools.push(...recursiveUsedTools)
             sourceDocuments = [...sourceDocuments, ...recursiveSourceDocuments]
             artifacts = [...artifacts, ...recursiveArtifacts]
+            fileAnnotations = [...fileAnnotations, ...recursiveFileAnnotations]
             totalTokens += recursiveTokens
             isWaitingForHumanInput = recursiveIsWaitingForHumanInput
         }
 
-        return { response: newResponse, usedTools, sourceDocuments, artifacts, totalTokens, isWaitingForHumanInput }
+        return { response: newResponse, usedTools, sourceDocuments, artifacts, fileAnnotations, totalTokens, isWaitingForHumanInput }
     }
 
     /**

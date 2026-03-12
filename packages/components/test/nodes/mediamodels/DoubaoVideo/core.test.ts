@@ -288,7 +288,74 @@ describe('DoubaoVideoModel', () => {
                             type: 'image_url',
                             image_url: {
                                 url: 'https://example.com/first%20frame.png'
-                            }
+                            },
+                            role: 'first_frame'
+                        }
+                    ]
+                })
+            })
+        )
+        expect(result.artifacts).toEqual([{ type: 'mp4', data: 'https://example.com/generated.mp4' }])
+    })
+
+    it('sends first-frame and last-frame guidance when two reference images are provided for image-to-video', async () => {
+        mockedSecureAxiosRequest
+            .mockResolvedValueOnce({
+                data: {
+                    id: 'cgt-2025-task-2-dual'
+                }
+            } as any)
+            .mockResolvedValueOnce({
+                data: {
+                    id: 'cgt-2025-task-2-dual',
+                    model: DEFAULT_DOUBAO_VIDEO_MODEL,
+                    status: 'succeeded',
+                    content: {
+                        video_url: 'https://example.com/generated.mp4'
+                    },
+                    ratio: '16:9',
+                    resolution: '720p',
+                    duration: 5
+                }
+            } as any)
+
+        const result = await createModel({ chatflowid: undefined, orgId: undefined }).invoke({
+            prompt: '女孩回头微笑，镜头环绕一周',
+            referenceImages: [
+                {
+                    type: 'url',
+                    name: 'first-frame.png',
+                    mime: 'image/png',
+                    data: 'https://example.com/first frame.png\n# clipboard metadata'
+                },
+                {
+                    type: 'url',
+                    name: 'last-frame.png',
+                    mime: 'image/png',
+                    data: 'https://example.com/last frame.png'
+                }
+            ]
+        })
+
+        expect(mockedSecureAxiosRequest).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    content: [
+                        { type: 'text', text: '女孩回头微笑，镜头环绕一周' },
+                        {
+                            type: 'image_url',
+                            image_url: {
+                                url: 'https://example.com/first%20frame.png'
+                            },
+                            role: 'first_frame'
+                        },
+                        {
+                            type: 'image_url',
+                            image_url: {
+                                url: 'https://example.com/last%20frame.png'
+                            },
+                            role: 'last_frame'
                         }
                     ]
                 })
@@ -361,7 +428,8 @@ describe('DoubaoVideoModel', () => {
                             type: 'image_url',
                             image_url: {
                                 url: `data:image/png;base64,${Buffer.from('first-frame-bytes').toString('base64')}`
-                            }
+                            },
+                            role: 'first_frame'
                         }
                     ]
                 })
@@ -370,19 +438,20 @@ describe('DoubaoVideoModel', () => {
         expect(result.artifacts).toEqual([{ type: 'mp4', data: 'FILE-STORAGE::doubao_generated_video_1700000000000.mp4' }])
     })
 
-    it('throws when more than one reference image is provided for image-to-video', async () => {
+    it('throws when more than two reference images are provided for image-to-video', async () => {
         await expect(
             createModel().invoke(
                 {
                     prompt: '生成一段视频',
                     referenceImages: [
                         { type: 'stored-file', name: 'first-frame-1.png', mime: 'image/png' },
-                        { type: 'stored-file', name: 'first-frame-2.png', mime: 'image/png' }
+                        { type: 'stored-file', name: 'last-frame.png', mime: 'image/png' },
+                        { type: 'stored-file', name: 'extra-frame.png', mime: 'image/png' }
                     ]
                 },
                 { chatId: 'chat-1' }
             )
-        ).rejects.toThrow('Doubao image-to-video supports exactly one reference image')
+        ).rejects.toThrow('Doubao image-to-video supports up to two reference images: first frame and optional last frame')
 
         expect(mockedSecureAxiosRequest).not.toHaveBeenCalled()
     })

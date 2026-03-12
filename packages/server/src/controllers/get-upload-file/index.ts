@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
 import fs from 'fs'
-import path from 'path'
 import contentDisposition from 'content-disposition'
 import { isUnsafeFilePath, isValidUUID, streamStorageFile } from 'flowise-components'
 import { StatusCodes } from 'http-status-codes'
@@ -8,34 +7,7 @@ import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import { ChatFlow } from '../../database/entities/ChatFlow'
 import { Workspace } from '../../enterprise/database/entities/workspace.entity'
-
-const getContentTypeFromFileName = (fileName: string): string | undefined => {
-    const extension = path.extname(fileName).toLowerCase()
-
-    switch (extension) {
-        case '.png':
-            return 'image/png'
-        case '.jpg':
-        case '.jpeg':
-            return 'image/jpeg'
-        case '.gif':
-            return 'image/gif'
-        case '.webp':
-            return 'image/webp'
-        case '.svg':
-            return 'image/svg+xml'
-        case '.mp4':
-            return 'video/mp4'
-        case '.webm':
-            return 'video/webm'
-        case '.mov':
-            return 'video/quicktime'
-        case '.avi':
-            return 'video/x-msvideo'
-        default:
-            return undefined
-    }
-}
+import { getContentTypeFromFileName } from '../../utils/fileMime'
 
 const streamUploadedFile = async (req: Request, res: Response, next: NextFunction) => {
     try {

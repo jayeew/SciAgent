@@ -129,6 +129,8 @@ class Worker_MultiAgents implements INode {
             {
                 sessionId: options.sessionId,
                 chatId: options.chatId,
+                chatflowId: options.chatflowid,
+                orgId: options.orgId,
                 input
             }
         )
@@ -166,7 +168,7 @@ async function createAgent(
     multiModalMessageContent: MessageContentImageUrl[],
     workerInputVariablesValues: ICommonObject,
     maxIterations?: string,
-    flowObj?: { sessionId?: string; chatId?: string; input?: string }
+    flowObj?: { sessionId?: string; chatId?: string; chatflowId?: string; orgId?: string; input?: string }
 ): Promise<AgentExecutor | RunnableSequence> {
     if (tools.length) {
         const combinedPrompt =
@@ -232,6 +234,8 @@ async function createAgent(
             tools,
             sessionId: flowObj?.sessionId,
             chatId: flowObj?.chatId,
+            chatflowId: flowObj?.chatflowId,
+            orgId: flowObj?.orgId,
             input: flowObj?.input,
             verbose: process.env.DEBUG === 'true' ? true : false,
             maxIterations: maxIterations ? parseFloat(maxIterations) : undefined
@@ -289,6 +293,9 @@ async function agentNode(
         }
         if (result.sourceDocuments) {
             additional_kwargs.sourceDocuments = result.sourceDocuments
+        }
+        if (result.fileAnnotations) {
+            additional_kwargs.fileAnnotations = result.fileAnnotations
         }
         return {
             messages: [

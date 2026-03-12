@@ -28,6 +28,7 @@ import { getErrorMessage } from './error'
 
 export const SOURCE_DOCUMENTS_PREFIX = '\n\n----FLOWISE_SOURCE_DOCUMENTS----\n\n'
 export const ARTIFACTS_PREFIX = '\n\n----FLOWISE_ARTIFACTS----\n\n'
+export const FILE_ANNOTATIONS_PREFIX = '\n\n----FLOWISE_FILE_ANNOTATIONS----\n\n'
 export const TOOL_ARGS_PREFIX = '\n\n----FLOWISE_TOOL_ARGS----\n\n'
 
 /**
@@ -38,6 +39,71 @@ export const TOOL_ARGS_PREFIX = '\n\n----FLOWISE_TOOL_ARGS----\n\n'
  */
 export const formatToolError = (errorMessage: string, params: any): string => {
     return errorMessage + TOOL_ARGS_PREFIX + JSON.stringify(params)
+}
+
+const parseArrayPayload = (value: unknown): any[] => {
+    if (Array.isArray(value)) {
+        return value
+    }
+    if (value === undefined || value === null) {
+        return []
+    }
+    return [value]
+}
+
+const extractJsonSuffix = (text: string, prefix: string): { output: string; parsed?: unknown } => {
+    if (!text.includes(prefix)) {
+        return { output: text }
+    }
+
+    const [output, payload] = text.split(prefix)
+
+    try {
+        return { output, parsed: JSON.parse(payload.trim()) }
+    } catch (error) {
+        console.error(`Error parsing tool payload for prefix ${prefix}:`, error)
+        return { output }
+    }
+}
+
+export interface IParsedToolOutput {
+    output: string
+    sourceDocuments: any[]
+    artifacts: any[]
+    fileAnnotations: any[]
+    toolArgs?: any
+}
+
+export const parseToolOutput = (toolOutput: string): IParsedToolOutput => {
+    let output = toolOutput
+    let toolArgs
+    let fileAnnotations: any[] = []
+    let artifacts: any[] = []
+    let sourceDocuments: any[] = []
+
+    const toolArgsResult = extractJsonSuffix(output, TOOL_ARGS_PREFIX)
+    output = toolArgsResult.output
+    toolArgs = toolArgsResult.parsed
+
+    const fileAnnotationsResult = extractJsonSuffix(output, FILE_ANNOTATIONS_PREFIX)
+    output = fileAnnotationsResult.output
+    fileAnnotations = parseArrayPayload(fileAnnotationsResult.parsed)
+
+    const artifactsResult = extractJsonSuffix(output, ARTIFACTS_PREFIX)
+    output = artifactsResult.output
+    artifacts = parseArrayPayload(artifactsResult.parsed)
+
+    const sourceDocumentsResult = extractJsonSuffix(output, SOURCE_DOCUMENTS_PREFIX)
+    output = sourceDocumentsResult.output
+    sourceDocuments = parseArrayPayload(sourceDocumentsResult.parsed)
+
+    return {
+        output,
+        sourceDocuments,
+        artifacts,
+        fileAnnotations,
+        toolArgs
+    }
 }
 
 export type AgentFinish = {
@@ -276,6 +342,10 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
 
     chatId?: string
 
+    chatflowId?: string
+
+    orgId?: string
+
     input?: string
 
     isXML?: boolean
@@ -302,7 +372,16 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
         return this.agent.returnValues
     }
 
-    constructor(input: AgentExecutorInput & { sessionId?: string; chatId?: string; input?: string; isXML?: boolean }) {
+    constructor(
+        input: AgentExecutorInput & {
+            sessionId?: string
+            chatId?: string
+            chatflowId?: string
+            orgId?: string
+            input?: string
+            isXML?: boolean
+        }
+    ) {
         let agent: BaseSingleActionAgent | BaseMultiActionAgent
         if (Runnable.isRunnable(input.agent)) {
             agent = new RunnableAgent({ runnable: input.agent })
@@ -329,16 +408,27 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
         this.earlyStoppingMethod = input.earlyStoppingMethod ?? this.earlyStoppingMethod
         this.sessionId = input.sessionId
         this.chatId = input.chatId
+        this.chatflowId = input.chatflowId
+        this.orgId = input.orgId
         this.input = input.input
         this.isXML = input.isXML
     }
 
     static fromAgentAndTools(
-        fields: AgentExecutorInput & { sessionId?: string; chatId?: string; input?: string; isXML?: boolean }
+        fields: AgentExecutorInput & {
+            sessionId?: string
+            chatId?: string
+            chatflowId?: string
+            orgId?: string
+            input?: string
+            isXML?: boolean
+        }
     ): AgentExecutor {
         const newInstance = new AgentExecutor(fields)
         if (fields.sessionId) newInstance.sessionId = fields.sessionId
         if (fields.chatId) newInstance.chatId = fields.chatId
+        if (fields.chatflowId) newInstance.chatflowId = fields.chatflowId
+        if (fields.orgId) newInstance.orgId = fields.orgId
         if (fields.input) newInstance.input = fields.input
         if (fields.isXML) newInstance.isXML = fields.isXML
         return newInstance
@@ -366,6 +456,7 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
         let sourceDocuments: Array<Document> = []
         const usedTools: IUsedTool[] = []
         let artifacts: any[] = []
+        let fileAnnotations: any[] = []
 
         const getOutput = async (finishStep: AgentFinish): Promise<AgentExecutorOutput> => {
             const { returnValues } = finishStep
@@ -373,6 +464,7 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
             if (sourceDocuments.length) additional.sourceDocuments = flatten(sourceDocuments)
             if (usedTools.length) additional.usedTools = usedTools
             if (artifacts.length) additional.artifacts = flatten(artifacts)
+            if (fileAnnotations.length) additional.fileAnnotations = flatten(fileAnnotations)
             if (this.returnIntermediateSteps) {
                 return { ...returnValues, intermediateSteps: steps, ...additional }
             }
@@ -434,7 +526,7 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
                          * - arg: z.output<T>
                          * - configArg?: RunnableConfig | Callbacks
                          * - tags?: string[]
-                         * - flowConfig?: { sessionId?: string, chatId?: string, input?: string }
+                         * - flowConfig?: { sessionId?: string, chatId?: string, chatflowId?: string, orgId?: string, input?: string }
                          */
                         if (tool) {
                             observation = await (tool as any).call(
@@ -444,26 +536,18 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
                                 {
                                     sessionId: this.sessionId,
                                     chatId: this.chatId,
+                                    chatflowId: this.chatflowId,
+                                    orgId: this.orgId,
                                     input: this.input,
                                     state: inputs
                                 }
                             )
                             let toolOutput = observation
-                            if (typeof toolOutput === 'string' && toolOutput.includes(SOURCE_DOCUMENTS_PREFIX)) {
-                                toolOutput = toolOutput.split(SOURCE_DOCUMENTS_PREFIX)[0]
-                            }
-                            if (typeof toolOutput === 'string' && toolOutput.includes(ARTIFACTS_PREFIX)) {
-                                toolOutput = toolOutput.split(ARTIFACTS_PREFIX)[0]
-                            }
                             let toolInput
-                            if (typeof toolOutput === 'string' && toolOutput.includes(TOOL_ARGS_PREFIX)) {
-                                const splitArray = toolOutput.split(TOOL_ARGS_PREFIX)
-                                toolOutput = splitArray[0]
-                                try {
-                                    toolInput = JSON.parse(splitArray[1])
-                                } catch (e) {
-                                    console.error('Error parsing tool input from tool')
-                                }
+                            if (typeof toolOutput === 'string') {
+                                const parsedToolOutput = parseToolOutput(toolOutput)
+                                toolOutput = parsedToolOutput.output
+                                toolInput = parsedToolOutput.toolArgs
                             }
                             usedTools.push({
                                 tool: tool.name,
@@ -502,30 +586,18 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
                             return { action, observation: getErrorMessage(e) }
                         }
                     }
-                    if (typeof observation === 'string' && observation.includes(SOURCE_DOCUMENTS_PREFIX)) {
-                        const observationArray = observation.split(SOURCE_DOCUMENTS_PREFIX)
-                        observation = observationArray[0]
-                        const docs = observationArray[1]
-                        try {
-                            const parsedDocs = JSON.parse(docs)
-                            sourceDocuments.push(parsedDocs)
-                        } catch (e) {
-                            console.error('Error parsing source documents from tool')
+                    if (typeof observation === 'string') {
+                        const parsedObservation = parseToolOutput(observation)
+                        observation = parsedObservation.output
+                        if (parsedObservation.sourceDocuments.length) {
+                            sourceDocuments.push(parsedObservation.sourceDocuments as any)
                         }
-                    }
-                    if (typeof observation === 'string' && observation.includes(ARTIFACTS_PREFIX)) {
-                        const observationArray = observation.split(ARTIFACTS_PREFIX)
-                        observation = observationArray[0]
-                        try {
-                            const artifact = JSON.parse(observationArray[1])
-                            artifacts.push(artifact)
-                        } catch (e) {
-                            console.error('Error parsing source documents from tool')
+                        if (parsedObservation.artifacts.length) {
+                            artifacts.push(parsedObservation.artifacts)
                         }
-                    }
-                    if (typeof observation === 'string' && observation.includes(TOOL_ARGS_PREFIX)) {
-                        const observationArray = observation.split(TOOL_ARGS_PREFIX)
-                        observation = observationArray[0]
+                        if (parsedObservation.fileAnnotations.length) {
+                            fileAnnotations.push(parsedObservation.fileAnnotations)
+                        }
                     }
                     return { action, observation: observation ?? '' }
                 })
@@ -614,7 +686,7 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
                      * - arg: z.output<T>
                      * - configArg?: RunnableConfig | Callbacks
                      * - tags?: string[]
-                     * - flowConfig?: { sessionId?: string, chatId?: string, input?: string }
+                     * - flowConfig?: { sessionId?: string, chatId?: string, chatflowId?: string, orgId?: string, input?: string }
                      */
                     observation = await (tool as any).call(
                         this.isXML && typeof agentAction.toolInput === 'string' ? { input: agentAction.toolInput } : agentAction.toolInput,
@@ -623,21 +695,14 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
                         {
                             sessionId: this.sessionId,
                             chatId: this.chatId,
+                            chatflowId: this.chatflowId,
+                            orgId: this.orgId,
                             input: this.input,
                             state: inputs
                         }
                     )
-                    if (typeof observation === 'string' && observation.includes(SOURCE_DOCUMENTS_PREFIX)) {
-                        const observationArray = observation.split(SOURCE_DOCUMENTS_PREFIX)
-                        observation = observationArray[0]
-                    }
-                    if (typeof observation === 'string' && observation.includes(ARTIFACTS_PREFIX)) {
-                        const observationArray = observation.split(ARTIFACTS_PREFIX)
-                        observation = observationArray[0]
-                    }
-                    if (typeof observation === 'string' && observation.includes(TOOL_ARGS_PREFIX)) {
-                        const observationArray = observation.split(TOOL_ARGS_PREFIX)
-                        observation = observationArray[0]
+                    if (typeof observation === 'string') {
+                        observation = parseToolOutput(observation).output
                     }
                 } catch (e) {
                     if (e instanceof ToolInputParsingException) {

@@ -25,6 +25,27 @@ const stripCodeFence = (value: string): string =>
         .replace(/\s*```$/i, '')
         .trim()
 
+const normalizeSequentialImageGenerationValue = (value: unknown): 'disabled' | 'auto' | undefined => {
+    if (typeof value !== 'string') return undefined
+
+    const normalizedValue = value.trim().toLowerCase()
+    if (normalizedValue === 'disabled' || normalizedValue === 'auto') {
+        return normalizedValue
+    }
+
+    return undefined
+}
+
+const normalizeSequentialImageGenerationMaxImagesValue = (value: unknown): number | undefined => {
+    const normalizedValue = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : undefined
+
+    if (typeof normalizedValue !== 'number' || Number.isNaN(normalizedValue) || !Number.isFinite(normalizedValue)) {
+        return undefined
+    }
+
+    return Math.floor(normalizedValue)
+}
+
 const normalizePromptRefinerOutput = (value: string): Partial<IMediaGenerationInput> | null => {
     const normalizedValue = stripCodeFence(value)
     if (!normalizedValue) return null
@@ -87,6 +108,17 @@ const normalizePromptRefinerOutput = (value: string): Partial<IMediaGenerationIn
                     ? false
                     : undefined
                 : undefined
+        const sequentialImageGeneration = normalizeSequentialImageGenerationValue(
+            parsedValue.sequentialImageGeneration ?? parsedValue.sequential_image_generation
+        )
+        const sequentialImageGenerationMaxImages = normalizeSequentialImageGenerationMaxImagesValue(
+            parsedValue.sequentialImageGenerationMaxImages ??
+                parsedValue.sequential_image_generation_max_images ??
+                (typeof parsedValue.sequential_image_generation_options === 'object' &&
+                parsedValue.sequential_image_generation_options !== null
+                    ? (parsedValue.sequential_image_generation_options as Record<string, unknown>).max_images
+                    : undefined)
+        )
 
         if (!prompt) return null
 
@@ -100,7 +132,9 @@ const normalizePromptRefinerOutput = (value: string): Partial<IMediaGenerationIn
             ...(typeof frames === 'number' && Number.isFinite(frames) ? { frames } : {}),
             ...(typeof seed === 'number' && Number.isFinite(seed) ? { seed } : {}),
             ...(typeof cameraFixed === 'boolean' ? { cameraFixed } : {}),
-            ...(typeof watermark === 'boolean' ? { watermark } : {})
+            ...(typeof watermark === 'boolean' ? { watermark } : {}),
+            ...(sequentialImageGeneration ? { sequentialImageGeneration } : {}),
+            ...(typeof sequentialImageGenerationMaxImages === 'number' ? { sequentialImageGenerationMaxImages } : {})
         }
     } catch (error) {
         return {
@@ -178,7 +212,7 @@ const resolveMediaInput = async (
                 'Latest user request:',
                 '{input}',
                 '',
-                'Return JSON only with relevant keys from prompt, size, outputFormat, ratio, resolution, duration, frames, seed, cameraFixed, watermark.',
+                'Return JSON only with relevant keys from prompt, size, outputFormat, sequentialImageGeneration, sequentialImageGenerationMaxImages, ratio, resolution, duration, frames, seed, cameraFixed, watermark.',
                 'Use null for values you cannot infer.',
                 'The prompt must be detailed, production-ready, and preserve relevant context from prior messages.'
             ].join('\n')

@@ -136,7 +136,13 @@ class XMLAgent_Agents implements INode {
                 return formatResponse(e.message)
             }
         }
-        const executor = await prepareAgent(nodeData, options, { sessionId: this.sessionId, chatId: options.chatId, input })
+        const executor = await prepareAgent(nodeData, options, {
+            sessionId: this.sessionId,
+            chatId: options.chatId,
+            chatflowId: options.chatflowid,
+            orgId: options.orgId,
+            input
+        })
 
         const loggerHandler = new ConsoleCallbackHandler(options.logger, options?.orgId)
         const callbacks = await additionalCallbacks(nodeData, options)
@@ -144,6 +150,7 @@ class XMLAgent_Agents implements INode {
         let res: ChainValues = {}
         let sourceDocuments: ICommonObject[] = []
         let usedTools: IUsedTool[] = []
+        let fileAnnotations = []
 
         if (shouldStreamResponse) {
             const handler = new CustomChainHandler(sseStreamer, chatId)
@@ -159,6 +166,12 @@ class XMLAgent_Agents implements INode {
                     sseStreamer.streamUsedToolsEvent(chatId, flatten(res.usedTools))
                 }
                 usedTools = res.usedTools
+            }
+            if (res.fileAnnotations) {
+                if (sseStreamer) {
+                    sseStreamer.streamFileAnnotationsEvent(chatId, flatten(res.fileAnnotations))
+                }
+                fileAnnotations = res.fileAnnotations
             }
             // If the tool is set to returnDirect, stream the output to the client
             if (res.usedTools && res.usedTools.length) {
@@ -181,6 +194,9 @@ class XMLAgent_Agents implements INode {
             if (res.usedTools) {
                 usedTools = res.usedTools
             }
+            if (res.fileAnnotations) {
+                fileAnnotations = res.fileAnnotations
+            }
         }
 
         await memory.addChatMessages(
@@ -199,13 +215,16 @@ class XMLAgent_Agents implements INode {
 
         let finalRes = res?.output
 
-        if (sourceDocuments.length || usedTools.length) {
+        if (sourceDocuments.length || usedTools.length || fileAnnotations.length) {
             finalRes = { text: res?.output }
             if (sourceDocuments.length) {
                 finalRes.sourceDocuments = flatten(sourceDocuments)
             }
             if (usedTools.length) {
                 finalRes.usedTools = usedTools
+            }
+            if (fileAnnotations.length) {
+                finalRes.fileAnnotations = flatten(fileAnnotations)
             }
             return finalRes
         }
@@ -217,7 +236,7 @@ class XMLAgent_Agents implements INode {
 const prepareAgent = async (
     nodeData: INodeData,
     options: ICommonObject,
-    flowObj: { sessionId?: string; chatId?: string; input?: string }
+    flowObj: { sessionId?: string; chatId?: string; chatflowId?: string; orgId?: string; input?: string }
 ) => {
     const model = nodeData.inputs?.model as BaseChatModel
     const maxIterations = nodeData.inputs?.maxIterations as string
@@ -276,6 +295,8 @@ const prepareAgent = async (
         tools,
         sessionId: flowObj?.sessionId,
         chatId: flowObj?.chatId,
+        chatflowId: flowObj?.chatflowId,
+        orgId: flowObj?.orgId,
         input: flowObj?.input,
         isXML: true,
         verbose: process.env.DEBUG === 'true' ? true : false,

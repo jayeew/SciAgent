@@ -33,7 +33,8 @@ class DoubaoVideo_MediaModels implements INode {
         this.type = 'DoubaoVideo'
         this.icon = 'doubao.svg'
         this.category = 'Media Models'
-        this.description = 'Generate videos with Doubao Ark from conversational prompts, with optional first-frame image guidance'
+        this.description =
+            'Generate videos with Doubao Ark from conversational prompts, with optional first-frame or first-frame + last-frame image guidance'
         this.baseClasses = Array.from(new Set([this.type, ...getBaseClasses(DoubaoVideoModel), 'Runnable']))
         this.credential = {
             label: 'Connect Credential',

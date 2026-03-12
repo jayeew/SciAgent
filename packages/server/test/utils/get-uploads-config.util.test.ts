@@ -75,6 +75,7 @@ describe('utilGetUploadsConfig', () => {
         const result = await utilGetUploadsConfig('flow-1')
 
         expect(result.isImageUploadAllowed).toBe(true)
+        expect(result.imageUploadHint).toBe('Doubao Video 上传提示：最多上传两张图片，第一张=首帧，第二张=尾帧。')
         expect(result.imgUploadSizeAndTypes).toEqual([
             {
                 fileTypes: ['image/gif', 'image/jpeg', 'image/png', 'image/webp'],
@@ -107,6 +108,7 @@ describe('utilGetUploadsConfig', () => {
         const result = await utilGetUploadsConfig('flow-1')
 
         expect(result.isImageUploadAllowed).toBe(true)
+        expect(result.imageUploadHint).toBeUndefined()
         expect(result.imgUploadSizeAndTypes).toEqual([
             {
                 fileTypes: ['image/gif', 'image/jpeg', 'image/png', 'image/webp'],
@@ -139,6 +141,7 @@ describe('utilGetUploadsConfig', () => {
         const result = await utilGetUploadsConfig('flow-1')
 
         expect(result.isImageUploadAllowed).toBe(false)
+        expect(result.imageUploadHint).toBeUndefined()
         expect(result.imgUploadSizeAndTypes).toEqual([])
     })
 })

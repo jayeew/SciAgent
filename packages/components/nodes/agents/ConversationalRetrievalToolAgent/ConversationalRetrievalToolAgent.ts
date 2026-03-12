@@ -151,7 +151,13 @@ class ConversationalRetrievalToolAgent_Agents implements INode {
             }
         }
 
-        const executor = await prepareAgent(nodeData, options, { sessionId: this.sessionId, chatId: options.chatId, input })
+        const executor = await prepareAgent(nodeData, options, {
+            sessionId: this.sessionId,
+            chatId: options.chatId,
+            chatflowId: options.chatflowid,
+            orgId: options.orgId,
+            input
+        })
 
         const loggerHandler = new ConsoleCallbackHandler(options.logger, options?.orgId)
         const callbacks = await additionalCallbacks(nodeData, options)
@@ -159,6 +165,7 @@ class ConversationalRetrievalToolAgent_Agents implements INode {
         let res: ChainValues = {}
         let sourceDocuments: ICommonObject[] = []
         let usedTools: IUsedTool[] = []
+        let fileAnnotations = []
 
         if (shouldStreamResponse) {
             const handler = new CustomChainHandler(sseStreamer, chatId)
@@ -170,6 +177,10 @@ class ConversationalRetrievalToolAgent_Agents implements INode {
             if (res.usedTools) {
                 sseStreamer.streamUsedToolsEvent(chatId, res.usedTools)
                 usedTools = res.usedTools
+            }
+            if (res.fileAnnotations) {
+                sseStreamer.streamFileAnnotationsEvent(chatId, flatten(res.fileAnnotations))
+                fileAnnotations = res.fileAnnotations
             }
 
             // If the tool is set to returnDirect, stream the output to the client
@@ -195,6 +206,9 @@ class ConversationalRetrievalToolAgent_Agents implements INode {
             }
             if (res.usedTools) {
                 usedTools = res.usedTools
+            }
+            if (res.fileAnnotations) {
+                fileAnnotations = res.fileAnnotations
             }
         }
 
@@ -225,13 +239,16 @@ class ConversationalRetrievalToolAgent_Agents implements INode {
 
         let finalRes = res?.output
 
-        if (sourceDocuments.length || usedTools.length) {
+        if (sourceDocuments.length || usedTools.length || fileAnnotations.length) {
             const finalRes: ICommonObject = { text: output }
             if (sourceDocuments.length) {
                 finalRes.sourceDocuments = flatten(sourceDocuments)
             }
             if (usedTools.length) {
                 finalRes.usedTools = usedTools
+            }
+            if (fileAnnotations.length) {
+                finalRes.fileAnnotations = flatten(fileAnnotations)
             }
             return finalRes
         }
@@ -247,7 +264,7 @@ const formatDocs = (docs: Document[]) => {
 const prepareAgent = async (
     nodeData: INodeData,
     options: ICommonObject,
-    flowObj: { sessionId?: string; chatId?: string; input?: string }
+    flowObj: { sessionId?: string; chatId?: string; chatflowId?: string; orgId?: string; input?: string }
 ) => {
     const model = nodeData.inputs?.model as BaseChatModel
     const rephraseModel = (nodeData.inputs?.rephraseModel as BaseChatModel) || model // Use main model if not specified
@@ -365,6 +382,8 @@ const prepareAgent = async (
         tools,
         sessionId: flowObj?.sessionId,
         chatId: flowObj?.chatId,
+        chatflowId: flowObj?.chatflowId,
+        orgId: flowObj?.orgId,
         input: flowObj?.input,
         verbose: process.env.DEBUG === 'true' ? true : false,
         maxIterations: maxIterations ? parseFloat(maxIterations) : undefined
