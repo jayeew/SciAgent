@@ -2,6 +2,7 @@ import logger from '../../utils/logger'
 import { WorkspaceCreditService } from '../../enterprise/services/workspace-credit.service'
 import { ICommonObject } from 'flowise-components'
 import { CredentialBillingMode, ICredentialBillingUsage } from '../../Interface'
+import { v4 as uuidv4 } from 'uuid'
 
 const BILLING_MODES = new Set<CredentialBillingMode>(['token', 'image_count', 'video_count', 'seconds', 'characters'])
 
@@ -9,6 +10,12 @@ interface IConsumeMediaGenerationCreditParams {
     workspaceId?: string
     userId?: string
     billingDetails?: ICredentialBillingUsage
+}
+
+interface IRecordMediaGenerationCredentialAccessParams {
+    billingDetails?: ICredentialBillingUsage
+    tokenAuditContext?: ICommonObject
+    options: ICommonObject
 }
 
 const normalizeUsageMetric = (value: unknown): number | undefined => {
@@ -54,6 +61,8 @@ const getMediaGenerationBillingDetails = (result?: ICommonObject): ICredentialBi
         credentialId: typeof billingDetails.credentialId === 'string' ? billingDetails.credentialId : undefined,
         model: typeof billingDetails.model === 'string' ? billingDetails.model : undefined,
         source: typeof billingDetails.source === 'string' ? billingDetails.source : 'media_generation',
+        tokenUsageCredentialCallId:
+            typeof billingDetails.tokenUsageCredentialCallId === 'string' ? billingDetails.tokenUsageCredentialCallId : undefined,
         billingMode,
         usage: {
             ...(typeof normalizeUsageMetric(usageRecord.inputTokens) === 'number'
@@ -74,6 +83,18 @@ const getMediaGenerationBillingDetails = (result?: ICommonObject): ICredentialBi
                 : {})
         }
     }
+}
+
+const ensureMediaGenerationCredentialCallId = (billingDetails?: ICommonObject): string | undefined => {
+    if (!billingDetails || typeof billingDetails !== 'object') return undefined
+
+    if (typeof billingDetails.tokenUsageCredentialCallId === 'string' && billingDetails.tokenUsageCredentialCallId.trim()) {
+        return billingDetails.tokenUsageCredentialCallId.trim()
+    }
+
+    const tokenUsageCredentialCallId = uuidv4()
+    billingDetails.tokenUsageCredentialCallId = tokenUsageCredentialCallId
+    return tokenUsageCredentialCallId
 }
 
 const consumeMediaGenerationCredit = async (params: IConsumeMediaGenerationCreditParams) => {
@@ -129,8 +150,25 @@ const getCredentialAccessForUsage = async (
     }
 }
 
+const recordMediaGenerationCredentialAccess = async (params: IRecordMediaGenerationCredentialAccessParams) => {
+    const { billingDetails, tokenAuditContext, options } = params
+    if (!billingDetails || !tokenAuditContext) return undefined
+
+    const credentialAccess = await getCredentialAccessForUsage(billingDetails.credentialId, billingDetails.model, options)
+    if (!credentialAccess) return undefined
+
+    if (!Array.isArray(tokenAuditContext.credentialAccesses)) {
+        tokenAuditContext.credentialAccesses = []
+    }
+
+    tokenAuditContext.credentialAccesses.push(credentialAccess)
+    return credentialAccess
+}
+
 export default {
+    ensureMediaGenerationCredentialCallId,
     getMediaGenerationBillingDetails,
     consumeMediaGenerationCredit,
-    getCredentialAccessForUsage
+    getCredentialAccessForUsage,
+    recordMediaGenerationCredentialAccess
 }

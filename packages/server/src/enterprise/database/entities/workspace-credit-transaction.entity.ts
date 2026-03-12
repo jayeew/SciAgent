@@ -34,6 +34,9 @@ export class WorkspaceCreditTransaction {
     @Column({ nullable: true })
     credentialId?: string
 
+    @Column({ nullable: true })
+    tokenUsageCredentialCallId?: string
+
     @Column({ type: 'text', nullable: true })
     description?: string
 

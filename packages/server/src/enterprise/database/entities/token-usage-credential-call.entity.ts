@@ -1,12 +1,15 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm'
+import { Column, CreateDateColumn, Entity, PrimaryColumn } from 'typeorm'
 
-@Entity({ name: 'token_usage_credential' })
-export class TokenUsageCredential {
-    @PrimaryGeneratedColumn('uuid')
+@Entity({ name: 'token_usage_credential_call' })
+export class TokenUsageCredentialCall {
+    @PrimaryColumn({ type: 'varchar', length: 36 })
     id: string
 
     @Column({ nullable: false })
     usageExecutionId: string
+
+    @Column({ nullable: false })
+    tokenUsageCredentialId: string
 
     @Column({ nullable: false })
     workspaceId: string
@@ -17,20 +20,14 @@ export class TokenUsageCredential {
     @Column({ nullable: true })
     userId?: string
 
-    @Column({ nullable: true })
-    credentialId?: string
-
-    @Column({ nullable: true, type: 'varchar', length: 255 })
-    credentialName?: string
-
-    @Column({ nullable: true, type: 'varchar', length: 255 })
-    model?: string
-
     @Column({ type: 'int', default: 0 })
-    usageCount: number
+    sequenceIndex: number
 
     @Column({ type: 'varchar', length: 20, default: 'estimated' })
     attributionMode: string
+
+    @Column({ type: 'varchar', length: 32 })
+    billingMode: string
 
     @Column({ type: 'int', default: 0 })
     inputTokens: number
@@ -67,6 +64,12 @@ export class TokenUsageCredential {
 
     @Column({ type: 'int', default: 0 })
     chargedCredit: number
+
+    @Column({ nullable: true })
+    creditTransactionId?: string
+
+    @Column({ nullable: true })
+    creditedAt?: Date
 
     @CreateDateColumn()
     createdDate?: Date

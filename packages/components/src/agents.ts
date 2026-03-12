@@ -29,6 +29,7 @@ import { getErrorMessage } from './error'
 export const SOURCE_DOCUMENTS_PREFIX = '\n\n----FLOWISE_SOURCE_DOCUMENTS----\n\n'
 export const ARTIFACTS_PREFIX = '\n\n----FLOWISE_ARTIFACTS----\n\n'
 export const FILE_ANNOTATIONS_PREFIX = '\n\n----FLOWISE_FILE_ANNOTATIONS----\n\n'
+export const MEDIA_BILLING_PREFIX = '\n\n----FLOWISE_MEDIA_BILLING----\n\n'
 export const TOOL_ARGS_PREFIX = '\n\n----FLOWISE_TOOL_ARGS----\n\n'
 
 /**
@@ -71,6 +72,7 @@ export interface IParsedToolOutput {
     sourceDocuments: any[]
     artifacts: any[]
     fileAnnotations: any[]
+    mediaBilling?: any
     toolArgs?: any
 }
 
@@ -80,10 +82,15 @@ export const parseToolOutput = (toolOutput: string): IParsedToolOutput => {
     let fileAnnotations: any[] = []
     let artifacts: any[] = []
     let sourceDocuments: any[] = []
+    let mediaBilling
 
     const toolArgsResult = extractJsonSuffix(output, TOOL_ARGS_PREFIX)
     output = toolArgsResult.output
     toolArgs = toolArgsResult.parsed
+
+    const mediaBillingResult = extractJsonSuffix(output, MEDIA_BILLING_PREFIX)
+    output = mediaBillingResult.output
+    mediaBilling = mediaBillingResult.parsed
 
     const fileAnnotationsResult = extractJsonSuffix(output, FILE_ANNOTATIONS_PREFIX)
     output = fileAnnotationsResult.output
@@ -102,6 +109,7 @@ export const parseToolOutput = (toolOutput: string): IParsedToolOutput => {
         sourceDocuments,
         artifacts,
         fileAnnotations,
+        mediaBilling,
         toolArgs
     }
 }

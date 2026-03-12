@@ -418,7 +418,17 @@ export class WorkspaceCreditService {
 
         if (!normalizedUsages.length) {
             logger.info(`[workspace-credit] skip consume: no valid billing usages workspaceId=${workspaceId} userId=${userId}`)
-            return { workspaceId, userId, creditConsumed: 0, transactions: [] as WorkspaceCreditTransaction[] }
+            return {
+                workspaceId,
+                userId,
+                creditConsumed: 0,
+                transactions: [] as WorkspaceCreditTransaction[],
+                usageResults: [] as Array<{
+                    usage: ICredentialBillingUsage
+                    chargedCredit: number
+                    transaction: WorkspaceCreditTransaction | null
+                }>
+            }
         }
 
         const queryRunner = this.dataSource.createQueryRunner()
@@ -443,6 +453,11 @@ export class WorkspaceCreditService {
 
             let totalCreditConsumed = 0
             const transactions: WorkspaceCreditTransaction[] = []
+            const usageResults: Array<{
+                usage: ICredentialBillingUsage
+                chargedCredit: number
+                transaction: WorkspaceCreditTransaction | null
+            }> = []
 
             for (const usage of normalizedUsages) {
                 const credential = usage.credentialId ? credentialMap.get(usage.credentialId) : undefined
@@ -473,6 +488,11 @@ export class WorkspaceCreditService {
                             usage.credentialId || '-'
                         } provider=${usage.provider || 'unknown'} model=${usage.model || 'unknown'} billingMode=${usage.billingMode}`
                     )
+                    usageResults.push({
+                        usage,
+                        chargedCredit: 0,
+                        transaction: null
+                    })
                     continue
                 }
 
@@ -484,6 +504,11 @@ export class WorkspaceCreditService {
                             usage.billingMode
                         } ruleBillingMode=${resolvedRule.rule.billingMode}`
                     )
+                    usageResults.push({
+                        usage,
+                        chargedCredit: 0,
+                        transaction: null
+                    })
                     continue
                 }
 
@@ -533,6 +558,11 @@ export class WorkspaceCreditService {
                             resolvedRule.rule.multiplier
                         } credentialMultiplier=${credentialMultiplier}`
                     )
+                    usageResults.push({
+                        usage,
+                        chargedCredit: 0,
+                        transaction: null
+                    })
                     continue
                 }
 
@@ -547,6 +577,7 @@ export class WorkspaceCreditService {
                     balance: workspaceUser.credit,
                     credentialName,
                     credentialId: usage.credentialId,
+                    tokenUsageCredentialCallId: usage.tokenUsageCredentialCallId,
                     description: `${buildUsageDescription(
                         usage,
                         resolvedRule.rule,
@@ -557,6 +588,11 @@ export class WorkspaceCreditService {
 
                 const savedTransaction = await queryRunner.manager.save(WorkspaceCreditTransaction, transaction)
                 transactions.push(savedTransaction)
+                usageResults.push({
+                    usage,
+                    chargedCredit: consumed,
+                    transaction: savedTransaction
+                })
                 logger.info(
                     `[workspace-credit] consumed=${consumed} workspaceId=${workspaceId} userId=${userId} credentialId=${
                         usage.credentialId || '-'
@@ -574,7 +610,8 @@ export class WorkspaceCreditService {
                 userId,
                 creditConsumed: totalCreditConsumed,
                 creditBalance: workspaceUser.credit,
-                transactions
+                transactions,
+                usageResults
             }
         } catch (error) {
             if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction()
@@ -667,6 +704,7 @@ export class WorkspaceCreditService {
             totalTokens: number
             inputTokens?: number
             outputTokens?: number
+            tokenUsageCredentialCallId?: string
             usageBreakdown?: Record<string, any>
         }>
     ) {
@@ -700,6 +738,7 @@ export class WorkspaceCreditService {
                 credentialName: usage.credentialName,
                 model: usage.model,
                 source: typeof usage.usageBreakdown?.source === 'string' ? usage.usageBreakdown.source : undefined,
+                tokenUsageCredentialCallId: usage.tokenUsageCredentialCallId,
                 billingMode: 'token' as const,
                 usage: {
                     inputTokens: usage.inputTokens,

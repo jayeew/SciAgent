@@ -133,6 +133,139 @@ const normalizeOutputFileName = (fileName?: string, title?: string): string => {
     return `${fallbackName}.pptx`
 }
 
+const normalizeSlideTitle = (title?: string): string | undefined => {
+    const trimmedTitle = title?.trim()
+    if (!trimmedTitle) {
+        return undefined
+    }
+
+    return trimmedTitle.length > 80 ? `${trimmedTitle.slice(0, 77).trimEnd()}...` : trimmedTitle
+}
+
+const normalizeNullableValue = (value: unknown): unknown => {
+    if (value === null) {
+        return undefined
+    }
+
+    if (Array.isArray(value)) {
+        return value.map((item) => normalizeNullableValue(item)).filter((item) => item !== undefined)
+    }
+
+    if (typeof value === 'object' && value !== null) {
+        const normalizedObject: Record<string, unknown> = {}
+
+        for (const [key, childValue] of Object.entries(value)) {
+            const normalizedChildValue = normalizeNullableValue(childValue)
+            if (normalizedChildValue !== undefined) {
+                normalizedObject[key] = normalizedChildValue
+            }
+        }
+
+        return normalizedObject
+    }
+
+    return value
+}
+
+const inferSlideTitle = (slide: Record<string, any>, index: number): string => {
+    const candidateTitle = normalizeSlideTitle(slide.title)
+    if (candidateTitle) {
+        return candidateTitle
+    }
+
+    const fallbackCandidates = [
+        slide.subtitle,
+        slide.leftTitle,
+        slide.rightTitle,
+        Array.isArray(slide.bullets) ? slide.bullets[0] : undefined,
+        Array.isArray(slide.leftBullets) ? slide.leftBullets[0] : undefined,
+        Array.isArray(slide.rightBullets) ? slide.rightBullets[0] : undefined,
+        slide.body,
+        slide.leftBody,
+        slide.rightBody
+    ]
+
+    for (const candidate of fallbackCandidates) {
+        const normalizedCandidate = normalizeSlideTitle(candidate)
+        if (normalizedCandidate) {
+            return normalizedCandidate
+        }
+    }
+
+    return `Slide ${index + 1}`
+}
+
+const normalizeRawPresentationSpec = (rawSpec: unknown): unknown => {
+    if (!rawSpec || typeof rawSpec !== 'object' || Array.isArray(rawSpec)) {
+        return rawSpec
+    }
+
+    const normalizedSpec = normalizeNullableValue(rawSpec) as Record<string, any>
+
+    if (Array.isArray(normalizedSpec.slides)) {
+        normalizedSpec.slides = normalizedSpec.slides.map((slide: unknown, index: number) => {
+            if (!slide || typeof slide !== 'object' || Array.isArray(slide)) {
+                return slide
+            }
+
+            const normalizedSlide = { ...(slide as Record<string, any>) }
+            normalizedSlide.title = inferSlideTitle(normalizedSlide, index)
+            return normalizedSlide
+        })
+    }
+
+    return normalizedSpec
+}
+
+const decodeHtmlEntities = (value: string): string => {
+    return value
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+}
+
+const sanitizePresentationSpecString = (rawSpec: string): string => {
+    let cleanedSpec = rawSpec.trim()
+
+    const fencedMatch = cleanedSpec.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+    if (fencedMatch?.[1]) {
+        cleanedSpec = fencedMatch[1].trim()
+    }
+
+    cleanedSpec = decodeHtmlEntities(cleanedSpec)
+
+    if (cleanedSpec.includes('<')) {
+        cleanedSpec = cleanedSpec.replace(/<[^>]+>/g, '').trim()
+    }
+
+    if (!cleanedSpec.startsWith('{')) {
+        const objectStartIndex = cleanedSpec.indexOf('{')
+        const objectEndIndex = cleanedSpec.lastIndexOf('}')
+        if (objectStartIndex !== -1 && objectEndIndex > objectStartIndex) {
+            cleanedSpec = cleanedSpec.slice(objectStartIndex, objectEndIndex + 1).trim()
+        }
+    }
+
+    return cleanedSpec
+}
+
+const parsePresentationSpec = (rawSpec: string): unknown => {
+    const trimmedSpec = rawSpec.trim()
+
+    try {
+        return JSON.parse(trimmedSpec)
+    } catch (error) {
+        const sanitizedSpec = sanitizePresentationSpecString(trimmedSpec)
+        if (sanitizedSpec !== trimmedSpec) {
+            return JSON.parse(sanitizedSpec)
+        }
+
+        throw error
+    }
+}
+
 const formatBulletList = (bullets?: string[]): string => {
     if (!bullets || bullets.length === 0) {
         return ''
@@ -424,10 +557,11 @@ export const normalizePresentationSpec = (rawSpec: unknown, overrides?: Partial<
     let parsedSpec = rawSpec
 
     if (typeof rawSpec === 'string') {
-        parsedSpec = JSON.parse(rawSpec)
+        parsedSpec = parsePresentationSpec(rawSpec)
     }
 
-    const validatedSpec = PresentationSpecSchema.parse(parsedSpec)
+    const normalizedSpec = normalizeRawPresentationSpec(parsedSpec)
+    const validatedSpec = PresentationSpecSchema.parse(normalizedSpec)
 
     return {
         ...validatedSpec,

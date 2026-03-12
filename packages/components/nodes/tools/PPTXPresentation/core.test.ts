@@ -79,6 +79,64 @@ describe('PPTXPresentation core', () => {
         expect(spec.includeSpeakerNotes).toBe(true)
     })
 
+    it('should normalize HTML-wrapped presentation spec strings', () => {
+        const spec = normalizePresentationSpec(
+            `<p><span class="variable" data-type="mention" data-id="$flow.state.presentationSpec">{` +
+                `"title":"Quarterly Review","slides":[{"layout":"title-bullets","title":"Overview","bullets":["Revenue up 12%"]}]` +
+                `}</span></p>`
+        )
+
+        expect(spec.title).toBe('Quarterly Review')
+        expect(spec.slides).toHaveLength(1)
+        expect(spec.fileName).toBe('Quarterly Review.pptx')
+    })
+
+    it('should infer missing slide titles from other slide fields', () => {
+        const spec = normalizePresentationSpec({
+            title: 'Quarterly Review',
+            slides: [
+                {
+                    layout: 'two-column',
+                    leftTitle: '产品方案',
+                    leftBullets: ['帮助客户提升效率 40%'],
+                    rightTitle: '关键成果'
+                },
+                {
+                    layout: 'image-right',
+                    body: '市场规模预计达到 1500 亿元'
+                }
+            ]
+        })
+
+        expect(spec.slides[0].title).toBe('产品方案')
+        expect(spec.slides[1].title).toBe('市场规模预计达到 1500 亿元')
+    })
+
+    it('should normalize nullable optional presentation fields', () => {
+        const spec = normalizePresentationSpec({
+            title: 'Quarterly Review',
+            subtitle: null,
+            slides: [
+                {
+                    layout: 'image-right',
+                    title: 'Overview',
+                    subtitle: null,
+                    body: null,
+                    bullets: ['Revenue up 12%', null, 'Margin stable'],
+                    leftBody: null,
+                    rightBody: null
+                }
+            ]
+        })
+
+        expect(spec.subtitle).toBeUndefined()
+        expect(spec.slides[0].subtitle).toBeUndefined()
+        expect(spec.slides[0].body).toBeUndefined()
+        expect(spec.slides[0].leftBody).toBeUndefined()
+        expect(spec.slides[0].rightBody).toBeUndefined()
+        expect(spec.slides[0].bullets).toEqual(['Revenue up 12%', 'Margin stable'])
+    })
+
     it('should build a non-empty pptx buffer', async () => {
         const spec = normalizePresentationSpec({
             title: 'Quarterly Review',

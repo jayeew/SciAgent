@@ -236,6 +236,16 @@ const LEGACY_DOUBAO_IMAGE_SIZE_MAP: Record<string, string> = {
     '3k': '3072x3072'
 }
 
+const DOUBAO_IMAGE_SIZE_ALIAS_MAP: Record<string, string> = {
+    wide: '2848x1600',
+    landscape: '2848x1600',
+    horizontal: '2848x1600',
+    tall: '1600x2848',
+    portrait: '1600x2848',
+    vertical: '1600x2848',
+    square: '2048x2048'
+}
+
 export const normalizeDoubaoImageSize = (size?: string): string | undefined => {
     if (!size) return undefined
 
@@ -250,6 +260,10 @@ export const normalizeDoubaoImageSize = (size?: string): string | undefined => {
 
     if (LEGACY_DOUBAO_IMAGE_SIZE_MAP[normalizedSize]) {
         return LEGACY_DOUBAO_IMAGE_SIZE_MAP[normalizedSize]
+    }
+
+    if (DOUBAO_IMAGE_SIZE_ALIAS_MAP[normalizedSize]) {
+        return DOUBAO_IMAGE_SIZE_ALIAS_MAP[normalizedSize]
     }
 
     if (/^\d+\s*x\s*\d+$/i.test(trimmedSize)) {

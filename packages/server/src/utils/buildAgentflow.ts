@@ -60,6 +60,7 @@ import { getWorkspaceSearchOptions } from '../enterprise/utils/ControllerService
 import { UsageCacheManager } from '../UsageCacheManager'
 import { generateTTSForResponseStream, shouldAutoPlayTTS } from './buildChatflow'
 import { TokenUsageService } from '../enterprise/services/token-usage.service'
+import mediaGenerationService from '../services/media-generation'
 
 interface IWaitingNode {
     nodeId: string
@@ -163,6 +164,40 @@ const getTokenAuditSnapshot = (tokenAuditContext?: ICommonObject): ITokenAuditSn
         payloadCount: tokenUsagePayloads.length,
         credentialAccessCount: credentialAccesses.length
     }
+}
+
+const getPendingNodeMediaBillingDetails = (result: ICommonObject | undefined): any[] => {
+    const billingDetails: any[] = []
+    const seenKeys = new Set<string>()
+
+    const appendBillingDetails = (value?: ICommonObject) => {
+        mediaGenerationService.ensureMediaGenerationCredentialCallId(value)
+        const details = mediaGenerationService.getMediaGenerationBillingDetails(
+            value ? ({ mediaBilling: value } as ICommonObject) : undefined
+        )
+        if (!details) return
+
+        const key = JSON.stringify(details)
+        if (seenKeys.has(key)) return
+        seenKeys.add(key)
+        billingDetails.push(details)
+    }
+
+    appendBillingDetails(result?.mediaBilling as ICommonObject | undefined)
+    appendBillingDetails(result?.output?.mediaBilling as ICommonObject | undefined)
+
+    const candidateArrays = [
+        Array.isArray(result?.mediaBillings) ? (result?.mediaBillings as ICommonObject[]) : [],
+        Array.isArray(result?.output?.mediaBillings) ? (result?.output?.mediaBillings as ICommonObject[]) : []
+    ]
+
+    for (const candidateArray of candidateArrays) {
+        for (const candidate of candidateArray) {
+            appendBillingDetails(candidate)
+        }
+    }
+
+    return billingDetails
 }
 
 const formatSignedNumber = (value: number): string => {
@@ -2085,6 +2120,32 @@ export const executeAgentFlow = async ({
 
             if (nodeResult && nodeResult.output && nodeResult.output.ephemeralMemory) {
                 pastChatHistory.length = 0
+            }
+
+            const nodeMediaBillingDetails = getPendingNodeMediaBillingDetails(nodeResult)
+            for (const mediaBillingDetails of nodeMediaBillingDetails) {
+                try {
+                    await mediaGenerationService.recordMediaGenerationCredentialAccess({
+                        billingDetails: mediaBillingDetails,
+                        tokenAuditContext,
+                        options: {
+                            appDataSource,
+                            databaseEntities
+                        }
+                    })
+                } catch (credentialError) {
+                    logger.warn(`[server]: Agentflow media generation credential audit failed: ${getErrorMessage(credentialError)}`)
+                }
+
+                try {
+                    await mediaGenerationService.consumeMediaGenerationCredit({
+                        workspaceId,
+                        userId,
+                        billingDetails: mediaBillingDetails
+                    })
+                } catch (billingError) {
+                    logger.warn(`[server]: Agentflow media generation credit consumption failed: ${getErrorMessage(billingError)}`)
+                }
             }
 
             const latestTokenAuditSnapshot = getTokenAuditSnapshot(tokenAuditContext)

@@ -4,10 +4,67 @@ import { processTemplateVariables } from '../../../src/utils'
 import { Tool } from '@langchain/core/tools'
 import { parseToolOutput } from '../../../src/agents'
 import zodToJsonSchema from 'zod-to-json-schema'
+import { get } from 'lodash'
 
 interface IToolInputArgs {
     inputArgName: string
     inputArgValue: string
+}
+
+export const resolveToolInputTemplate = (value: unknown, context: ICommonObject): unknown => {
+    if (Array.isArray(value)) {
+        return value.map((item) => resolveToolInputTemplate(item, context))
+    }
+
+    if (typeof value === 'object' && value !== null) {
+        const resolvedObject: ICommonObject = {}
+        for (const [key, nestedValue] of Object.entries(value)) {
+            resolvedObject[key] = resolveToolInputTemplate(nestedValue, context)
+        }
+        return resolvedObject
+    }
+
+    if (typeof value !== 'string') {
+        return value
+    }
+
+    const matches = value.match(/\{\{\s*([^}]+?)\s*\}\}/g)
+    if (!matches) {
+        return value
+    }
+
+    let resolvedValue: unknown = value
+
+    for (const match of matches) {
+        const variableFullPath = match.replace(/[{}]/g, '').trim()
+        let variableValue: unknown
+
+        if (variableFullPath === 'question') {
+            variableValue = context.question
+        } else if (variableFullPath.startsWith('$form.')) {
+            variableValue = get(context.form, variableFullPath.replace('$form.', ''))
+        } else if (variableFullPath.startsWith('$flow.')) {
+            variableValue = get(context.flow, variableFullPath.replace('$flow.', ''))
+        }
+
+        if (variableValue === undefined || variableValue === null) {
+            continue
+        }
+
+        if (resolvedValue === match) {
+            resolvedValue = variableValue
+            continue
+        }
+
+        const formattedValue =
+            Array.isArray(variableValue) || (typeof variableValue === 'object' && variableValue !== null)
+                ? JSON.stringify(variableValue)
+                : String(variableValue)
+
+        resolvedValue = String(resolvedValue).replace(match, formattedValue)
+    }
+
+    return resolvedValue
 }
 
 class Tool_Agentflow implements INode {
@@ -227,7 +284,7 @@ class Tool_Agentflow implements INode {
 
         let toolCallArgs: Record<string, any> = {}
 
-        const parseInputValue = (value: string): any => {
+        const parseInputValue = (value: any): any => {
             if (typeof value !== 'string') {
                 return value
             }
@@ -267,10 +324,29 @@ class Tool_Agentflow implements INode {
             }
         }
 
+        const templateContext = {
+            question: input,
+            form: options.agentflowRuntime?.form,
+            flow: {
+                chatflowId: options.chatflowid,
+                sessionId: options.sessionId,
+                chatId: options.chatId,
+                orgId: options.orgId,
+                input,
+                state: options.agentflowRuntime?.state
+            }
+        }
+
+        const resolvedToolInputArgs: IToolInputArgs[] = []
         for (const item of toolInputArgs) {
             const variableName = item.inputArgName
-            const variableValue = item.inputArgValue
-            toolCallArgs[variableName] = parseInputValue(variableValue)
+            const resolvedVariableValue = resolveToolInputTemplate(item.inputArgValue, templateContext)
+            toolCallArgs[variableName] = parseInputValue(resolvedVariableValue)
+            resolvedToolInputArgs.push({
+                ...item,
+                inputArgValue:
+                    typeof resolvedVariableValue === 'string' ? resolvedVariableValue : JSON.stringify(resolvedVariableValue, null, 2)
+            })
         }
 
         const flowConfig = {
@@ -300,6 +376,7 @@ class Tool_Agentflow implements INode {
 
             let parsedArtifacts: any[] = []
             let parsedFileAnnotations: any[] = []
+            let parsedMediaBilling: any
             let toolInput
 
             if (typeof toolOutput === 'string') {
@@ -307,6 +384,7 @@ class Tool_Agentflow implements INode {
                 toolOutput = parsedToolOutput.output
                 parsedArtifacts = parsedToolOutput.artifacts
                 parsedFileAnnotations = parsedToolOutput.fileAnnotations
+                parsedMediaBilling = parsedToolOutput.mediaBilling
                 toolInput = parsedToolOutput.toolArgs
             }
 
@@ -328,7 +406,7 @@ class Tool_Agentflow implements INode {
                 id: nodeData.id,
                 name: this.name,
                 input: {
-                    toolInputArgs: toolInput ?? toolInputArgs,
+                    toolInputArgs: toolInput ?? resolvedToolInputArgs,
                     selectedTool: selectedTool
                 },
                 output: {
@@ -336,7 +414,9 @@ class Tool_Agentflow implements INode {
                     artifacts: parsedArtifacts,
                     fileAnnotations: parsedFileAnnotations
                 },
-                state: newState
+                state: newState,
+                ...(Array.isArray(parsedMediaBilling) ? { mediaBillings: parsedMediaBilling } : {}),
+                ...(!Array.isArray(parsedMediaBilling) && parsedMediaBilling ? { mediaBilling: parsedMediaBilling } : {})
             }
 
             return returnOutput
@@ -346,4 +426,4 @@ class Tool_Agentflow implements INode {
     }
 }
 
-module.exports = { nodeClass: Tool_Agentflow }
+module.exports = { nodeClass: Tool_Agentflow, resolveToolInputTemplate }

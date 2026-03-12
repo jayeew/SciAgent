@@ -1,6 +1,6 @@
 import { ICommonObject, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
 import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
-import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
+import { getCredentialData, getCredentialParam } from '../../../src/utils'
 import {
     DEFAULT_DOUBAO_ARK_BASE_URL,
     DEFAULT_DOUBAO_IMAGE_MODEL,
@@ -10,36 +10,37 @@ import {
     DEFAULT_DOUBAO_IMAGE_SIZE,
     DEFAULT_DOUBAO_IMAGE_WATERMARK,
     DOUBAO_IMAGE_SIZE_OPTIONS,
+    DoubaoImageModel,
     MAX_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES,
     MIN_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES,
-    DoubaoImageModel,
     normalizeDoubaoImageSize,
     normalizeDoubaoOutputFormat,
     normalizeDoubaoSequentialImageGeneration,
     normalizeDoubaoSequentialImageGenerationMaxImages
-} from './core'
+} from '../../mediamodels/DoubaoImage/core'
+import { createDoubaoImageTools } from './core'
 
-class DoubaoImage_MediaModels implements INode {
+class DoubaoImageTool_Tools implements INode {
     label: string
     name: string
     version: number
+    description: string
     type: string
     icon: string
     category: string
-    description: string
     baseClasses: string[]
     credential: INodeParams
     inputs: INodeParams[]
 
     constructor() {
-        this.label = 'Doubao Image'
-        this.name = 'doubaoImage'
+        this.label = 'Doubao Image Tool'
+        this.name = 'doubaoImageTool'
         this.version = 1.0
-        this.type = 'DoubaoImage'
+        this.type = 'DoubaoImageTool'
         this.icon = 'doubao.svg'
-        this.category = 'Media Models'
-        this.description = 'Generate or edit images with Doubao Ark from conversational prompts and reference images'
-        this.baseClasses = Array.from(new Set([this.type, ...getBaseClasses(DoubaoImageModel), 'Runnable']))
+        this.category = 'Tools'
+        this.description = 'Generate Doubao images inside Tool/Agentflow pipelines and optionally inject them into a presentationSpec'
+        this.baseClasses = [this.type, 'Tool']
         this.credential = {
             label: 'Connect Credential',
             name: 'credential',
@@ -52,7 +53,9 @@ class DoubaoImage_MediaModels implements INode {
                 name: 'model',
                 type: 'asyncOptions',
                 loadMethod: 'listModels',
-                default: DEFAULT_DOUBAO_IMAGE_MODEL
+                default: DEFAULT_DOUBAO_IMAGE_MODEL,
+                optional: true,
+                additionalParams: true
             },
             {
                 label: 'Default Size',
@@ -61,8 +64,7 @@ class DoubaoImage_MediaModels implements INode {
                 options: DOUBAO_IMAGE_SIZE_OPTIONS,
                 default: DEFAULT_DOUBAO_IMAGE_SIZE,
                 optional: true,
-                additionalParams: true,
-                description: 'Pass pixel size to Doubao Ark, for example 2048x1536'
+                additionalParams: true
             },
             {
                 label: 'Default Output Format',
@@ -106,8 +108,7 @@ class DoubaoImage_MediaModels implements INode {
                 ],
                 default: DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION,
                 optional: true,
-                additionalParams: true,
-                description: 'Group image generation mode. Only doubao-seedream-5.0-lite/4.5/4.0 models officially support this parameter.'
+                additionalParams: true
             },
             {
                 label: 'Sequential Max Images',
@@ -130,6 +131,20 @@ class DoubaoImage_MediaModels implements INode {
         }
     }
 
+    transformNodeInputsToToolArgs(nodeData: INodeData): Record<string, any> {
+        const nodeInputs: Record<string, any> = {}
+
+        if (nodeData.inputs?.size) nodeInputs.size = nodeData.inputs.size
+        if (nodeData.inputs?.outputFormat) nodeInputs.outputFormat = nodeData.inputs.outputFormat
+        if (nodeData.inputs?.sequentialImageGeneration) nodeInputs.sequentialImageGeneration = nodeData.inputs.sequentialImageGeneration
+        if (nodeData.inputs?.sequentialImageGenerationMaxImages !== undefined) {
+            nodeInputs.sequentialImageGenerationMaxImages = nodeData.inputs.sequentialImageGenerationMaxImages
+        }
+        if (nodeData.inputs?.watermark !== undefined) nodeInputs.watermark = nodeData.inputs.watermark
+
+        return nodeInputs
+    }
+
     async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
         const model = (nodeData.inputs?.model as string)?.trim() || DEFAULT_DOUBAO_IMAGE_MODEL
         const size = normalizeDoubaoImageSize(nodeData.inputs?.size as string) || DEFAULT_DOUBAO_IMAGE_SIZE
@@ -145,7 +160,8 @@ class DoubaoImage_MediaModels implements INode {
         const arkApiKey = getCredentialParam('arkApiKey', credentialData, nodeData)
         const baseUrl = getCredentialParam('baseUrl', credentialData, nodeData, DEFAULT_DOUBAO_ARK_BASE_URL)
 
-        return new DoubaoImageModel({
+        const defaultParams = this.transformNodeInputsToToolArgs(nodeData)
+        const mediaModel = new DoubaoImageModel({
             apiKey: arkApiKey,
             credentialId: nodeData.credential,
             baseUrl,
@@ -158,7 +174,12 @@ class DoubaoImage_MediaModels implements INode {
             chatflowid: options.chatflowid,
             orgId: options.orgId
         })
+
+        return createDoubaoImageTools({
+            defaultParams,
+            mediaModel
+        })
     }
 }
 
-module.exports = { nodeClass: DoubaoImage_MediaModels }
+module.exports = { nodeClass: DoubaoImageTool_Tools }

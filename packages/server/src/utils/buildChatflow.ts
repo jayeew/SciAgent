@@ -409,36 +409,12 @@ const recordTokenUsage = async ({
     }
 }
 
-const mergeMediaCredentialAccess = (
-    tokenAuditContext: ICommonObject | undefined,
-    credentialAccess?: { credentialId?: string; credentialName?: string; model?: string }
-): any[] => {
-    if (!credentialAccess) return []
-    if (!credentialAccess.credentialId) return [credentialAccess]
-
-    const recordedAccesses = Array.isArray(tokenAuditContext?.credentialAccesses) ? (tokenAuditContext?.credentialAccesses as any[]) : []
-    for (let index = recordedAccesses.length - 1; index >= 0; index -= 1) {
-        const recordedAccess = recordedAccesses[index]
-        if (!recordedAccess || recordedAccess.credentialId !== credentialAccess.credentialId) continue
-
-        if (!recordedAccess.credentialName && credentialAccess.credentialName) {
-            recordedAccess.credentialName = credentialAccess.credentialName
-        }
-        if (!recordedAccess.model && credentialAccess.model) {
-            recordedAccess.model = credentialAccess.model
-        }
-
-        return []
-    }
-
-    return [credentialAccess]
-}
-
 const getPendingMediaBillingDetails = (result: ICommonObject, tokenAuditContext?: ICommonObject) => {
     const billingDetails: any[] = []
     const seenKeys = new Set<string>()
 
     const appendBillingDetails = (value?: ICommonObject) => {
+        mediaGenerationService.ensureMediaGenerationCredentialCallId(value)
         const details = mediaGenerationService.getMediaGenerationBillingDetails(
             value ? ({ mediaBilling: value } as ICommonObject) : undefined
         )
@@ -1171,22 +1147,27 @@ export const executeFlow = async ({
             )
         }
 
-        const additionalCredentialAccesses: any[] = []
         const mediaBillingDetailsList = getPendingMediaBillingDetails(result, tokenAuditContext)
         for (const mediaBillingDetails of mediaBillingDetailsList) {
+            try {
+                await mediaGenerationService.recordMediaGenerationCredentialAccess({
+                    billingDetails: mediaBillingDetails,
+                    tokenAuditContext,
+                    options: {
+                        appDataSource,
+                        databaseEntities
+                    }
+                })
+            } catch (credentialError) {
+                logger.warn(`[server]: Media generation credential audit failed: ${getErrorMessage(credentialError)}`)
+            }
+
             try {
                 await mediaGenerationService.consumeMediaGenerationCredit({
                     workspaceId,
                     userId,
                     billingDetails: mediaBillingDetails
                 })
-
-                const credentialAccess = await mediaGenerationService.getCredentialAccessForUsage(
-                    mediaBillingDetails.credentialId,
-                    mediaBillingDetails.model,
-                    runParams
-                )
-                additionalCredentialAccesses.push(...mergeMediaCredentialAccess(tokenAuditContext, credentialAccess))
             } catch (billingError) {
                 logger.warn(`[server]: Media generation credit consumption failed: ${getErrorMessage(billingError)}`)
             }
@@ -1203,7 +1184,7 @@ export const executeFlow = async ({
             sessionId,
             tokenAuditContext,
             usagePayloads: [result || {}],
-            credentialAccesses: additionalCredentialAccesses
+            credentialAccesses: []
         })
 
         return result

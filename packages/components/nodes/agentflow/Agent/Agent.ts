@@ -1086,6 +1086,7 @@ class Agent_Agentflow implements INode {
             let sourceDocuments: Array<any> = []
             let artifacts: any[] = []
             let fileAnnotations: any[] = []
+            let mediaBillings: any[] = []
             let additionalTokens = 0
             let isWaitingForHumanInput = false
 
@@ -1136,6 +1137,7 @@ class Agent_Agentflow implements INode {
                 usedTools = result.usedTools
                 sourceDocuments = result.sourceDocuments
                 artifacts = result.artifacts
+                mediaBillings = result.mediaBillings || []
                 additionalTokens = result.totalTokens
                 isWaitingForHumanInput = result.isWaitingForHumanInput || false
 
@@ -1195,6 +1197,7 @@ class Agent_Agentflow implements INode {
                 usedTools = result.usedTools
                 sourceDocuments = result.sourceDocuments
                 artifacts = result.artifacts
+                mediaBillings = result.mediaBillings || []
                 additionalTokens = result.totalTokens
                 isWaitingForHumanInput = result.isWaitingForHumanInput || false
 
@@ -1382,6 +1385,7 @@ class Agent_Agentflow implements INode {
                 usedTools,
                 sourceDocuments,
                 artifacts,
+                mediaBillings,
                 additionalTokens,
                 isWaitingForHumanInput,
                 fileAnnotations,
@@ -1874,6 +1878,7 @@ class Agent_Agentflow implements INode {
         usedTools: IUsedTool[],
         sourceDocuments: Array<any>,
         artifacts: any[],
+        mediaBillings: any[] = [],
         additionalTokens: number = 0,
         isWaitingForHumanInput: boolean = false,
         fileAnnotations: any[] = [],
@@ -1932,6 +1937,10 @@ class Agent_Agentflow implements INode {
 
         if (artifacts && artifacts.length > 0) {
             output.artifacts = flatten(artifacts)
+        }
+
+        if (mediaBillings && mediaBillings.length > 0) {
+            output.mediaBillings = flatten(mediaBillings)
         }
 
         if (availableTools && availableTools.length > 0) {
@@ -2008,6 +2017,7 @@ class Agent_Agentflow implements INode {
         sourceDocuments: Array<any>
         artifacts: any[]
         fileAnnotations: any[]
+        mediaBillings: any[]
         totalTokens: number
         isWaitingForHumanInput?: boolean
     }> {
@@ -2017,10 +2027,11 @@ class Agent_Agentflow implements INode {
         let sourceDocuments: Array<any> = []
         let artifacts: any[] = []
         let fileAnnotations: any[] = []
+        let mediaBillings: any[] = []
         let isWaitingForHumanInput: boolean | undefined
 
         if (!response.tool_calls || response.tool_calls.length === 0) {
-            return { response, usedTools: [], sourceDocuments: [], artifacts: [], fileAnnotations: [], totalTokens }
+            return { response, usedTools: [], sourceDocuments: [], artifacts: [], fileAnnotations: [], mediaBillings: [], totalTokens }
         }
 
         // Stream tool calls if available
@@ -2087,7 +2098,16 @@ class Agent_Agentflow implements INode {
                     if (!isStructuredOutput) {
                         sseStreamer?.streamTokenEvent(chatId, responseContent)
                     }
-                    return { response, usedTools, sourceDocuments, artifacts, fileAnnotations, totalTokens, isWaitingForHumanInput: true }
+                    return {
+                        response,
+                        usedTools,
+                        sourceDocuments,
+                        artifacts,
+                        fileAnnotations,
+                        mediaBillings,
+                        totalTokens,
+                        isWaitingForHumanInput: true
+                    }
                 }
 
                 let toolIds: ICommonObject | undefined
@@ -2104,6 +2124,7 @@ class Agent_Agentflow implements INode {
                     }
 
                     let parsedFileAnnotations
+                    let parsedMediaBilling
                     let toolInput
                     if (typeof toolOutput === 'string') {
                         const parsedToolOutput = parseToolOutput(toolOutput)
@@ -2111,6 +2132,7 @@ class Agent_Agentflow implements INode {
                         parsedDocs = parsedToolOutput.sourceDocuments
                         parsedArtifacts = parsedToolOutput.artifacts
                         parsedFileAnnotations = parsedToolOutput.fileAnnotations
+                        parsedMediaBilling = parsedToolOutput.mediaBilling
                         toolInput = parsedToolOutput.toolArgs
 
                         if (parsedDocs.length > 0) {
@@ -2121,6 +2143,11 @@ class Agent_Agentflow implements INode {
                         }
                         if (parsedFileAnnotations.length > 0) {
                             fileAnnotations.push(parsedFileAnnotations)
+                        }
+                        if (Array.isArray(parsedMediaBilling) && parsedMediaBilling.length > 0) {
+                            mediaBillings.push(parsedMediaBilling)
+                        } else if (parsedMediaBilling) {
+                            mediaBillings.push(parsedMediaBilling)
                         }
                     }
 
@@ -2189,6 +2216,7 @@ class Agent_Agentflow implements INode {
                     sourceDocuments,
                     artifacts,
                     fileAnnotations,
+                    mediaBillings,
                     totalTokens
                 }
             }
@@ -2202,6 +2230,7 @@ class Agent_Agentflow implements INode {
                 sourceDocuments,
                 artifacts,
                 fileAnnotations,
+                mediaBillings,
                 totalTokens
             }
         }
@@ -2244,6 +2273,7 @@ class Agent_Agentflow implements INode {
                 sourceDocuments: recursiveSourceDocuments,
                 artifacts: recursiveArtifacts,
                 fileAnnotations: recursiveFileAnnotations,
+                mediaBillings: recursiveMediaBillings,
                 totalTokens: recursiveTokens,
                 isWaitingForHumanInput: recursiveIsWaitingForHumanInput
             } = await this.handleToolCalls({
@@ -2268,11 +2298,21 @@ class Agent_Agentflow implements INode {
             sourceDocuments = [...sourceDocuments, ...recursiveSourceDocuments]
             artifacts = [...artifacts, ...recursiveArtifacts]
             fileAnnotations = [...fileAnnotations, ...recursiveFileAnnotations]
+            mediaBillings = [...mediaBillings, ...recursiveMediaBillings]
             totalTokens += recursiveTokens
             isWaitingForHumanInput = recursiveIsWaitingForHumanInput
         }
 
-        return { response: newResponse, usedTools, sourceDocuments, artifacts, fileAnnotations, totalTokens, isWaitingForHumanInput }
+        return {
+            response: newResponse,
+            usedTools,
+            sourceDocuments,
+            artifacts,
+            fileAnnotations,
+            mediaBillings,
+            totalTokens,
+            isWaitingForHumanInput
+        }
     }
 
     /**
@@ -2314,6 +2354,7 @@ class Agent_Agentflow implements INode {
         sourceDocuments: Array<any>
         artifacts: any[]
         fileAnnotations: any[]
+        mediaBillings: any[]
         totalTokens: number
         isWaitingForHumanInput?: boolean
     }> {
@@ -2322,6 +2363,7 @@ class Agent_Agentflow implements INode {
         let sourceDocuments: Array<any> = []
         let artifacts: any[] = []
         let fileAnnotations: any[] = []
+        let mediaBillings: any[] = []
         let isWaitingForHumanInput: boolean | undefined
 
         const lastCheckpointMessages = humanInputAction?.data?.input?.messages ?? []
@@ -2332,6 +2374,7 @@ class Agent_Agentflow implements INode {
                 sourceDocuments: [],
                 artifacts: [],
                 fileAnnotations: [],
+                mediaBillings: [],
                 totalTokens: 0
             }
         }
@@ -2347,7 +2390,7 @@ class Agent_Agentflow implements INode {
         let totalTokens = response.usage_metadata?.total_tokens || 0
 
         if (!response.tool_calls || response.tool_calls.length === 0) {
-            return { response, usedTools: [], sourceDocuments: [], artifacts: [], fileAnnotations: [], totalTokens }
+            return { response, usedTools: [], sourceDocuments: [], artifacts: [], fileAnnotations: [], mediaBillings: [], totalTokens }
         }
 
         // Stream tool calls if available
@@ -2431,6 +2474,7 @@ class Agent_Agentflow implements INode {
                         }
 
                         let parsedFileAnnotations
+                        let parsedMediaBilling
                         let toolInput
                         if (typeof toolOutput === 'string') {
                             const parsedToolOutput = parseToolOutput(toolOutput)
@@ -2438,6 +2482,7 @@ class Agent_Agentflow implements INode {
                             parsedDocs = parsedToolOutput.sourceDocuments
                             parsedArtifacts = parsedToolOutput.artifacts
                             parsedFileAnnotations = parsedToolOutput.fileAnnotations
+                            parsedMediaBilling = parsedToolOutput.mediaBilling
                             toolInput = parsedToolOutput.toolArgs
 
                             if (parsedDocs.length > 0) {
@@ -2448,6 +2493,11 @@ class Agent_Agentflow implements INode {
                             }
                             if (parsedFileAnnotations.length > 0) {
                                 fileAnnotations.push(parsedFileAnnotations)
+                            }
+                            if (Array.isArray(parsedMediaBilling) && parsedMediaBilling.length > 0) {
+                                mediaBillings.push(parsedMediaBilling)
+                            } else if (parsedMediaBilling) {
+                                mediaBillings.push(parsedMediaBilling)
                             }
                         }
 
@@ -2517,6 +2567,7 @@ class Agent_Agentflow implements INode {
                     sourceDocuments,
                     artifacts,
                     fileAnnotations,
+                    mediaBillings,
                     totalTokens
                 }
             }
@@ -2573,6 +2624,7 @@ class Agent_Agentflow implements INode {
                 sourceDocuments: recursiveSourceDocuments,
                 artifacts: recursiveArtifacts,
                 fileAnnotations: recursiveFileAnnotations,
+                mediaBillings: recursiveMediaBillings,
                 totalTokens: recursiveTokens,
                 isWaitingForHumanInput: recursiveIsWaitingForHumanInput
             } = await this.handleToolCalls({
@@ -2597,11 +2649,21 @@ class Agent_Agentflow implements INode {
             sourceDocuments = [...sourceDocuments, ...recursiveSourceDocuments]
             artifacts = [...artifacts, ...recursiveArtifacts]
             fileAnnotations = [...fileAnnotations, ...recursiveFileAnnotations]
+            mediaBillings = [...mediaBillings, ...recursiveMediaBillings]
             totalTokens += recursiveTokens
             isWaitingForHumanInput = recursiveIsWaitingForHumanInput
         }
 
-        return { response: newResponse, usedTools, sourceDocuments, artifacts, fileAnnotations, totalTokens, isWaitingForHumanInput }
+        return {
+            response: newResponse,
+            usedTools,
+            sourceDocuments,
+            artifacts,
+            fileAnnotations,
+            mediaBillings,
+            totalTokens,
+            isWaitingForHumanInput
+        }
     }
 
     /**

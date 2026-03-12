@@ -1,6 +1,6 @@
 import { ICommonObject, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
 import { getModels, MODEL_TYPE } from '../../../src/modelLoader'
-import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
+import { getCredentialData, getCredentialParam } from '../../../src/utils'
 import {
     DEFAULT_DOUBAO_ARK_BASE_URL,
     DEFAULT_DOUBAO_VIDEO_CAMERA_FIXED,
@@ -12,30 +12,30 @@ import {
     DoubaoVideoModel,
     normalizeDoubaoVideoRatio,
     normalizeDoubaoVideoResolution
-} from './core'
+} from '../../mediamodels/DoubaoVideo/core'
+import { createDoubaoVideoTools } from './core'
 
-class DoubaoVideo_MediaModels implements INode {
+class DoubaoVideoTool_Tools implements INode {
     label: string
     name: string
     version: number
+    description: string
     type: string
     icon: string
     category: string
-    description: string
     baseClasses: string[]
     credential: INodeParams
     inputs: INodeParams[]
 
     constructor() {
-        this.label = 'Doubao Video'
-        this.name = 'doubaoVideo'
+        this.label = 'Doubao Video Tool'
+        this.name = 'doubaoVideoTool'
         this.version = 1.0
-        this.type = 'DoubaoVideo'
+        this.type = 'DoubaoVideoTool'
         this.icon = 'doubao.svg'
-        this.category = 'Media Models'
-        this.description =
-            'Generate videos with Doubao Ark from conversational prompts, with optional first-frame or first-frame + last-frame image guidance'
-        this.baseClasses = Array.from(new Set([this.type, ...getBaseClasses(DoubaoVideoModel), 'Runnable']))
+        this.category = 'Tools'
+        this.description = 'Generate Doubao videos inside Tool/Agentflow pipelines with optional first and last frame guidance'
+        this.baseClasses = [this.type, 'Tool']
         this.credential = {
             label: 'Connect Credential',
             name: 'credential',
@@ -48,7 +48,9 @@ class DoubaoVideo_MediaModels implements INode {
                 name: 'model',
                 type: 'asyncOptions',
                 loadMethod: 'listModels',
-                default: DEFAULT_DOUBAO_VIDEO_MODEL
+                default: DEFAULT_DOUBAO_VIDEO_MODEL,
+                optional: true,
+                additionalParams: true
             },
             {
                 label: 'Default Resolution',
@@ -70,8 +72,7 @@ class DoubaoVideo_MediaModels implements INode {
                 ],
                 default: DEFAULT_DOUBAO_VIDEO_RESOLUTION,
                 optional: true,
-                additionalParams: true,
-                description: 'Pass resolution to Doubao Ark'
+                additionalParams: true
             },
             {
                 label: 'Default Ratio',
@@ -109,8 +110,7 @@ class DoubaoVideo_MediaModels implements INode {
                 ],
                 default: DEFAULT_DOUBAO_VIDEO_RATIO,
                 optional: true,
-                additionalParams: true,
-                description: 'Pass aspect ratio to Doubao Ark'
+                additionalParams: true
             },
             {
                 label: 'Default Duration',
@@ -118,8 +118,7 @@ class DoubaoVideo_MediaModels implements INode {
                 type: 'number',
                 default: DEFAULT_DOUBAO_VIDEO_DURATION,
                 optional: true,
-                additionalParams: true,
-                description: 'Video duration in seconds. Either duration or frames is required by Doubao Ark.'
+                additionalParams: true
             },
             {
                 label: 'Default Seed',
@@ -153,6 +152,19 @@ class DoubaoVideo_MediaModels implements INode {
         }
     }
 
+    transformNodeInputsToToolArgs(nodeData: INodeData): Record<string, unknown> {
+        const nodeInputs: Record<string, unknown> = {}
+
+        if (nodeData.inputs?.resolution) nodeInputs.resolution = nodeData.inputs.resolution
+        if (nodeData.inputs?.ratio) nodeInputs.ratio = nodeData.inputs.ratio
+        if (nodeData.inputs?.duration !== undefined) nodeInputs.duration = nodeData.inputs.duration
+        if (nodeData.inputs?.seed !== undefined) nodeInputs.seed = nodeData.inputs.seed
+        if (nodeData.inputs?.cameraFixed !== undefined) nodeInputs.cameraFixed = nodeData.inputs.cameraFixed
+        if (nodeData.inputs?.watermark !== undefined) nodeInputs.watermark = nodeData.inputs.watermark
+
+        return nodeInputs
+    }
+
     async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
         const model = (nodeData.inputs?.model as string)?.trim() || DEFAULT_DOUBAO_VIDEO_MODEL
         const ratio = normalizeDoubaoVideoRatio(nodeData.inputs?.ratio as string) || DEFAULT_DOUBAO_VIDEO_RATIO
@@ -178,7 +190,8 @@ class DoubaoVideo_MediaModels implements INode {
         const arkApiKey = getCredentialParam('arkApiKey', credentialData, nodeData)
         const baseUrl = getCredentialParam('baseUrl', credentialData, nodeData, DEFAULT_DOUBAO_ARK_BASE_URL)
 
-        return new DoubaoVideoModel({
+        const defaultParams = this.transformNodeInputsToToolArgs(nodeData)
+        const mediaModel = new DoubaoVideoModel({
             apiKey: arkApiKey,
             credentialId: nodeData.credential,
             baseUrl,
@@ -192,7 +205,12 @@ class DoubaoVideo_MediaModels implements INode {
             chatflowid: options.chatflowid,
             orgId: options.orgId
         })
+
+        return createDoubaoVideoTools({
+            defaultParams,
+            mediaModel
+        })
     }
 }
 
-module.exports = { nodeClass: DoubaoVideo_MediaModels }
+module.exports = { nodeClass: DoubaoVideoTool_Tools }

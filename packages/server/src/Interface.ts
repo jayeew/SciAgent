@@ -197,6 +197,7 @@ export interface ICredentialBillingUsage {
     provider?: string
     model?: string
     source?: string
+    tokenUsageCredentialCallId?: string
     billingMode: CredentialBillingMode
     usage: {
         inputTokens?: number

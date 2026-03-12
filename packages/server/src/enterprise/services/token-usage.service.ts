@@ -1,12 +1,15 @@
 import { DataSource, In } from 'typeorm'
+import { v4 as uuidv4 } from 'uuid'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import { TokenUsageCredential } from '../database/entities/token-usage-credential.entity'
+import { TokenUsageCredentialCall } from '../database/entities/token-usage-credential-call.entity'
 import { TokenUsageExecution } from '../database/entities/token-usage-execution.entity'
 import { User } from '../database/entities/user.entity'
 import logger from '../../utils/logger'
 import { WorkspaceCreditService } from './workspace-credit.service'
 import { ChatFlow } from '../../database/entities/ChatFlow'
 import { Assistant } from '../../database/entities/Assistant'
+import { WorkspaceCreditTransaction } from '../database/entities/workspace-credit-transaction.entity'
 
 type TokenUsageMetricKeys =
     | 'inputTokens'
@@ -39,6 +42,8 @@ interface IUsageEntry {
     model?: string
     source?: string
     billingSource?: string
+    billingMode?: string
+    tokenUsageCredentialCallId?: string
 }
 
 interface ICredentialAccess {
@@ -59,6 +64,38 @@ interface IRecordTokenUsageInput {
     sessionId?: string
     usagePayloads: any[]
     credentialAccesses?: ICredentialAccess[]
+}
+
+type TokenUsageAttributionMode = 'ordered' | 'estimated'
+
+interface IUsageEntryMetrics {
+    metrics: ITokenUsageMetrics
+    model?: string
+    billingSource?: string
+    billingMode?: string
+    tokenUsageCredentialCallId?: string
+}
+
+interface IAttributedUsageCall {
+    id: string
+    credentialId?: string
+    credentialName: string
+    model?: string
+    billingMode: string
+    metrics: ITokenUsageMetrics
+    usageBreakdown: Record<string, number | string>
+}
+
+interface ICredentialGroup {
+    key: string
+    credentialId?: string
+    credentialName: string
+    model?: string
+    attributionMode: TokenUsageAttributionMode
+    usageCount: number
+    metrics: ITokenUsageMetrics
+    usageBreakdown: Record<string, number | string>
+    calls: IAttributedUsageCall[]
 }
 
 const createEmptyMetrics = (): ITokenUsageMetrics => ({
@@ -242,6 +279,20 @@ const getBillingSourceFromObject = (obj: Record<string, any>): string | undefine
     return normalizedSource || undefined
 }
 
+const getBillingModeFromObject = (obj: Record<string, any>): string | undefined => {
+    if (typeof obj.billingMode !== 'string') return undefined
+
+    const normalizedBillingMode = obj.billingMode.trim()
+    return normalizedBillingMode || undefined
+}
+
+const getTokenUsageCredentialCallIdFromObject = (obj: Record<string, any>): string | undefined => {
+    if (typeof obj.tokenUsageCredentialCallId !== 'string') return undefined
+
+    const normalizedCallId = obj.tokenUsageCredentialCallId.trim()
+    return normalizedCallId || undefined
+}
+
 const hasUsageSignals = (obj: Record<string, any>): boolean => {
     return (
         'input_tokens' in obj ||
@@ -310,7 +361,9 @@ const pickPreferredUsageEntry = (obj: Record<string, any>, model?: string): IUsa
                 usage: obj,
                 model,
                 source: 'direct_usage_object',
-                billingSource: getBillingSourceFromObject(obj)
+                billingSource: getBillingSourceFromObject(obj),
+                billingMode: getBillingModeFromObject(obj),
+                tokenUsageCredentialCallId: getTokenUsageCredentialCallIdFromObject(obj)
             }
         }
         return undefined
@@ -325,29 +378,59 @@ const pickPreferredUsageEntry = (obj: Record<string, any>, model?: string): IUsa
         usage: candidates[0].usage,
         model,
         source: candidates[0].source,
-        billingSource: getBillingSourceFromObject(obj)
+        billingSource: getBillingSourceFromObject(obj),
+        billingMode: getBillingModeFromObject(obj),
+        tokenUsageCredentialCallId: getTokenUsageCredentialCallIdFromObject(obj)
     }
 }
 
 const getSharedBillingSource = (sources: Array<string | undefined>): string | undefined => {
-    const normalizedSources = Array.from(
-        new Set(
-            sources
-                .filter((source): source is string => typeof source === 'string' && source.trim().length > 0)
-                .map((source) => source.trim())
-        )
+    const normalizedSources = sources.map((source) => (typeof source === 'string' && source.trim().length > 0 ? source.trim() : undefined))
+    if (!normalizedSources.length || normalizedSources.some((source) => !source)) return undefined
+
+    const uniqueSources = Array.from(new Set(normalizedSources as string[]))
+
+    return uniqueSources.length === 1 ? uniqueSources[0] : undefined
+}
+
+const getSharedBillingMode = (billingModes: Array<string | undefined>): string | undefined => {
+    const normalizedBillingModes = billingModes.map((billingMode) =>
+        typeof billingMode === 'string' && billingMode.trim().length > 0 ? billingMode.trim() : undefined
     )
+    if (!normalizedBillingModes.length || normalizedBillingModes.some((billingMode) => !billingMode)) return undefined
 
-    return normalizedSources.length === 1 ? normalizedSources[0] : undefined
+    const uniqueBillingModes = Array.from(new Set(normalizedBillingModes as string[]))
+
+    return uniqueBillingModes.length === 1 ? uniqueBillingModes[0] : undefined
 }
 
-const buildUsageBreakdown = (additionalBreakdown: Record<string, number>, billingSource?: string): Record<string, number | string> => {
-    if (!billingSource) return additionalBreakdown
-    return {
-        ...additionalBreakdown,
-        source: billingSource
+const buildUsageBreakdown = (
+    additionalBreakdown: Record<string, number>,
+    billingSource?: string,
+    billingMode?: string
+): Record<string, number | string> => {
+    const usageBreakdown: Record<string, number | string> = {
+        ...additionalBreakdown
     }
+
+    if (
+        billingMode === 'image_count' &&
+        typeof usageBreakdown.units === 'number' &&
+        usageBreakdown.generated_images === undefined &&
+        usageBreakdown.generatedimages === undefined
+    ) {
+        usageBreakdown.generated_images = usageBreakdown.units
+    }
+
+    if (billingSource) {
+        usageBreakdown.source = billingSource
+    }
+
+    return usageBreakdown
 }
+
+const buildCredentialGroupKey = (credentialId: string | undefined, credentialName: string, model: string | undefined): string =>
+    `${credentialId || ''}:${credentialName}:${model || '__unknown_model__'}`
 
 const extractUsageEntriesFromPayload = (payload: any): IUsageEntry[] => {
     const entries: IUsageEntry[] = []
@@ -536,8 +619,13 @@ export class TokenUsageService {
         const usageEntryMetrics = selectedUsageEntries.map((entry) => ({
             metrics: deriveMetricsFromUsage(entry.usage),
             model: typeof entry.model === 'string' && entry.model.trim() ? entry.model.trim() : undefined,
-            billingSource: typeof entry.billingSource === 'string' && entry.billingSource.trim() ? entry.billingSource.trim() : undefined
-        }))
+            billingSource: typeof entry.billingSource === 'string' && entry.billingSource.trim() ? entry.billingSource.trim() : undefined,
+            billingMode: typeof entry.billingMode === 'string' && entry.billingMode.trim() ? entry.billingMode.trim() : undefined,
+            tokenUsageCredentialCallId:
+                typeof entry.tokenUsageCredentialCallId === 'string' && entry.tokenUsageCredentialCallId.trim()
+                    ? entry.tokenUsageCredentialCallId.trim()
+                    : undefined
+        })) as IUsageEntryMetrics[]
 
         const aggregatedMetrics = createEmptyMetrics()
         const modelTotals: Record<string, number> = {}
@@ -601,80 +689,88 @@ export class TokenUsageService {
         const topModel = getTopModel(modelTotals)
         const canAttributeByAccessOrder = normalizedCredentialAccesses.length === usageEntryMetrics.length && usageEntryMetrics.length > 0
 
-        let credentialRows: TokenUsageCredential[] = []
+        const credentialRepository = this.dataSource.getRepository(TokenUsageCredential)
+        const credentialCallRepository = this.dataSource.getRepository(TokenUsageCredentialCall)
+        const workspaceCreditTransactionRepository = this.dataSource.getRepository(WorkspaceCreditTransaction)
+
+        const credentialGroups = new Map<string, ICredentialGroup>()
+        const orderedChargeUsages: Array<{
+            tokenUsageCredentialCallId: string
+            credentialId?: string
+            credentialName?: string
+            model?: string
+            totalTokens: number
+            inputTokens?: number
+            outputTokens?: number
+            usageBreakdown?: Record<string, number | string>
+        }> = []
 
         if (canAttributeByAccessOrder) {
             logger.info(
                 `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length}`
             )
 
-            const groupedCredentialAccess = new Map<
-                string,
-                {
-                    credentialId?: string
-                    credentialName: string
-                    model?: string
-                    usageCount: number
-                    metrics: ITokenUsageMetrics
-                    billingSources: Set<string>
-                }
-            >()
-
             for (let index = 0; index < normalizedCredentialAccesses.length; index += 1) {
                 const access = normalizedCredentialAccesses[index]
                 const usageEntry = usageEntryMetrics[index]
-                const resolvedModel = access.model || usageEntry.model
-                const groupKey = `${access.credentialId || ''}:${access.credentialName}:${resolvedModel || '__unknown_model__'}`
-                const existing = groupedCredentialAccess.get(groupKey)
+                const resolvedModel = access.model || usageEntry.model || topModel
+                const billingMode = usageEntry.billingMode || 'token'
+                const usageBreakdown = buildUsageBreakdown(
+                    usageEntry.metrics.additionalBreakdown,
+                    usageEntry.billingSource,
+                    usageEntry.billingMode
+                )
+                const callId = usageEntry.tokenUsageCredentialCallId || uuidv4()
+                const groupKey = buildCredentialGroupKey(access.credentialId, access.credentialName, resolvedModel)
 
-                if (existing) {
-                    existing.usageCount += 1
-                    addMetrics(existing.metrics, usageEntry.metrics)
-                    if (usageEntry.billingSource) {
-                        existing.billingSources.add(usageEntry.billingSource)
-                    }
-                    continue
+                if (!credentialGroups.has(groupKey)) {
+                    const metrics = createEmptyMetrics()
+                    credentialGroups.set(groupKey, {
+                        key: groupKey,
+                        credentialId: access.credentialId,
+                        credentialName: access.credentialName,
+                        model: resolvedModel,
+                        attributionMode: 'ordered',
+                        usageCount: 0,
+                        metrics,
+                        usageBreakdown: {},
+                        calls: []
+                    })
                 }
 
-                const metrics = createEmptyMetrics()
-                addMetrics(metrics, usageEntry.metrics)
+                const group = credentialGroups.get(groupKey)
+                if (!group) continue
 
-                groupedCredentialAccess.set(groupKey, {
+                group.usageCount += 1
+                addMetrics(group.metrics, usageEntry.metrics)
+                group.calls.push({
+                    id: callId,
                     credentialId: access.credentialId,
                     credentialName: access.credentialName,
                     model: resolvedModel,
-                    usageCount: 1,
-                    metrics,
-                    billingSources: new Set(usageEntry.billingSource ? [usageEntry.billingSource] : [])
+                    billingMode,
+                    metrics: usageEntry.metrics,
+                    usageBreakdown
+                })
+                group.usageBreakdown = buildUsageBreakdown(
+                    group.metrics.additionalBreakdown,
+                    getSharedBillingSource(
+                        group.calls.map((call) => (typeof call.usageBreakdown.source === 'string' ? call.usageBreakdown.source : undefined))
+                    ),
+                    getSharedBillingMode(group.calls.map((call) => call.billingMode))
+                )
+
+                orderedChargeUsages.push({
+                    tokenUsageCredentialCallId: callId,
+                    credentialId: access.credentialId,
+                    credentialName: access.credentialName,
+                    model: resolvedModel,
+                    totalTokens: usageEntry.metrics.totalTokens,
+                    inputTokens: usageEntry.metrics.inputTokens,
+                    outputTokens: usageEntry.metrics.outputTokens,
+                    usageBreakdown
                 })
             }
-
-            const groups = Array.from(groupedCredentialAccess.values())
-            credentialRows = groups.map((group) =>
-                this.dataSource.getRepository(TokenUsageCredential).create({
-                    usageExecutionId: savedExecution.id,
-                    workspaceId: input.workspaceId,
-                    organizationId: input.organizationId,
-                    userId: input.userId,
-                    credentialId: group.credentialId,
-                    credentialName: group.credentialName,
-                    model: group.model || topModel,
-                    usageCount: group.usageCount,
-                    inputTokens: group.metrics.inputTokens,
-                    outputTokens: group.metrics.outputTokens,
-                    totalTokens: group.metrics.totalTokens,
-                    cacheReadTokens: group.metrics.cacheReadTokens,
-                    cacheWriteTokens: group.metrics.cacheWriteTokens,
-                    reasoningTokens: group.metrics.reasoningTokens,
-                    acceptedPredictionTokens: group.metrics.acceptedPredictionTokens,
-                    rejectedPredictionTokens: group.metrics.rejectedPredictionTokens,
-                    audioInputTokens: group.metrics.audioInputTokens,
-                    audioOutputTokens: group.metrics.audioOutputTokens,
-                    usageBreakdown: JSON.stringify(
-                        buildUsageBreakdown(group.metrics.additionalBreakdown, getSharedBillingSource(Array.from(group.billingSources)))
-                    )
-                })
-            )
         } else {
             logger.info(
                 `[token-usage] attribution strategy=weighted flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length}`
@@ -691,7 +787,7 @@ export class TokenUsageService {
             >()
 
             for (const access of normalizedCredentialAccesses) {
-                const groupKey = `${access.credentialId || ''}:${access.credentialName}:${access.model || '__unknown_model__'}`
+                const groupKey = buildCredentialGroupKey(access.credentialId, access.credentialName, access.model)
                 const existing = groupedCredentialAccess.get(groupKey)
                 if (existing) {
                     existing.usageCount += 1
@@ -708,6 +804,7 @@ export class TokenUsageService {
             const groups = Array.from(groupedCredentialAccess.values())
             const weights = groups.map((group) => group.usageCount)
             const sharedBillingSource = getSharedBillingSource(usageEntryMetrics.map((entry) => entry.billingSource))
+            const sharedBillingMode = getSharedBillingMode(usageEntryMetrics.map((entry) => entry.billingMode))
 
             const distributedMetrics = {
                 inputTokens: distributeIntegerByWeights(aggregatedMetrics.inputTokens, weights),
@@ -728,41 +825,113 @@ export class TokenUsageService {
                 distributedAdditionalBreakdown[key] = distributeIntegerByWeights(aggregatedMetrics.additionalBreakdown[key], weights)
             }
 
-            credentialRows = groups.map((group, index) => {
-                const usageBreakdown: Record<string, number | string> = {}
-                for (const key of additionalBreakdownKeys) {
-                    usageBreakdown[key] = distributedAdditionalBreakdown[key][index] || 0
-                }
-                if (sharedBillingSource) {
-                    usageBreakdown.source = sharedBillingSource
-                }
+            groups.forEach((group, index) => {
+                const metrics = createEmptyMetrics()
+                metrics.inputTokens = distributedMetrics.inputTokens[index] || 0
+                metrics.outputTokens = distributedMetrics.outputTokens[index] || 0
+                metrics.totalTokens = distributedMetrics.totalTokens[index] || 0
+                metrics.cacheReadTokens = distributedMetrics.cacheReadTokens[index] || 0
+                metrics.cacheWriteTokens = distributedMetrics.cacheWriteTokens[index] || 0
+                metrics.reasoningTokens = distributedMetrics.reasoningTokens[index] || 0
+                metrics.acceptedPredictionTokens = distributedMetrics.acceptedPredictionTokens[index] || 0
+                metrics.rejectedPredictionTokens = distributedMetrics.rejectedPredictionTokens[index] || 0
+                metrics.audioInputTokens = distributedMetrics.audioInputTokens[index] || 0
+                metrics.audioOutputTokens = distributedMetrics.audioOutputTokens[index] || 0
 
-                return this.dataSource.getRepository(TokenUsageCredential).create({
-                    usageExecutionId: savedExecution.id,
-                    workspaceId: input.workspaceId,
-                    organizationId: input.organizationId,
-                    userId: input.userId,
+                const additionalBreakdown: Record<string, number> = {}
+                for (const key of additionalBreakdownKeys) {
+                    additionalBreakdown[key] = distributedAdditionalBreakdown[key][index] || 0
+                }
+                metrics.additionalBreakdown = additionalBreakdown
+
+                const resolvedModel = group.model || topModel
+                const groupKey = buildCredentialGroupKey(group.credentialId, group.credentialName, resolvedModel)
+                credentialGroups.set(groupKey, {
+                    key: groupKey,
                     credentialId: group.credentialId,
                     credentialName: group.credentialName,
-                    model: group.model || topModel,
+                    model: resolvedModel,
+                    attributionMode: 'estimated',
                     usageCount: group.usageCount,
-                    inputTokens: distributedMetrics.inputTokens[index] || 0,
-                    outputTokens: distributedMetrics.outputTokens[index] || 0,
-                    totalTokens: distributedMetrics.totalTokens[index] || 0,
-                    cacheReadTokens: distributedMetrics.cacheReadTokens[index] || 0,
-                    cacheWriteTokens: distributedMetrics.cacheWriteTokens[index] || 0,
-                    reasoningTokens: distributedMetrics.reasoningTokens[index] || 0,
-                    acceptedPredictionTokens: distributedMetrics.acceptedPredictionTokens[index] || 0,
-                    rejectedPredictionTokens: distributedMetrics.rejectedPredictionTokens[index] || 0,
-                    audioInputTokens: distributedMetrics.audioInputTokens[index] || 0,
-                    audioOutputTokens: distributedMetrics.audioOutputTokens[index] || 0,
-                    usageBreakdown: JSON.stringify(usageBreakdown)
+                    metrics,
+                    usageBreakdown: buildUsageBreakdown(additionalBreakdown, sharedBillingSource, sharedBillingMode),
+                    calls: []
                 })
             })
         }
 
-        const savedCredentialRows = await this.dataSource.getRepository(TokenUsageCredential).save(credentialRows)
+        const credentialGroupList = Array.from(credentialGroups.values())
+        const credentialRows = credentialGroupList.map((group) =>
+            credentialRepository.create({
+                usageExecutionId: savedExecution.id,
+                workspaceId: input.workspaceId,
+                organizationId: input.organizationId,
+                userId: input.userId,
+                credentialId: group.credentialId,
+                credentialName: group.credentialName,
+                model: group.model || topModel,
+                usageCount: group.usageCount,
+                attributionMode: group.attributionMode,
+                inputTokens: group.metrics.inputTokens,
+                outputTokens: group.metrics.outputTokens,
+                totalTokens: group.metrics.totalTokens,
+                cacheReadTokens: group.metrics.cacheReadTokens,
+                cacheWriteTokens: group.metrics.cacheWriteTokens,
+                reasoningTokens: group.metrics.reasoningTokens,
+                acceptedPredictionTokens: group.metrics.acceptedPredictionTokens,
+                rejectedPredictionTokens: group.metrics.rejectedPredictionTokens,
+                audioInputTokens: group.metrics.audioInputTokens,
+                audioOutputTokens: group.metrics.audioOutputTokens,
+                usageBreakdown: JSON.stringify(group.usageBreakdown),
+                chargedCredit: 0
+            })
+        )
+
+        let savedCredentialRows = await credentialRepository.save(credentialRows)
         logger.info(`[token-usage] credential rows inserted count=${credentialRows.length} executionId=${savedExecution.id}`)
+
+        let savedCredentialCallRows: TokenUsageCredentialCall[] = []
+
+        if (canAttributeByAccessOrder && credentialGroupList.length) {
+            const credentialRowByKey = new Map(
+                savedCredentialRows.map((row) => [
+                    buildCredentialGroupKey(row.credentialId, row.credentialName || 'Unknown Credential', row.model),
+                    row
+                ])
+            )
+            const callRows = credentialGroupList.flatMap((group) => {
+                const parentRow = credentialRowByKey.get(group.key)
+                if (!parentRow) return []
+
+                return group.calls.map((call, index) =>
+                    credentialCallRepository.create({
+                        id: call.id,
+                        usageExecutionId: savedExecution.id,
+                        tokenUsageCredentialId: parentRow.id,
+                        workspaceId: input.workspaceId,
+                        organizationId: input.organizationId,
+                        userId: input.userId,
+                        sequenceIndex: index + 1,
+                        attributionMode: 'ordered',
+                        billingMode: call.billingMode,
+                        inputTokens: call.metrics.inputTokens,
+                        outputTokens: call.metrics.outputTokens,
+                        totalTokens: call.metrics.totalTokens,
+                        cacheReadTokens: call.metrics.cacheReadTokens,
+                        cacheWriteTokens: call.metrics.cacheWriteTokens,
+                        reasoningTokens: call.metrics.reasoningTokens,
+                        acceptedPredictionTokens: call.metrics.acceptedPredictionTokens,
+                        rejectedPredictionTokens: call.metrics.rejectedPredictionTokens,
+                        audioInputTokens: call.metrics.audioInputTokens,
+                        audioOutputTokens: call.metrics.audioOutputTokens,
+                        usageBreakdown: JSON.stringify(call.usageBreakdown),
+                        chargedCredit: 0
+                    })
+                )
+            })
+
+            savedCredentialCallRows = callRows.length ? await credentialCallRepository.save(callRows) : []
+        }
 
         if (!input.userId) {
             logger.info(`[token-usage] skip credit consumption: missing userId executionId=${savedExecution.id}`)
@@ -773,16 +942,87 @@ export class TokenUsageService {
         const creditResult = await workspaceCreditService.consumeCreditByCredentialUsages(
             input.workspaceId,
             input.userId,
-            savedCredentialRows.map((row) => ({
-                credentialId: row.credentialId,
-                credentialName: row.credentialName,
-                model: row.model,
-                totalTokens: row.totalTokens || 0,
-                inputTokens: row.inputTokens || 0,
-                outputTokens: row.outputTokens || 0,
-                usageBreakdown: parseJsonRecord(row.usageBreakdown)
-            }))
+            canAttributeByAccessOrder
+                ? orderedChargeUsages
+                : savedCredentialRows.map((row) => ({
+                      credentialId: row.credentialId,
+                      credentialName: row.credentialName,
+                      model: row.model,
+                      totalTokens: row.totalTokens || 0,
+                      inputTokens: row.inputTokens || 0,
+                      outputTokens: row.outputTokens || 0,
+                      usageBreakdown: parseJsonRecord(row.usageBreakdown)
+                  }))
         )
+
+        if (savedCredentialCallRows.length) {
+            const callIds = savedCredentialCallRows.map((row) => row.id).filter((id): id is string => !!id)
+            const transactions = callIds.length
+                ? await workspaceCreditTransactionRepository.findBy({
+                      tokenUsageCredentialCallId: In(callIds)
+                  })
+                : []
+            const transactionByCallId = new Map(
+                transactions
+                    .filter(
+                        (transaction): transaction is WorkspaceCreditTransaction & { tokenUsageCredentialCallId: string } =>
+                            typeof transaction.tokenUsageCredentialCallId === 'string' && transaction.tokenUsageCredentialCallId.length > 0
+                    )
+                    .map((transaction) => [transaction.tokenUsageCredentialCallId, transaction])
+            )
+
+            const chargedCreditByCredentialId = new Map<string, number>()
+            const updatedCallRows = savedCredentialCallRows.map((row) => {
+                const transaction = transactionByCallId.get(row.id)
+                const chargedCredit = transaction ? Math.abs(transaction.amount || 0) : 0
+                chargedCreditByCredentialId.set(
+                    row.tokenUsageCredentialId,
+                    (chargedCreditByCredentialId.get(row.tokenUsageCredentialId) || 0) + chargedCredit
+                )
+
+                return credentialCallRepository.create({
+                    ...row,
+                    chargedCredit,
+                    creditTransactionId: transaction?.id,
+                    creditedAt: transaction?.createdDate
+                })
+            })
+
+            savedCredentialCallRows = updatedCallRows.length
+                ? await credentialCallRepository.save(updatedCallRows)
+                : savedCredentialCallRows
+            savedCredentialRows = await credentialRepository.save(
+                savedCredentialRows.map((row) =>
+                    credentialRepository.create({
+                        ...row,
+                        chargedCredit: chargedCreditByCredentialId.get(row.id) || 0
+                    })
+                )
+            )
+        } else if (Array.isArray(creditResult.usageResults) && creditResult.usageResults.length) {
+            const chargedCreditByGroupKey = creditResult.usageResults.reduce((acc, usageResult) => {
+                const key = buildCredentialGroupKey(
+                    usageResult.usage.credentialId,
+                    usageResult.usage.credentialName || 'Unknown Credential',
+                    usageResult.usage.model
+                )
+                acc.set(key, (acc.get(key) || 0) + (usageResult.chargedCredit || 0))
+                return acc
+            }, new Map<string, number>())
+
+            savedCredentialRows = await credentialRepository.save(
+                savedCredentialRows.map((row) =>
+                    credentialRepository.create({
+                        ...row,
+                        chargedCredit:
+                            chargedCreditByGroupKey.get(
+                                buildCredentialGroupKey(row.credentialId, row.credentialName || 'Unknown Credential', row.model)
+                            ) || 0
+                    })
+                )
+            )
+        }
+
         logger.info(
             `[token-usage] credit consumed=${creditResult.creditConsumed} balance=${creditResult.creditBalance} executionId=${savedExecution.id}`
         )
@@ -956,6 +1196,17 @@ export class TokenUsageService {
                   .orderBy('usage.createdDate', 'DESC')
                   .getMany()
             : []
+        const credentialIds = credentials.map((credential) => credential.id)
+        const credentialCalls = credentialIds.length
+            ? await this.dataSource
+                  .getRepository(TokenUsageCredentialCall)
+                  .createQueryBuilder('usage')
+                  .where('usage.organizationId = :organizationId', { organizationId })
+                  .andWhere('usage.userId = :userId', { userId })
+                  .andWhere('usage.tokenUsageCredentialId IN (:...credentialIds)', { credentialIds })
+                  .orderBy('usage.sequenceIndex', 'ASC')
+                  .getMany()
+            : []
 
         const chatflowIds = Array.from(
             new Set(executions.filter((execution) => execution.flowId).map((execution) => execution.flowId as string))
@@ -975,8 +1226,38 @@ export class TokenUsageService {
 
         const user = await this.dataSource.getRepository(User).findOneBy({ id: userId })
 
+        const credentialCallsByCredential = new Map<string, any[]>()
+        for (const credentialCall of credentialCalls) {
+            const callDetails = {
+                id: credentialCall.id,
+                sequenceIndex: credentialCall.sequenceIndex || 0,
+                billingMode: credentialCall.billingMode || 'token',
+                attributionMode: credentialCall.attributionMode || 'estimated',
+                inputTokens: credentialCall.inputTokens,
+                outputTokens: credentialCall.outputTokens,
+                totalTokens: credentialCall.totalTokens,
+                cacheReadTokens: credentialCall.cacheReadTokens,
+                cacheWriteTokens: credentialCall.cacheWriteTokens,
+                reasoningTokens: credentialCall.reasoningTokens,
+                acceptedPredictionTokens: credentialCall.acceptedPredictionTokens,
+                rejectedPredictionTokens: credentialCall.rejectedPredictionTokens,
+                audioInputTokens: credentialCall.audioInputTokens,
+                audioOutputTokens: credentialCall.audioOutputTokens,
+                usageBreakdown: parseJsonRecord(credentialCall.usageBreakdown),
+                chargedCredit: credentialCall.chargedCredit || 0,
+                creditTransactionId: credentialCall.creditTransactionId,
+                creditedAt: credentialCall.creditedAt
+            }
+
+            if (!credentialCallsByCredential.has(credentialCall.tokenUsageCredentialId)) {
+                credentialCallsByCredential.set(credentialCall.tokenUsageCredentialId, [])
+            }
+            credentialCallsByCredential.get(credentialCall.tokenUsageCredentialId)?.push(callDetails)
+        }
+
         const credentialByExecution = new Map<string, any[]>()
         for (const credential of credentials) {
+            const calls = (credentialCallsByCredential.get(credential.id) || []).sort((a, b) => a.sequenceIndex - b.sequenceIndex)
             const credentialDetails = {
                 id: credential.id,
                 createdDate: credential.createdDate,
@@ -984,6 +1265,7 @@ export class TokenUsageService {
                 credentialName: credential.credentialName,
                 model: credential.model,
                 usageCount: credential.usageCount,
+                attributionMode: credential.attributionMode || 'estimated',
                 inputTokens: credential.inputTokens,
                 outputTokens: credential.outputTokens,
                 totalTokens: credential.totalTokens,
@@ -994,7 +1276,10 @@ export class TokenUsageService {
                 rejectedPredictionTokens: credential.rejectedPredictionTokens,
                 audioInputTokens: credential.audioInputTokens,
                 audioOutputTokens: credential.audioOutputTokens,
-                usageBreakdown: parseJsonRecord(credential.usageBreakdown)
+                usageBreakdown: parseJsonRecord(credential.usageBreakdown),
+                chargedCredit: credential.chargedCredit || 0,
+                hasCallDetails: credential.attributionMode === 'ordered' && calls.length > 0,
+                calls
             }
             if (!credentialByExecution.has(credential.usageExecutionId)) {
                 credentialByExecution.set(credential.usageExecutionId, [])

@@ -29,6 +29,7 @@ import { LoginMethod } from '../../enterprise/database/entities/login-method.ent
 import { LoginSession } from '../../enterprise/database/entities/login-session.entity'
 import { TokenUsageExecution } from '../../enterprise/database/entities/token-usage-execution.entity'
 import { TokenUsageCredential } from '../../enterprise/database/entities/token-usage-credential.entity'
+import { TokenUsageCredentialCall } from '../../enterprise/database/entities/token-usage-credential-call.entity'
 
 export const entities = {
     ChatFlow,
@@ -63,5 +64,6 @@ export const entities = {
     LoginMethod,
     LoginSession,
     TokenUsageExecution,
-    TokenUsageCredential
+    TokenUsageCredential,
+    TokenUsageCredentialCall
 }

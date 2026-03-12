@@ -20,7 +20,8 @@ import {
     Drawer,
     Typography,
     CircularProgress,
-    TextField
+    TextField,
+    IconButton
 } from '@mui/material'
 
 // project imports
@@ -44,7 +45,18 @@ import useConfirm from '@/hooks/useConfirm'
 import useNotifier from '@/utils/useNotifier'
 
 // Icons
-import { IconTrash, IconEdit, IconX, IconPlus, IconUser, IconEyeOff, IconEye, IconUserStar } from '@tabler/icons-react'
+import {
+    IconTrash,
+    IconEdit,
+    IconX,
+    IconPlus,
+    IconUser,
+    IconEyeOff,
+    IconEye,
+    IconUserStar,
+    IconChevronDown,
+    IconChevronRight
+} from '@tabler/icons-react'
 import users_emptySVG from '@/assets/images/users_empty.svg'
 
 // store
@@ -75,6 +87,10 @@ const getTokenStatValue = (row, key) => {
     }
     return row?.[key] || 0
 }
+
+const getUsageAttributionLabel = (attributionMode) => (attributionMode === 'ordered' ? 'Exact' : 'Estimated')
+
+const getUsageAttributionColor = (attributionMode) => (attributionMode === 'ordered' ? 'success' : 'warning')
 
 const toInputDateTimeValue = (value) => {
     if (!value) return ''
@@ -321,6 +337,7 @@ const Users = () => {
     const [usageEndDate, setUsageEndDate] = useState('')
     const [usagePage, setUsagePage] = useState(1)
     const [usageLimit] = useState(10)
+    const [expandedCredentialRows, setExpandedCredentialRows] = useState({})
 
     const { confirm } = useConfirm()
 
@@ -339,6 +356,7 @@ const Users = () => {
     const onViewTokenUsageDetails = (user) => {
         setSelectedUsageUser(user)
         setUsagePage(1)
+        setExpandedCredentialRows({})
         setOpenTokenUsageDrawer(true)
         requestTokenUsageDetails(user.userId, 1)
     }
@@ -346,6 +364,7 @@ const Users = () => {
     const applyUsageFilters = () => {
         if (!selectedUsageUser?.userId) return
         setUsagePage(1)
+        setExpandedCredentialRows({})
         requestTokenUsageDetails(selectedUsageUser.userId, 1)
     }
 
@@ -354,18 +373,34 @@ const Users = () => {
         setUsageStartDate('')
         setUsageEndDate('')
         setUsagePage(1)
+        setExpandedCredentialRows({})
         getTokenUsageDetailsApi.request(selectedUsageUser.userId, undefined, undefined, 1, usageLimit)
     }
 
     const handleUsagePageChange = (nextPage) => {
         if (!selectedUsageUser?.userId) return
         setUsagePage(nextPage)
+        setExpandedCredentialRows({})
         requestTokenUsageDetails(selectedUsageUser.userId, nextPage)
     }
 
     const closeTokenUsageDrawer = () => {
+        setExpandedCredentialRows({})
         setOpenTokenUsageDrawer(false)
     }
+
+    const getExpandedCredentialRowKey = (recordId, credentialId) => `${recordId}:${credentialId}`
+
+    const toggleCredentialRowExpanded = (recordId, credentialId) => {
+        const key = getExpandedCredentialRowKey(recordId, credentialId)
+        setExpandedCredentialRows((prev) => ({
+            ...prev,
+            [key]: !prev[key]
+        }))
+    }
+
+    const isCredentialRowExpanded = (recordId, credentialId) =>
+        Boolean(expandedCredentialRows[getExpandedCredentialRowKey(recordId, credentialId)])
 
     function filterUsers(data) {
         return (
@@ -777,10 +812,13 @@ const Users = () => {
                                                 }}
                                             >
                                                 <TableRow>
+                                                    <StyledTableCell width={60}>expand</StyledTableCell>
                                                     <StyledTableCell>credentialId</StyledTableCell>
                                                     <StyledTableCell>credentialName</StyledTableCell>
                                                     <StyledTableCell>model</StyledTableCell>
+                                                    <StyledTableCell>attribution</StyledTableCell>
                                                     <StyledTableCell>usageCount</StyledTableCell>
+                                                    <StyledTableCell>Charged Credit</StyledTableCell>
                                                     {TOKEN_STAT_FIELDS.map((item) => (
                                                         <StyledTableCell key={item.key}>{item.label}</StyledTableCell>
                                                     ))}
@@ -788,22 +826,138 @@ const Users = () => {
                                             </TableHead>
                                             <TableBody>
                                                 {record.credentials?.length ? (
-                                                    record.credentials.map((credential) => (
-                                                        <TableRow key={credential.id}>
-                                                            <StyledTableCell>{credential.credentialId || '-'}</StyledTableCell>
-                                                            <StyledTableCell>{credential.credentialName || '-'}</StyledTableCell>
-                                                            <StyledTableCell>{credential.model || '-'}</StyledTableCell>
-                                                            <StyledTableCell>{credential.usageCount || 0}</StyledTableCell>
-                                                            {TOKEN_STAT_FIELDS.map((item) => (
-                                                                <StyledTableCell key={item.key}>
-                                                                    {getTokenStatValue(credential, item.key)}
-                                                                </StyledTableCell>
-                                                            ))}
-                                                        </TableRow>
-                                                    ))
+                                                    record.credentials.map((credential) => {
+                                                        const isExpanded = isCredentialRowExpanded(record.id, credential.id)
+                                                        const hasCallDetails = Boolean(
+                                                            credential.hasCallDetails && credential.calls?.length
+                                                        )
+
+                                                        return (
+                                                            <React.Fragment key={credential.id}>
+                                                                <TableRow>
+                                                                    <StyledTableCell>
+                                                                        {hasCallDetails ? (
+                                                                            <IconButton
+                                                                                size='small'
+                                                                                onClick={() =>
+                                                                                    toggleCredentialRowExpanded(record.id, credential.id)
+                                                                                }
+                                                                            >
+                                                                                {isExpanded ? (
+                                                                                    <IconChevronDown size={16} />
+                                                                                ) : (
+                                                                                    <IconChevronRight size={16} />
+                                                                                )}
+                                                                            </IconButton>
+                                                                        ) : (
+                                                                            '-'
+                                                                        )}
+                                                                    </StyledTableCell>
+                                                                    <StyledTableCell>{credential.credentialId || '-'}</StyledTableCell>
+                                                                    <StyledTableCell>{credential.credentialName || '-'}</StyledTableCell>
+                                                                    <StyledTableCell>{credential.model || '-'}</StyledTableCell>
+                                                                    <StyledTableCell>
+                                                                        <Chip
+                                                                            size='small'
+                                                                            label={getUsageAttributionLabel(credential.attributionMode)}
+                                                                            color={getUsageAttributionColor(credential.attributionMode)}
+                                                                        />
+                                                                    </StyledTableCell>
+                                                                    <StyledTableCell>{credential.usageCount || 0}</StyledTableCell>
+                                                                    <StyledTableCell>{credential.chargedCredit || 0}</StyledTableCell>
+                                                                    {TOKEN_STAT_FIELDS.map((item) => (
+                                                                        <StyledTableCell key={item.key}>
+                                                                            {getTokenStatValue(credential, item.key)}
+                                                                        </StyledTableCell>
+                                                                    ))}
+                                                                </TableRow>
+                                                                {isExpanded && hasCallDetails ? (
+                                                                    <TableRow>
+                                                                        <StyledTableCell
+                                                                            colSpan={7 + TOKEN_STAT_FIELDS.length}
+                                                                            sx={{ p: 0 }}
+                                                                        >
+                                                                            <Box
+                                                                                sx={{
+                                                                                    px: 2,
+                                                                                    py: 1.5,
+                                                                                    backgroundColor: theme.palette.action.hover
+                                                                                }}
+                                                                            >
+                                                                                <Typography variant='subtitle2' sx={{ mb: 1 }}>
+                                                                                    Per-call details
+                                                                                </Typography>
+                                                                                <TableContainer component={Paper} variant='outlined'>
+                                                                                    <Table size='small'>
+                                                                                        <TableHead
+                                                                                            sx={{
+                                                                                                backgroundColor: customization.isDarkMode
+                                                                                                    ? theme.palette.common.black
+                                                                                                    : theme.palette.grey[100]
+                                                                                            }}
+                                                                                        >
+                                                                                            <TableRow>
+                                                                                                <StyledTableCell>#</StyledTableCell>
+                                                                                                <StyledTableCell>
+                                                                                                    billingMode
+                                                                                                </StyledTableCell>
+                                                                                                <StyledTableCell>
+                                                                                                    Charged Credit
+                                                                                                </StyledTableCell>
+                                                                                                <StyledTableCell>
+                                                                                                    Credited At
+                                                                                                </StyledTableCell>
+                                                                                                {TOKEN_STAT_FIELDS.map((item) => (
+                                                                                                    <StyledTableCell key={item.key}>
+                                                                                                        {item.label}
+                                                                                                    </StyledTableCell>
+                                                                                                ))}
+                                                                                            </TableRow>
+                                                                                        </TableHead>
+                                                                                        <TableBody>
+                                                                                            {credential.calls.map((call) => (
+                                                                                                <TableRow key={call.id}>
+                                                                                                    <StyledTableCell>
+                                                                                                        {call.sequenceIndex || 0}
+                                                                                                    </StyledTableCell>
+                                                                                                    <StyledTableCell>
+                                                                                                        {call.billingMode || '-'}
+                                                                                                    </StyledTableCell>
+                                                                                                    <StyledTableCell>
+                                                                                                        {call.chargedCredit || 0}
+                                                                                                    </StyledTableCell>
+                                                                                                    <StyledTableCell>
+                                                                                                        {call.creditedAt
+                                                                                                            ? moment(
+                                                                                                                  call.creditedAt
+                                                                                                              ).format(
+                                                                                                                  'DD/MM/YYYY HH:mm:ss'
+                                                                                                              )
+                                                                                                            : '-'}
+                                                                                                    </StyledTableCell>
+                                                                                                    {TOKEN_STAT_FIELDS.map((item) => (
+                                                                                                        <StyledTableCell key={item.key}>
+                                                                                                            {getTokenStatValue(
+                                                                                                                call,
+                                                                                                                item.key
+                                                                                                            )}
+                                                                                                        </StyledTableCell>
+                                                                                                    ))}
+                                                                                                </TableRow>
+                                                                                            ))}
+                                                                                        </TableBody>
+                                                                                    </Table>
+                                                                                </TableContainer>
+                                                                            </Box>
+                                                                        </StyledTableCell>
+                                                                    </TableRow>
+                                                                ) : null}
+                                                            </React.Fragment>
+                                                        )
+                                                    })
                                                 ) : (
                                                     <TableRow>
-                                                        <StyledTableCell colSpan={4 + TOKEN_STAT_FIELDS.length}>
+                                                        <StyledTableCell colSpan={7 + TOKEN_STAT_FIELDS.length}>
                                                             No credential usage details.
                                                         </StyledTableCell>
                                                     </TableRow>

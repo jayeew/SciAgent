@@ -1,0 +1,1094 @@
+{
+    "description": "一个固定四阶段的 Agentflow V2 模板：完成研究、提纲、撰写、审校，并导出真实的 .pptx 演示文稿",
+    "usecases": ["演示文稿", "多智能体", "文档问答"],
+    "nodes": [
+        {
+            "id": "startAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 64,
+                "y": 210
+            },
+            "data": {
+                "id": "startAgentflow_0",
+                "label": "开始",
+                "version": 1.1,
+                "name": "startAgentflow",
+                "type": "Start",
+                "color": "#7EE787",
+                "hideInput": true,
+                "baseClasses": ["Start"],
+                "category": "Agent Flows",
+                "description": "Agentflow 的起始节点",
+                "inputParams": [
+                    {
+                        "label": "输入类型",
+                        "name": "startInputType",
+                        "type": "options",
+                        "default": "chatInput",
+                        "id": "startAgentflow_0-input-startInputType-options",
+                        "display": true
+                    },
+                    {
+                        "label": "流程状态",
+                        "name": "startState",
+                        "type": "array",
+                        "optional": true,
+                        "id": "startAgentflow_0-input-startState-array",
+                        "display": true
+                    },
+                    {
+                        "label": "持久化状态",
+                        "name": "startPersistState",
+                        "type": "boolean",
+                        "optional": true,
+                        "id": "startAgentflow_0-input-startPersistState-boolean",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "startInputType": "chatInput",
+                    "startState": [
+                        {
+                            "key": "researchNotes",
+                            "value": ""
+                        },
+                        {
+                            "key": "outline",
+                            "value": ""
+                        },
+                        {
+                            "key": "presentationSpecDraft",
+                            "value": ""
+                        },
+                        {
+                            "key": "presentationSpec",
+                            "value": ""
+                        },
+                        {
+                            "key": "illustrationPlan",
+                            "value": ""
+                        },
+                        {
+                            "key": "presentationSpecWithImages",
+                            "value": ""
+                        }
+                    ],
+                    "startPersistState": true
+                },
+                "outputAnchors": [
+                    {
+                        "id": "startAgentflow_0-output-startAgentflow",
+                        "label": "开始",
+                        "name": "startAgentflow"
+                    }
+                ],
+                "outputs": {}
+            }
+        },
+        {
+            "id": "llmAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 228,
+                "y": 96
+            },
+            "data": {
+                "id": "llmAgentflow_0",
+                "label": "资料研究",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "研究角色：提取事实、数据和支撑证据",
+                "inputParams": [
+                    {
+                        "label": "模型",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_0-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "消息",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "角色",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "系统",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "助手",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "开发者",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "用户",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "内容",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_0-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "更新流程状态",
+                        "name": "llmUpdateState",
+                        "type": "array",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "键",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys"
+                            },
+                            {
+                                "label": "值",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_0-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatDeepseek",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是 PPT 创作团队中的 Research 角色。请阅读用户需求，结合对话上下文和本轮上传的参考资料，产出简洁、可信、可直接用于写幻灯片的研究笔记。重点关注事实、证据、风险、关键数字，以及适合讲故事的表达角度。</p><p>除非用户明确要求其他语言，默认使用简体中文输出。仅返回纯文本，不要输出 Markdown 代码块。</p>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>请为下面这个演示文稿需求生成研究笔记：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p>"
+                        }
+                    ],
+                    "llmEnableMemory": true,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": "",
+                    "llmUpdateState": [
+                        {
+                            "key": "researchNotes",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "deepseek-chat",
+                        "temperature": 0.3,
+                        "streaming": true,
+                        "maxTokens": "",
+                        "llmModel": "chatDeepseek"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_0-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {}
+            }
+        },
+        {
+            "id": "llmAgentflow_1",
+            "type": "agentFlow",
+            "position": {
+                "x": 510,
+                "y": 96
+            },
+            "data": {
+                "id": "llmAgentflow_1",
+                "label": "大纲规划",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "提纲角色：把研究内容整理成逐页叙事结构",
+                "inputParams": [
+                    {
+                        "label": "模型",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_1-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "消息",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "角色",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "系统",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "助手",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "开发者",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "用户",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "内容",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_1-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "更新流程状态",
+                        "name": "llmUpdateState",
+                        "type": "array",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "键",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys"
+                            },
+                            {
+                                "label": "值",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_1-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatDeepseek",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是 PPT 创作团队中的 Outline 角色。请把研究内容整理成 8 页左右的演示文稿大纲。每页给出简短中文标题、该页的一句话目的，并在合适时标注可插入用户已上传图片的位置。</p><p>除非用户明确要求其他语言，默认使用简体中文输出。仅返回纯文本，不要输出 Markdown 代码块。</p>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>原始需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>研究笔记：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.researchNotes\" data-label=\"$flow.state.researchNotes\">{{ $flow.state.researchNotes }}</span></p>"
+                        }
+                    ],
+                    "llmEnableMemory": false,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": "",
+                    "llmUpdateState": [
+                        {
+                            "key": "outline",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "deepseek-chat",
+                        "temperature": 0.4,
+                        "streaming": true,
+                        "maxTokens": "",
+                        "llmModel": "chatDeepseek"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_1-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {}
+            }
+        },
+        {
+            "id": "llmAgentflow_2",
+            "type": "agentFlow",
+            "position": {
+                "x": 804,
+                "y": 96
+            },
+            "data": {
+                "id": "llmAgentflow_2",
+                "label": "内容撰写",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "撰写角色：生成 JSON 格式的 presentationSpec 草稿",
+                "inputParams": [
+                    {
+                        "label": "模型",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_2-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "消息",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "角色",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "系统",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "助手",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "开发者",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "用户",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "内容",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_2-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "更新流程状态",
+                        "name": "llmUpdateState",
+                        "type": "array",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "键",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys"
+                            },
+                            {
+                                "label": "值",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_2-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatDeepseek",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是 PPT 创作团队中的 Slide Writer 角色。</p><p>仅返回合法 JSON，且 JSON 必须匹配以下 schema：</p><pre><code>{\n  \"title\": \"string\",\n  \"fileName\": \"string\",\n  \"themePreset\": \"business-neutral\",\n  \"slideSize\": \"wide\",\n  \"includeSpeakerNotes\": true,\n  \"slides\": [\n    {\n      \"layout\": \"title|section|title-bullets|image-right|two-column\",\n      \"title\": \"string\",\n      \"subtitle\": \"string?\",\n      \"body\": \"string?\",\n      \"bullets\": [\"string\"],\n      \"speakerNotes\": \"string?\",\n      \"imageFileNames\": [\"uploaded-file-name.png\"],\n      \"leftTitle\": \"string?\",\n      \"leftBody\": \"string?\",\n      \"leftBullets\": [\"string\"],\n      \"rightTitle\": \"string?\",\n      \"rightBody\": \"string?\",\n      \"rightBullets\": [\"string\"]\n    }\n  ]\n}</code></pre><p>默认生成 8 页，优先使用以文字为主的布局。只有当用户已经在本轮对话中上传了图片时，才可以填写 imageFileNames。</p><p>除非用户明确要求其他语言，presentationSpec 中所有面向读者的文案字段默认使用简体中文，包括 title、subtitle、body、bullets、speakerNotes、leftTitle、leftBody、leftBullets、rightTitle、rightBody、rightBullets。</p><p>对于明显适合放图的页面（如市场机会、产品方案、竞争格局、财务趋势、融资用途等），优先使用 <code>image-right</code> 或 <code>title-bullets</code> 布局，方便后续自动生成插图并放入 PPT。</p><p><strong>每一页都必须包含非空的 title 字段</strong>，即使该页使用的是 <code>two-column</code> 或 <code>image-right</code> 布局也不例外。</p><p>不要翻译 JSON 的字段名，也不要翻译枚举值；layout、themePreset、slideSize 必须保持 schema 中的英文取值。不要修改用户上传图片的原始文件名。若用户未指定 fileName，请给出简洁的中文文件名（无需扩展名）。不要输出 Markdown 代码块，不要输出额外说明。</p>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>原始需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>大纲：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.outline\" data-label=\"$flow.state.outline\">{{ $flow.state.outline }}</span></p><p>研究笔记：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.researchNotes\" data-label=\"$flow.state.researchNotes\">{{ $flow.state.researchNotes }}</span></p>"
+                        }
+                    ],
+                    "llmEnableMemory": false,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": "",
+                    "llmUpdateState": [
+                        {
+                            "key": "presentationSpecDraft",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "deepseek-chat",
+                        "temperature": 0.4,
+                        "streaming": true,
+                        "maxTokens": "",
+                        "llmModel": "chatDeepseek"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_2-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {}
+            }
+        },
+        {
+            "id": "llmAgentflow_3",
+            "type": "agentFlow",
+            "position": {
+                "x": 1110,
+                "y": 96
+            },
+            "data": {
+                "id": "llmAgentflow_3",
+                "label": "质检润色",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "质检角色：在导出前润色并修正 presentationSpec",
+                "inputParams": [
+                    {
+                        "label": "模型",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_3-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "消息",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "角色",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "系统",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "助手",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "开发者",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "用户",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "内容",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_3-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "更新流程状态",
+                        "name": "llmUpdateState",
+                        "type": "array",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "键",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys"
+                            },
+                            {
+                                "label": "值",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_3-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatDeepseek",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是 PPT 创作团队中的 QA 角色。请审阅 draft presentationSpec，提升表达清晰度，去除重复内容，控制每页信息密度，并保持合法 JSON。</p><p>除非用户明确要求其他语言，presentationSpec 中所有面向读者的文案字段默认保持为简体中文。不要翻译 JSON 字段名，不要改变 layout、themePreset、slideSize 等枚举值，也不要修改 imageFileNames 中的原始文件名。</p><p>如果某些页面明显适合放图，请优先把它们整理为 <code>image-right</code> 或 <code>title-bullets</code> 布局，便于后续自动生成插图。</p><p><strong>请检查 slides 数组中的每一页是否都包含非空 title 字段</strong>；如缺失，必须补齐后再输出。</p><p>仅返回合法 JSON，不要输出 Markdown 代码块，不要输出额外说明。</p>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>原始需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>研究笔记：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.researchNotes\" data-label=\"$flow.state.researchNotes\">{{ $flow.state.researchNotes }}</span></p><p>草稿 presentationSpec：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.presentationSpecDraft\" data-label=\"$flow.state.presentationSpecDraft\">{{ $flow.state.presentationSpecDraft }}</span></p>"
+                        }
+                    ],
+                    "llmEnableMemory": false,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": "",
+                    "llmUpdateState": [
+                        {
+                            "key": "presentationSpec",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "deepseek-chat",
+                        "temperature": 0.2,
+                        "streaming": true,
+                        "maxTokens": "",
+                        "llmModel": "chatDeepseek"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_3-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {}
+            }
+        },
+        {
+            "id": "llmAgentflow_4",
+            "type": "agentFlow",
+            "position": {
+                "x": 1380,
+                "y": 96
+            },
+            "data": {
+                "id": "llmAgentflow_4",
+                "label": "插图规划",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "规划哪些页面需要自动生成插图，以及对应的生成提示词",
+                "inputParams": [
+                    {
+                        "label": "模型",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_4-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "消息",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "角色",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "系统",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "助手",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "开发者",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "用户",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "内容",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_4-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "更新流程状态",
+                        "name": "llmUpdateState",
+                        "type": "array",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "键",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys"
+                            },
+                            {
+                                "label": "值",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_4-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatDeepseek",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是 PPT 创作团队中的插图规划角色。请阅读最终版 presentationSpec，判断哪些页面值得自动生成插图。</p><p>仅返回合法 JSON，不要输出 Markdown 代码块，不要输出额外说明。输出 schema 必须为：</p><pre><code>{\n  \"requests\": [\n    {\n      \"slideIndex\": 0,\n      \"prompt\": \"string\",\n      \"size\": \"optional string\"\n    }\n  ]\n}</code></pre><p>规则：</p><ul><li><p><code>slideIndex</code> 使用 <strong>0-based</strong> 索引。</p></li><li><p>最多返回 3 个请求；如果不需要插图，返回 <code>{\"requests\":[]}</code>。</p></li><li><p>优先选择 <code>layout</code> 为 <code>title-bullets</code> 或 <code>image-right</code> 的页面。</p></li><li><p>如果某页已经有 <code>imageFileNames</code>，不要再为该页生成插图请求。</p></li><li><p>prompt 默认使用简体中文，内容具体、可视化、适合商务汇报插图，不要出现文字排版、Logo、水印、海报式大标题。</p></li><li><p>适合生成插图的页面通常包括：市场机会、产品方案、竞争格局、财务趋势、融资用途等。</p></li></ul>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>原始需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>最终 presentationSpec：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.presentationSpec\" data-label=\"$flow.state.presentationSpec\">{{ $flow.state.presentationSpec }}</span></p>"
+                        }
+                    ],
+                    "llmEnableMemory": false,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": "",
+                    "llmUpdateState": [
+                        {
+                            "key": "illustrationPlan",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "deepseek-chat",
+                        "temperature": 0.2,
+                        "streaming": true,
+                        "maxTokens": "",
+                        "llmModel": "chatDeepseek"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_4-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {}
+            }
+        },
+        {
+            "id": "toolAgentflow_1",
+            "type": "agentFlow",
+            "position": {
+                "x": 1650,
+                "y": 210
+            },
+            "data": {
+                "id": "toolAgentflow_1",
+                "label": "生成插图",
+                "version": 1.2,
+                "name": "toolAgentflow",
+                "type": "Tool",
+                "color": "#d4a373",
+                "baseClasses": ["Tool"],
+                "category": "Agent Flows",
+                "description": "根据插图规划生成图片，并把生成后的 imageFileNames 写回 presentationSpec",
+                "inputParams": [
+                    {
+                        "label": "工具",
+                        "name": "toolAgentflowSelectedTool",
+                        "type": "asyncOptions",
+                        "loadMethod": "listTools",
+                        "loadConfig": true,
+                        "id": "toolAgentflow_1-input-toolAgentflowSelectedTool-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "工具输入参数",
+                        "name": "toolInputArgs",
+                        "type": "array",
+                        "acceptVariable": true,
+                        "refresh": true,
+                        "array": [
+                            {
+                                "label": "输入参数名",
+                                "name": "inputArgName",
+                                "type": "asyncOptions",
+                                "loadMethod": "listToolInputArgs",
+                                "refresh": true
+                            },
+                            {
+                                "label": "输入参数值",
+                                "name": "inputArgValue",
+                                "type": "string",
+                                "acceptVariable": true
+                            }
+                        ],
+                        "id": "toolAgentflow_1-input-toolInputArgs-array",
+                        "display": true
+                    },
+                    {
+                        "label": "更新流程状态",
+                        "name": "toolUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "键",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys"
+                            },
+                            {
+                                "label": "值",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "toolAgentflow_1-input-toolUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "toolAgentflowSelectedTool": "doubaoImageTool",
+                    "toolInputArgs": [
+                        {
+                            "inputArgName": "presentationSpec",
+                            "inputArgValue": "{{ $flow.state.presentationSpec }}"
+                        },
+                        {
+                            "inputArgName": "imageRequests",
+                            "inputArgValue": "{{ $flow.state.illustrationPlan }}"
+                        }
+                    ],
+                    "toolUpdateState": [
+                        {
+                            "key": "presentationSpecWithImages",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "toolAgentflowSelectedToolConfig": {
+                        "credential": "",
+                        "model": "doubao-seedream-5-0-260128",
+                        "size": "2848x1600",
+                        "outputFormat": "png",
+                        "watermark": false,
+                        "sequentialImageGeneration": "disabled",
+                        "toolAgentflowSelectedTool": "doubaoImageTool"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "toolAgentflow_1-output-toolAgentflow",
+                        "label": "工具",
+                        "name": "toolAgentflow"
+                    }
+                ],
+                "outputs": {}
+            }
+        },
+        {
+            "id": "toolAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 1920,
+                "y": 210
+            },
+            "data": {
+                "id": "toolAgentflow_0",
+                "label": "生成 PPTX",
+                "version": 1.2,
+                "name": "toolAgentflow",
+                "type": "Tool",
+                "color": "#d4a373",
+                "baseClasses": ["Tool"],
+                "category": "Agent Flows",
+                "description": "把带插图的 presentationSpec 导出为可下载的 .pptx 文件",
+                "inputParams": [
+                    {
+                        "label": "工具",
+                        "name": "toolAgentflowSelectedTool",
+                        "type": "asyncOptions",
+                        "loadMethod": "listTools",
+                        "loadConfig": true,
+                        "id": "toolAgentflow_0-input-toolAgentflowSelectedTool-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "工具输入参数",
+                        "name": "toolInputArgs",
+                        "type": "array",
+                        "acceptVariable": true,
+                        "refresh": true,
+                        "array": [
+                            {
+                                "label": "输入参数名",
+                                "name": "inputArgName",
+                                "type": "asyncOptions",
+                                "loadMethod": "listToolInputArgs",
+                                "refresh": true
+                            },
+                            {
+                                "label": "输入参数值",
+                                "name": "inputArgValue",
+                                "type": "string",
+                                "acceptVariable": true
+                            }
+                        ],
+                        "id": "toolAgentflow_0-input-toolInputArgs-array",
+                        "display": true
+                    },
+                    {
+                        "label": "更新流程状态",
+                        "name": "toolUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "键",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys"
+                            },
+                            {
+                                "label": "值",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "toolAgentflow_0-input-toolUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "toolAgentflowSelectedTool": "pptxPresentationTool",
+                    "toolInputArgs": [
+                        {
+                            "inputArgName": "presentationSpec",
+                            "inputArgValue": "{{ $flow.state.presentationSpecWithImages }}"
+                        }
+                    ],
+                    "toolUpdateState": "",
+                    "toolAgentflowSelectedToolConfig": {
+                        "themePreset": "business-neutral",
+                        "slideSize": "wide",
+                        "includeSpeakerNotes": true,
+                        "toolAgentflowSelectedTool": "pptxPresentationTool"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "toolAgentflow_0-output-toolAgentflow",
+                        "label": "工具",
+                        "name": "toolAgentflow"
+                    }
+                ],
+                "outputs": {}
+            }
+        }
+    ],
+    "edges": [
+        {
+            "source": "startAgentflow_0",
+            "sourceHandle": "startAgentflow_0-output-startAgentflow",
+            "target": "llmAgentflow_0",
+            "targetHandle": "llmAgentflow_0",
+            "data": {
+                "sourceColor": "#7EE787",
+                "targetColor": "#64B5F6",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "startAgentflow_0-startAgentflow_0-output-startAgentflow-llmAgentflow_0-llmAgentflow_0"
+        },
+        {
+            "source": "llmAgentflow_0",
+            "sourceHandle": "llmAgentflow_0-output-llmAgentflow",
+            "target": "llmAgentflow_1",
+            "targetHandle": "llmAgentflow_1",
+            "data": {
+                "sourceColor": "#64B5F6",
+                "targetColor": "#64B5F6",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "llmAgentflow_0-llmAgentflow_0-output-llmAgentflow-llmAgentflow_1-llmAgentflow_1"
+        },
+        {
+            "source": "llmAgentflow_1",
+            "sourceHandle": "llmAgentflow_1-output-llmAgentflow",
+            "target": "llmAgentflow_2",
+            "targetHandle": "llmAgentflow_2",
+            "data": {
+                "sourceColor": "#64B5F6",
+                "targetColor": "#64B5F6",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "llmAgentflow_1-llmAgentflow_1-output-llmAgentflow-llmAgentflow_2-llmAgentflow_2"
+        },
+        {
+            "source": "llmAgentflow_2",
+            "sourceHandle": "llmAgentflow_2-output-llmAgentflow",
+            "target": "llmAgentflow_3",
+            "targetHandle": "llmAgentflow_3",
+            "data": {
+                "sourceColor": "#64B5F6",
+                "targetColor": "#64B5F6",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "llmAgentflow_2-llmAgentflow_2-output-llmAgentflow-llmAgentflow_3-llmAgentflow_3"
+        },
+        {
+            "source": "llmAgentflow_3",
+            "sourceHandle": "llmAgentflow_3-output-llmAgentflow",
+            "target": "llmAgentflow_4",
+            "targetHandle": "llmAgentflow_4",
+            "data": {
+                "sourceColor": "#64B5F6",
+                "targetColor": "#64B5F6",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "llmAgentflow_3-llmAgentflow_3-output-llmAgentflow-llmAgentflow_4-llmAgentflow_4"
+        },
+        {
+            "source": "llmAgentflow_4",
+            "sourceHandle": "llmAgentflow_4-output-llmAgentflow",
+            "target": "toolAgentflow_1",
+            "targetHandle": "toolAgentflow_1",
+            "data": {
+                "sourceColor": "#64B5F6",
+                "targetColor": "#d4a373",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "llmAgentflow_4-llmAgentflow_4-output-llmAgentflow-toolAgentflow_1-toolAgentflow_1"
+        },
+        {
+            "source": "toolAgentflow_1",
+            "sourceHandle": "toolAgentflow_1-output-toolAgentflow",
+            "target": "toolAgentflow_0",
+            "targetHandle": "toolAgentflow_0",
+            "data": {
+                "sourceColor": "#d4a373",
+                "targetColor": "#d4a373",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "toolAgentflow_1-toolAgentflow_1-output-toolAgentflow-toolAgentflow_0-toolAgentflow_0"
+        }
+    ]
+}
