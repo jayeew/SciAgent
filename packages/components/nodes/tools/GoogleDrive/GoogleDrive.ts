@@ -88,6 +88,10 @@ class GoogleDrive_Tools implements INode {
                     {
                         label: 'Download File',
                         name: 'downloadFile'
+                    },
+                    {
+                        label: 'Export File',
+                        name: 'exportFile'
                     }
                 ],
                 show: {
@@ -165,7 +169,7 @@ class GoogleDrive_Tools implements INode {
                 type: 'string',
                 description: 'File ID for file operations',
                 show: {
-                    fileActions: ['getFile', 'updateFile', 'deleteFile', 'copyFile', 'downloadFile']
+                    fileActions: ['getFile', 'updateFile', 'deleteFile', 'copyFile', 'downloadFile', 'exportFile']
                 },
                 additionalParams: true,
                 optional: true
@@ -209,7 +213,7 @@ class GoogleDrive_Tools implements INode {
                 type: 'string',
                 description: 'Name of the file',
                 show: {
-                    fileActions: ['createFile', 'copyFile']
+                    fileActions: ['createFile', 'copyFile', 'exportFile']
                 },
                 additionalParams: true,
                 optional: true
@@ -240,9 +244,10 @@ class GoogleDrive_Tools implements INode {
                 label: 'MIME Type',
                 name: 'mimeType',
                 type: 'string',
-                description: 'MIME type of the file (e.g., text/plain, application/pdf)',
+                description:
+                    'MIME type of the file or export target (e.g., text/plain, application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document)',
                 show: {
-                    fileActions: ['createFile']
+                    fileActions: ['createFile', 'exportFile']
                 },
                 additionalParams: true,
                 optional: true
@@ -526,7 +531,16 @@ class GoogleDrive_Tools implements INode {
                 type: 'boolean',
                 description: 'Whether the application supports both My Drives and shared drives',
                 show: {
-                    fileActions: ['listFiles', 'getFile', 'createFile', 'updateFile', 'deleteFile', 'copyFile', 'downloadFile']
+                    fileActions: [
+                        'listFiles',
+                        'getFile',
+                        'createFile',
+                        'updateFile',
+                        'deleteFile',
+                        'copyFile',
+                        'downloadFile',
+                        'exportFile'
+                    ]
                 },
                 additionalParams: true,
                 optional: true

@@ -73,6 +73,12 @@ describe('DoubaoImageTool core', () => {
         const updatedSpec = JSON.parse(parsed.output)
 
         expect(updatedSpec.slides[0].imageFileNames).toEqual(['doubao_generated_image_1.png'])
+        expect(parsed.artifacts).toEqual([
+            {
+                type: 'png',
+                data: 'FILE-STORAGE::doubao_generated_image_1.png'
+            }
+        ])
         expect(parsed.fileAnnotations).toEqual([
             {
                 fileName: 'doubao_generated_image_1.png',

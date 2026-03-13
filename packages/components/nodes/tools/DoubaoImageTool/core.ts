@@ -1,6 +1,6 @@
 import path from 'path'
 import { z } from 'zod'
-import { FILE_ANNOTATIONS_PREFIX, MEDIA_BILLING_PREFIX, TOOL_ARGS_PREFIX, formatToolError } from '../../../src/agents'
+import { ARTIFACTS_PREFIX, FILE_ANNOTATIONS_PREFIX, MEDIA_BILLING_PREFIX, TOOL_ARGS_PREFIX, formatToolError } from '../../../src/agents'
 import { ICommonObject, IFileUpload } from '../../../src/Interface'
 import { IMediaGenerationResult } from '../../../src/mediaModels'
 import { parseJsonBody } from '../../../src/utils'
@@ -65,6 +65,7 @@ export interface IRequestParameters {
 }
 
 interface IGeneratedImageResult {
+    artifacts: IMediaGenerationResult['artifacts']
     fileAnnotations: Array<{ fileName: string; filePath: string }>
     request: IDoubaoImageRequest
 }
@@ -318,6 +319,7 @@ class GenerateDoubaoImagesTool extends DynamicStructuredTool<typeof GenerateDoub
                     }
 
                     generatedImages.push({
+                        artifacts: result.artifacts,
                         request,
                         fileAnnotations
                     })
@@ -338,6 +340,7 @@ class GenerateDoubaoImagesTool extends DynamicStructuredTool<typeof GenerateDoub
                 applyGeneratedImagesToPresentationSpec(normalizedPresentationSpec, generatedImages, params.overwriteExistingImages ?? false)
             }
 
+            const allArtifacts = generatedImages.flatMap((generatedImage) => generatedImage.artifacts)
             const allFileAnnotations = generatedImages.flatMap((generatedImage) => generatedImage.fileAnnotations)
             const output =
                 normalizedPresentationSpec && params.presentationSpec
@@ -357,6 +360,8 @@ class GenerateDoubaoImagesTool extends DynamicStructuredTool<typeof GenerateDoub
 
             return (
                 output +
+                ARTIFACTS_PREFIX +
+                JSON.stringify(allArtifacts) +
                 FILE_ANNOTATIONS_PREFIX +
                 JSON.stringify(allFileAnnotations) +
                 MEDIA_BILLING_PREFIX +

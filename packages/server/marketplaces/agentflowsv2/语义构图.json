@@ -1,0 +1,1779 @@
+{
+    "description": "一个固定六阶段的 Agentflow V2 模板：理解素材、生成严格请求、输出首稿、视觉评审、构造图生图精修请求，并生成最终整合图像",
+    "usecases": ["图片生成", "多模态", "设计优化"],
+    "nodes": [
+        {
+            "id": "startAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 60,
+                "y": 220
+            },
+            "data": {
+                "id": "startAgentflow_0",
+                "label": "开始",
+                "version": 1.1,
+                "name": "startAgentflow",
+                "type": "Start",
+                "color": "#7EE787",
+                "hideInput": true,
+                "baseClasses": ["Start"],
+                "category": "Agent Flows",
+                "description": "复合素材图片构建与整合优化流程的起始节点",
+                "inputParams": [
+                    {
+                        "label": "输入类型",
+                        "name": "startInputType",
+                        "type": "options",
+                        "default": "chatInput",
+                        "id": "startAgentflow_0-input-startInputType-options",
+                        "display": true
+                    },
+                    {
+                        "label": "流程状态",
+                        "name": "startState",
+                        "type": "array",
+                        "optional": true,
+                        "id": "startAgentflow_0-input-startState-array",
+                        "display": true
+                    },
+                    {
+                        "label": "持久化状态",
+                        "name": "startPersistState",
+                        "type": "boolean",
+                        "optional": true,
+                        "id": "startAgentflow_0-input-startPersistState-boolean",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "startInputType": "chatInput",
+                    "startState": [
+                        {
+                            "key": "assetAnalysis",
+                            "value": ""
+                        },
+                        {
+                            "key": "draftImageRequests",
+                            "value": ""
+                        },
+                        {
+                            "key": "draftGenerationResult",
+                            "value": ""
+                        },
+                        {
+                            "key": "reviewReport",
+                            "value": ""
+                        },
+                        {
+                            "key": "refineImageRequests",
+                            "value": ""
+                        }
+                    ],
+                    "startPersistState": true
+                },
+                "outputAnchors": [
+                    {
+                        "id": "startAgentflow_0-output-startAgentflow",
+                        "label": "开始",
+                        "name": "startAgentflow"
+                    }
+                ],
+                "outputs": {}
+            }
+        },
+        {
+            "id": "llmAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 260,
+                "y": 60
+            },
+            "data": {
+                "id": "llmAgentflow_0",
+                "label": "素材理解",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "多模态理解素材图与文本需求，抽取主体、保留点、风格线索与禁止项",
+                "inputParams": [
+                    {
+                        "label": "Model",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_0-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Messages",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Role",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "System",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "Assistant",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "Developer",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "User",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Content",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_0-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Enable Memory",
+                        "name": "llmEnableMemory",
+                        "type": "boolean",
+                        "description": "Enable memory for the conversation thread",
+                        "default": true,
+                        "optional": true,
+                        "id": "llmAgentflow_0-input-llmEnableMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Type",
+                        "name": "llmMemoryType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Messages",
+                                "name": "allMessages",
+                                "description": "Retrieve all messages from the conversation"
+                            },
+                            {
+                                "label": "Window Size",
+                                "name": "windowSize",
+                                "description": "Uses a fixed window size to surface the last N messages"
+                            },
+                            {
+                                "label": "Conversation Summary",
+                                "name": "conversationSummary",
+                                "description": "Summarizes the whole conversation"
+                            },
+                            {
+                                "label": "Conversation Summary Buffer",
+                                "name": "conversationSummaryBuffer",
+                                "description": "Summarize conversations once token limit is reached. Default to 2000"
+                            }
+                        ],
+                        "optional": true,
+                        "default": "allMessages",
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_0-input-llmMemoryType-options",
+                        "display": false
+                    },
+                    {
+                        "label": "Window Size",
+                        "name": "llmMemoryWindowSize",
+                        "type": "number",
+                        "default": "20",
+                        "description": "Uses a fixed window size to surface the last N messages",
+                        "show": {
+                            "llmMemoryType": "windowSize"
+                        },
+                        "id": "llmAgentflow_0-input-llmMemoryWindowSize-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Max Token Limit",
+                        "name": "llmMemoryMaxTokenLimit",
+                        "type": "number",
+                        "default": "2000",
+                        "description": "Summarize conversations once token limit is reached. Default to 2000",
+                        "show": {
+                            "llmMemoryType": "conversationSummaryBuffer"
+                        },
+                        "id": "llmAgentflow_0-input-llmMemoryMaxTokenLimit-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Input Message",
+                        "name": "llmUserMessage",
+                        "type": "string",
+                        "description": "Add an input message as user message at the end of the conversation",
+                        "rows": 4,
+                        "optional": true,
+                        "acceptVariable": true,
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_0-input-llmUserMessage-string",
+                        "display": false
+                    },
+                    {
+                        "label": "Return Response As",
+                        "name": "llmReturnResponseAs",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "User Message",
+                                "name": "userMessage"
+                            },
+                            {
+                                "label": "Assistant Message",
+                                "name": "assistantMessage"
+                            }
+                        ],
+                        "default": "userMessage",
+                        "id": "llmAgentflow_0-input-llmReturnResponseAs-options",
+                        "display": true
+                    },
+                    {
+                        "label": "JSON Structured Output",
+                        "name": "llmStructuredOutput",
+                        "description": "Instruct the LLM to give output in a JSON structured schema",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "string"
+                            },
+                            {
+                                "label": "Type",
+                                "name": "type",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "String",
+                                        "name": "string"
+                                    },
+                                    {
+                                        "label": "String Array",
+                                        "name": "stringArray"
+                                    },
+                                    {
+                                        "label": "Number",
+                                        "name": "number"
+                                    },
+                                    {
+                                        "label": "Boolean",
+                                        "name": "boolean"
+                                    },
+                                    {
+                                        "label": "Enum",
+                                        "name": "enum"
+                                    },
+                                    {
+                                        "label": "JSON Array",
+                                        "name": "jsonArray"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Enum Values",
+                                "name": "enumValues",
+                                "type": "string",
+                                "placeholder": "value1, value2, value3",
+                                "description": "Enum values. Separated by comma",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "enum"
+                                }
+                            },
+                            {
+                                "label": "JSON Schema",
+                                "name": "jsonSchema",
+                                "type": "code",
+                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
+                                "description": "JSON schema for the structured output",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "jsonArray"
+                                }
+                            },
+                            {
+                                "label": "Description",
+                                "name": "description",
+                                "type": "string",
+                                "placeholder": "Description of the key"
+                            }
+                        ],
+                        "id": "llmAgentflow_0-input-llmStructuredOutput-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "llmUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_0-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatAlibabaTongyi",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是复合素材图片构建流程中的素材理解专家。</p><p>请综合用户本轮上传的图片素材与文字需求，抽取后续生成必须遵守的视觉约束。</p><p>你必须只返回合法 JSON（json）对象，不要输出额外说明，不要输出 Markdown 代码块。</p><p>输出要求：</p><ul><li><p>只输出结构化结果，不要输出额外说明。</p></li><li><p>如果没有上传图片，也要仅根据文字需求完成分析。</p></li><li><p><code>subjects</code> 提炼核心主体与场景对象。</p></li><li><p><code>mustKeep</code> 写必须保留的关键元素、关系、氛围或业务诉求。</p></li><li><p><code>styleHints</code> 写风格、镜头语言、材质、色彩、品牌调性等。</p></li><li><p><code>compositionHints</code> 写构图、视角、前中后景、主体位置、留白等。</p></li><li><p><code>forbidden</code> 必须包含这些默认限制：不要文字排版、不要 logo、不要水印、不要海报大标题、不要低清晰度伪影。</p></li><li><p><code>riskNotes</code> 写容易跑偏或需要特别规避的问题。</p></li></ul>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>用户需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>请基于当前上传素材与需求完成素材理解。</p>"
+                        }
+                    ],
+                    "llmEnableMemory": false,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": [
+                        {
+                            "key": "subjects",
+                            "type": "stringArray",
+                            "enumValues": "",
+                            "jsonSchema": "",
+                            "description": "Core subjects and scene objects"
+                        },
+                        {
+                            "key": "mustKeep",
+                            "type": "stringArray",
+                            "enumValues": "",
+                            "jsonSchema": "",
+                            "description": "Must-preserve elements and constraints"
+                        },
+                        {
+                            "key": "styleHints",
+                            "type": "stringArray",
+                            "enumValues": "",
+                            "jsonSchema": "",
+                            "description": "Style, material, tone and aesthetic hints"
+                        },
+                        {
+                            "key": "compositionHints",
+                            "type": "stringArray",
+                            "enumValues": "",
+                            "jsonSchema": "",
+                            "description": "Composition, perspective and layout hints"
+                        },
+                        {
+                            "key": "forbidden",
+                            "type": "stringArray",
+                            "enumValues": "",
+                            "jsonSchema": "",
+                            "description": "Things that must not appear"
+                        },
+                        {
+                            "key": "riskNotes",
+                            "type": "stringArray",
+                            "enumValues": "",
+                            "jsonSchema": "",
+                            "description": "Failure modes and drift risks"
+                        }
+                    ],
+                    "llmUpdateState": [
+                        {
+                            "key": "assetAnalysis",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "qwen-plus",
+                        "temperature": 0.2,
+                        "streaming": true,
+                        "allowImageUploads": true,
+                        "imageResolution": "high",
+                        "llmModel": "chatAlibabaTongyi"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_0-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            }
+        },
+        {
+            "id": "llmAgentflow_1",
+            "type": "agentFlow",
+            "position": {
+                "x": 560,
+                "y": 60
+            },
+            "data": {
+                "id": "llmAgentflow_1",
+                "label": "严格构图指令",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "把素材分析转成严格、可执行的 Doubao 单图生成请求",
+                "inputParams": [
+                    {
+                        "label": "Model",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_1-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Messages",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Role",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "System",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "Assistant",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "Developer",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "User",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Content",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_1-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Enable Memory",
+                        "name": "llmEnableMemory",
+                        "type": "boolean",
+                        "description": "Enable memory for the conversation thread",
+                        "default": true,
+                        "optional": true,
+                        "id": "llmAgentflow_1-input-llmEnableMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Type",
+                        "name": "llmMemoryType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Messages",
+                                "name": "allMessages",
+                                "description": "Retrieve all messages from the conversation"
+                            },
+                            {
+                                "label": "Window Size",
+                                "name": "windowSize",
+                                "description": "Uses a fixed window size to surface the last N messages"
+                            },
+                            {
+                                "label": "Conversation Summary",
+                                "name": "conversationSummary",
+                                "description": "Summarizes the whole conversation"
+                            },
+                            {
+                                "label": "Conversation Summary Buffer",
+                                "name": "conversationSummaryBuffer",
+                                "description": "Summarize conversations once token limit is reached. Default to 2000"
+                            }
+                        ],
+                        "optional": true,
+                        "default": "allMessages",
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_1-input-llmMemoryType-options",
+                        "display": false
+                    },
+                    {
+                        "label": "Window Size",
+                        "name": "llmMemoryWindowSize",
+                        "type": "number",
+                        "default": "20",
+                        "description": "Uses a fixed window size to surface the last N messages",
+                        "show": {
+                            "llmMemoryType": "windowSize"
+                        },
+                        "id": "llmAgentflow_1-input-llmMemoryWindowSize-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Max Token Limit",
+                        "name": "llmMemoryMaxTokenLimit",
+                        "type": "number",
+                        "default": "2000",
+                        "description": "Summarize conversations once token limit is reached. Default to 2000",
+                        "show": {
+                            "llmMemoryType": "conversationSummaryBuffer"
+                        },
+                        "id": "llmAgentflow_1-input-llmMemoryMaxTokenLimit-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Input Message",
+                        "name": "llmUserMessage",
+                        "type": "string",
+                        "description": "Add an input message as user message at the end of the conversation",
+                        "rows": 4,
+                        "optional": true,
+                        "acceptVariable": true,
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_1-input-llmUserMessage-string",
+                        "display": false
+                    },
+                    {
+                        "label": "Return Response As",
+                        "name": "llmReturnResponseAs",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "User Message",
+                                "name": "userMessage"
+                            },
+                            {
+                                "label": "Assistant Message",
+                                "name": "assistantMessage"
+                            }
+                        ],
+                        "default": "userMessage",
+                        "id": "llmAgentflow_1-input-llmReturnResponseAs-options",
+                        "display": true
+                    },
+                    {
+                        "label": "JSON Structured Output",
+                        "name": "llmStructuredOutput",
+                        "description": "Instruct the LLM to give output in a JSON structured schema",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "string"
+                            },
+                            {
+                                "label": "Type",
+                                "name": "type",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "String",
+                                        "name": "string"
+                                    },
+                                    {
+                                        "label": "String Array",
+                                        "name": "stringArray"
+                                    },
+                                    {
+                                        "label": "Number",
+                                        "name": "number"
+                                    },
+                                    {
+                                        "label": "Boolean",
+                                        "name": "boolean"
+                                    },
+                                    {
+                                        "label": "Enum",
+                                        "name": "enum"
+                                    },
+                                    {
+                                        "label": "JSON Array",
+                                        "name": "jsonArray"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Enum Values",
+                                "name": "enumValues",
+                                "type": "string",
+                                "placeholder": "value1, value2, value3",
+                                "description": "Enum values. Separated by comma",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "enum"
+                                }
+                            },
+                            {
+                                "label": "JSON Schema",
+                                "name": "jsonSchema",
+                                "type": "code",
+                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
+                                "description": "JSON schema for the structured output",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "jsonArray"
+                                }
+                            },
+                            {
+                                "label": "Description",
+                                "name": "description",
+                                "type": "string",
+                                "placeholder": "Description of the key"
+                            }
+                        ],
+                        "id": "llmAgentflow_1-input-llmStructuredOutput-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "llmUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_1-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatAlibabaTongyi",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是图片生成提示词架构师，需要把素材理解结果转成 <code>doubaoImageTool</code> 可直接执行的单图请求。</p><p>你必须只返回合法 JSON（json）对象，只生成 1 个请求，输出对象必须是 <code>{\"requests\":[...]}</code>。</p><p>规则：</p><ul><li><p>请求字段只允许使用：<code>prompt</code>、<code>size</code>、<code>outputFormat</code>、<code>watermark</code>。</p></li><li><p><code>prompt</code> 必须分成六段，且按这个顺序写：<strong>目标</strong>、<strong>必保留</strong>、<strong>构图</strong>、<strong>光线材质</strong>、<strong>质量要求</strong>、<strong>严禁项</strong>。</p></li><li><p><strong>严禁项</strong> 必须覆盖：不要文字排版、不要 logo、不要水印、不要海报大标题、不要低清晰度伪影。</p></li><li><p>默认生成 1 张最终图，不要输出多候选策略。</p></li><li><p><code>size</code> 默认用 <code>2048x2048</code>；明确横版时优先 <code>2848x1600</code>；明确竖版时优先 <code>1600x2848</code>。</p></li><li><p><code>outputFormat</code> 固定为 <code>png</code>，<code>watermark</code> 固定为 <code>false</code>。</p></li></ul><p>不要输出 Markdown，不要输出额外解释。</p>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>用户需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>素材分析结果：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.assetAnalysis\" data-label=\"$flow.state.assetAnalysis\">{{ $flow.state.assetAnalysis }}</span></p>"
+                        }
+                    ],
+                    "llmEnableMemory": false,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": [
+                        {
+                            "key": "requests",
+                            "type": "jsonArray",
+                            "enumValues": "",
+                            "jsonSchema": "{\n    \"prompt\": {\n        \"type\": \"string\",\n        \"description\": \"Strict production-ready Doubao prompt with six required sections\"\n    },\n    \"size\": {\n        \"type\": \"string\",\n        \"description\": \"Doubao-supported canvas size\"\n    },\n    \"outputFormat\": {\n        \"type\": \"string\",\n        \"description\": \"Use png\"\n    },\n    \"watermark\": {\n        \"type\": \"boolean\",\n        \"description\": \"Use false\"\n    }\n}",
+                            "description": "Single image request for doubaoImageTool"
+                        }
+                    ],
+                    "llmUpdateState": [
+                        {
+                            "key": "draftImageRequests",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "qwen-plus",
+                        "temperature": 0.1,
+                        "streaming": true,
+                        "allowImageUploads": false,
+                        "imageResolution": "low",
+                        "llmModel": "chatAlibabaTongyi"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_1-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            }
+        },
+        {
+            "id": "agentAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 860,
+                "y": 60
+            },
+            "data": {
+                "id": "agentAgentflow_0",
+                "label": "首稿生成",
+                "version": 3.2,
+                "name": "agentAgentflow",
+                "type": "Agent",
+                "color": "#4DD0E1",
+                "baseClasses": ["Agent"],
+                "category": "Agent Flows",
+                "description": "调用 Doubao Image Tool 生成首稿，并把图片作为 artifact 带入后续评审",
+                "inputParams": [
+                    {
+                        "label": "Model",
+                        "name": "agentModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "agentAgentflow_0-input-agentModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Messages",
+                        "name": "agentMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Role",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "System",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "Assistant",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "Developer",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "User",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Content",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "agentAgentflow_0-input-agentMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Tools",
+                        "name": "agentTools",
+                        "type": "array",
+                        "optional": true,
+                        "array": [
+                            {
+                                "label": "Tool",
+                                "name": "agentSelectedTool",
+                                "type": "asyncOptions",
+                                "loadMethod": "listTools",
+                                "loadConfig": true
+                            },
+                            {
+                                "label": "Require Human Input",
+                                "name": "agentSelectedToolRequiresHumanInput",
+                                "type": "boolean",
+                                "optional": true
+                            }
+                        ],
+                        "id": "agentAgentflow_0-input-agentTools-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Knowledge (Document Stores)",
+                        "name": "agentKnowledgeDocumentStores",
+                        "type": "array",
+                        "description": "Give your agent context about different document sources. Document stores must be upserted in advance.",
+                        "array": [
+                            {
+                                "label": "Document Store",
+                                "name": "documentStore",
+                                "type": "asyncOptions",
+                                "loadMethod": "listStores"
+                            },
+                            {
+                                "label": "Describe Knowledge",
+                                "name": "docStoreDescription",
+                                "type": "string",
+                                "generateDocStoreDescription": true,
+                                "placeholder": "Describe what the knowledge base is about, this is useful for the AI to know when and how to search for correct information",
+                                "rows": 4
+                            },
+                            {
+                                "label": "Return Source Documents",
+                                "name": "returnSourceDocuments",
+                                "type": "boolean",
+                                "optional": true
+                            }
+                        ],
+                        "optional": true,
+                        "id": "agentAgentflow_0-input-agentKnowledgeDocumentStores-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Knowledge (Vector Embeddings)",
+                        "name": "agentKnowledgeVSEmbeddings",
+                        "type": "array",
+                        "description": "Give your agent context about different document sources from existing vector stores and embeddings",
+                        "array": [
+                            {
+                                "label": "Vector Store",
+                                "name": "vectorStore",
+                                "type": "asyncOptions",
+                                "loadMethod": "listVectorStores",
+                                "loadConfig": true
+                            },
+                            {
+                                "label": "Embedding Model",
+                                "name": "embeddingModel",
+                                "type": "asyncOptions",
+                                "loadMethod": "listEmbeddings",
+                                "loadConfig": true
+                            },
+                            {
+                                "label": "Knowledge Name",
+                                "name": "knowledgeName",
+                                "type": "string",
+                                "placeholder": "A short name for the knowledge base, this is useful for the AI to know when and how to search for correct information"
+                            },
+                            {
+                                "label": "Describe Knowledge",
+                                "name": "knowledgeDescription",
+                                "type": "string",
+                                "placeholder": "Describe what the knowledge base is about, this is useful for the AI to know when and how to search for correct information",
+                                "rows": 4
+                            },
+                            {
+                                "label": "Return Source Documents",
+                                "name": "returnSourceDocuments",
+                                "type": "boolean",
+                                "optional": true
+                            }
+                        ],
+                        "optional": true,
+                        "id": "agentAgentflow_0-input-agentKnowledgeVSEmbeddings-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Enable Memory",
+                        "name": "agentEnableMemory",
+                        "type": "boolean",
+                        "description": "Enable memory for the conversation thread",
+                        "default": true,
+                        "optional": true,
+                        "id": "agentAgentflow_0-input-agentEnableMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Type",
+                        "name": "agentMemoryType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Messages",
+                                "name": "allMessages",
+                                "description": "Retrieve all messages from the conversation"
+                            },
+                            {
+                                "label": "Window Size",
+                                "name": "windowSize",
+                                "description": "Uses a fixed window size to surface the last N messages"
+                            },
+                            {
+                                "label": "Conversation Summary",
+                                "name": "conversationSummary",
+                                "description": "Summarizes the whole conversation"
+                            },
+                            {
+                                "label": "Conversation Summary Buffer",
+                                "name": "conversationSummaryBuffer",
+                                "description": "Summarize conversations once token limit is reached. Default to 2000"
+                            }
+                        ],
+                        "optional": true,
+                        "default": "allMessages",
+                        "show": {
+                            "agentEnableMemory": true
+                        },
+                        "id": "agentAgentflow_0-input-agentMemoryType-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Window Size",
+                        "name": "agentMemoryWindowSize",
+                        "type": "number",
+                        "default": "20",
+                        "description": "Uses a fixed window size to surface the last N messages",
+                        "show": {
+                            "agentMemoryType": "windowSize"
+                        },
+                        "id": "agentAgentflow_0-input-agentMemoryWindowSize-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Max Token Limit",
+                        "name": "agentMemoryMaxTokenLimit",
+                        "type": "number",
+                        "default": "2000",
+                        "description": "Summarize conversations once token limit is reached. Default to 2000",
+                        "show": {
+                            "agentMemoryType": "conversationSummaryBuffer"
+                        },
+                        "id": "agentAgentflow_0-input-agentMemoryMaxTokenLimit-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Input Message",
+                        "name": "agentUserMessage",
+                        "type": "string",
+                        "description": "Add an input message as user message at the end of the conversation",
+                        "rows": 4,
+                        "optional": true,
+                        "acceptVariable": true,
+                        "show": {
+                            "agentEnableMemory": true
+                        },
+                        "id": "agentAgentflow_0-input-agentUserMessage-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Return Response As",
+                        "name": "agentReturnResponseAs",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "User Message",
+                                "name": "userMessage"
+                            },
+                            {
+                                "label": "Assistant Message",
+                                "name": "assistantMessage"
+                            }
+                        ],
+                        "default": "userMessage",
+                        "id": "agentAgentflow_0-input-agentReturnResponseAs-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "agentUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "agentAgentflow_0-input-agentUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "agentModel": "chatAlibabaTongyi",
+                    "agentMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是图片生成执行代理。</p><p>你只有一个可用工具：<code>doubaoImageTool</code>。</p><p>必须遵守以下规则：</p><ul><li><p>只调用一次工具。</p></li><li><p>调用时直接使用用户提供的 <code>draftImageRequests</code> 作为 <code>imageRequests</code> 参数，不要改写字段名。</p></li><li><p>不要自行补充多候选策略，不要改成组图。</p></li><li><p>工具完成后，你的最终回复必须只返回工具输出的 JSON 内容，不要加解释、不要加 Markdown。</p></li></ul>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>请立即调用图片生成工具生成首稿。</p><p>用户需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>素材分析：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.assetAnalysis\" data-label=\"$flow.state.assetAnalysis\">{{ $flow.state.assetAnalysis }}</span></p><p>draftImageRequests：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.draftImageRequests\" data-label=\"$flow.state.draftImageRequests\">{{ $flow.state.draftImageRequests }}</span></p>"
+                        }
+                    ],
+                    "agentTools": [
+                        {
+                            "agentSelectedTool": "doubaoImageTool",
+                            "agentSelectedToolRequiresHumanInput": "",
+                            "agentSelectedToolConfig": {
+                                "credential": "",
+                                "model": "doubao-seedream-5-0-260128",
+                                "size": "2048x2048",
+                                "outputFormat": "png",
+                                "watermark": false,
+                                "sequentialImageGeneration": "disabled",
+                                "agentSelectedTool": "doubaoImageTool"
+                            }
+                        }
+                    ],
+                    "agentKnowledgeDocumentStores": [],
+                    "agentKnowledgeVSEmbeddings": "",
+                    "agentEnableMemory": false,
+                    "agentMemoryType": "allMessages",
+                    "agentUserMessage": "",
+                    "agentReturnResponseAs": "assistantMessage",
+                    "agentUpdateState": [
+                        {
+                            "key": "draftGenerationResult",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "agentModelConfig": {
+                        "credential": "",
+                        "modelName": "qwen-plus",
+                        "temperature": 0,
+                        "streaming": true,
+                        "allowImageUploads": false,
+                        "imageResolution": "low",
+                        "agentModel": "chatAlibabaTongyi"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "agentAgentflow_0-output-agentAgentflow",
+                        "label": "Agent",
+                        "name": "agentAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            }
+        },
+        {
+            "id": "llmAgentflow_2",
+            "type": "agentFlow",
+            "position": {
+                "x": 1180,
+                "y": 60
+            },
+            "data": {
+                "id": "llmAgentflow_2",
+                "label": "视觉评审",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "结合首稿图片与原始约束，对一致性与成片质量进行评审",
+                "inputParams": [
+                    {
+                        "label": "Model",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_2-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Messages",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Role",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "System",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "Assistant",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "Developer",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "User",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Content",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_2-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Enable Memory",
+                        "name": "llmEnableMemory",
+                        "type": "boolean",
+                        "description": "Enable memory for the conversation thread",
+                        "default": true,
+                        "optional": true,
+                        "id": "llmAgentflow_2-input-llmEnableMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Type",
+                        "name": "llmMemoryType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Messages",
+                                "name": "allMessages",
+                                "description": "Retrieve all messages from the conversation"
+                            },
+                            {
+                                "label": "Window Size",
+                                "name": "windowSize",
+                                "description": "Uses a fixed window size to surface the last N messages"
+                            },
+                            {
+                                "label": "Conversation Summary",
+                                "name": "conversationSummary",
+                                "description": "Summarizes the whole conversation"
+                            },
+                            {
+                                "label": "Conversation Summary Buffer",
+                                "name": "conversationSummaryBuffer",
+                                "description": "Summarize conversations once token limit is reached. Default to 2000"
+                            }
+                        ],
+                        "optional": true,
+                        "default": "allMessages",
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_2-input-llmMemoryType-options",
+                        "display": false
+                    },
+                    {
+                        "label": "Window Size",
+                        "name": "llmMemoryWindowSize",
+                        "type": "number",
+                        "default": "20",
+                        "description": "Uses a fixed window size to surface the last N messages",
+                        "show": {
+                            "llmMemoryType": "windowSize"
+                        },
+                        "id": "llmAgentflow_2-input-llmMemoryWindowSize-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Max Token Limit",
+                        "name": "llmMemoryMaxTokenLimit",
+                        "type": "number",
+                        "default": "2000",
+                        "description": "Summarize conversations once token limit is reached. Default to 2000",
+                        "show": {
+                            "llmMemoryType": "conversationSummaryBuffer"
+                        },
+                        "id": "llmAgentflow_2-input-llmMemoryMaxTokenLimit-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Input Message",
+                        "name": "llmUserMessage",
+                        "type": "string",
+                        "description": "Add an input message as user message at the end of the conversation",
+                        "rows": 4,
+                        "optional": true,
+                        "acceptVariable": true,
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_2-input-llmUserMessage-string",
+                        "display": false
+                    },
+                    {
+                        "label": "Return Response As",
+                        "name": "llmReturnResponseAs",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "User Message",
+                                "name": "userMessage"
+                            },
+                            {
+                                "label": "Assistant Message",
+                                "name": "assistantMessage"
+                            }
+                        ],
+                        "default": "userMessage",
+                        "id": "llmAgentflow_2-input-llmReturnResponseAs-options",
+                        "display": true
+                    },
+                    {
+                        "label": "JSON Structured Output",
+                        "name": "llmStructuredOutput",
+                        "description": "Instruct the LLM to give output in a JSON structured schema",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "string"
+                            },
+                            {
+                                "label": "Type",
+                                "name": "type",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "String",
+                                        "name": "string"
+                                    },
+                                    {
+                                        "label": "String Array",
+                                        "name": "stringArray"
+                                    },
+                                    {
+                                        "label": "Number",
+                                        "name": "number"
+                                    },
+                                    {
+                                        "label": "Boolean",
+                                        "name": "boolean"
+                                    },
+                                    {
+                                        "label": "Enum",
+                                        "name": "enum"
+                                    },
+                                    {
+                                        "label": "JSON Array",
+                                        "name": "jsonArray"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Enum Values",
+                                "name": "enumValues",
+                                "type": "string",
+                                "placeholder": "value1, value2, value3",
+                                "description": "Enum values. Separated by comma",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "enum"
+                                }
+                            },
+                            {
+                                "label": "JSON Schema",
+                                "name": "jsonSchema",
+                                "type": "code",
+                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
+                                "description": "JSON schema for the structured output",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "jsonArray"
+                                }
+                            },
+                            {
+                                "label": "Description",
+                                "name": "description",
+                                "type": "string",
+                                "placeholder": "Description of the key"
+                            }
+                        ],
+                        "id": "llmAgentflow_2-input-llmStructuredOutput-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "llmUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_2-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatAlibabaTongyi",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是严格的视觉质检专家。</p><p>请评审当前对话中最新出现的生成图片，并结合原始需求、素材分析与首稿请求，判断它是否满足预期。</p><p>你必须只返回合法 JSON（json）对象，不要输出额外说明，不要输出 Markdown 代码块。</p><p>评审重点：</p><ul><li><p>是否符合主体、场景、构图和风格约束。</p></li><li><p>是否出现文字排版、logo、水印、海报大标题、低清晰度伪影、主体变形、边缘错误、材质错乱。</p></li><li><p>如果整体可用，也要给出更稳妥的二轮精修补充词。</p></li></ul><p>输出要求：</p><ul><li><p><code>passed</code> 表示是否达到可交付水平。</p></li><li><p><code>score</code> 范围 0-100。</p></li><li><p><code>issues</code> 列出主要问题；没有时可返回空数组。</p></li><li><p><code>preserve</code> 列出二轮精修时必须保留的优点。</p></li><li><p><code>refinePromptAddendum</code> 写成可直接拼到图生图 prompt 末尾的简洁指令，不要重复整段原 prompt。</p></li></ul><p>只输出结构化结果，不要输出额外说明。</p>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>用户需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>素材分析：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.assetAnalysis\" data-label=\"$flow.state.assetAnalysis\">{{ $flow.state.assetAnalysis }}</span></p><p>首稿请求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.draftImageRequests\" data-label=\"$flow.state.draftImageRequests\">{{ $flow.state.draftImageRequests }}</span></p><p>请结合当前对话里最新可见的首稿图片完成视觉评审；如果图片不可见，则退化为基于请求一致性给出保守评审。</p>"
+                        }
+                    ],
+                    "llmEnableMemory": true,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": [
+                        {
+                            "key": "passed",
+                            "type": "boolean",
+                            "enumValues": "",
+                            "jsonSchema": "",
+                            "description": "Whether the image is production-ready"
+                        },
+                        {
+                            "key": "score",
+                            "type": "number",
+                            "enumValues": "",
+                            "jsonSchema": "",
+                            "description": "Overall score from 0 to 100"
+                        },
+                        {
+                            "key": "issues",
+                            "type": "stringArray",
+                            "enumValues": "",
+                            "jsonSchema": "",
+                            "description": "Main issues to fix"
+                        },
+                        {
+                            "key": "preserve",
+                            "type": "stringArray",
+                            "enumValues": "",
+                            "jsonSchema": "",
+                            "description": "Strengths that must be preserved"
+                        },
+                        {
+                            "key": "refinePromptAddendum",
+                            "type": "string",
+                            "enumValues": "",
+                            "jsonSchema": "",
+                            "description": "Short addendum for second-pass image-to-image refinement"
+                        }
+                    ],
+                    "llmUpdateState": [
+                        {
+                            "key": "reviewReport",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "qwen-plus",
+                        "temperature": 0.1,
+                        "streaming": true,
+                        "allowImageUploads": true,
+                        "imageResolution": "high",
+                        "llmModel": "chatAlibabaTongyi"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_2-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            }
+        },
+        {
+            "id": "customFunctionAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 1480,
+                "y": 60
+            },
+            "data": {
+                "id": "customFunctionAgentflow_0",
+                "label": "构造二轮精修请求",
+                "version": 1.1,
+                "name": "customFunctionAgentflow",
+                "type": "CustomFunction",
+                "color": "#E4B7FF",
+                "baseClasses": ["CustomFunction"],
+                "category": "Agent Flows",
+                "description": "从首稿输出与评审结果拼出 Doubao 图生图精修请求",
+                "inputParams": [
+                    {
+                        "label": "Input Variables",
+                        "name": "customFunctionInputVariables",
+                        "description": "Input variables can be used in the function with prefix $. For example: $foo",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Variable Name",
+                                "name": "variableName",
+                                "type": "string"
+                            },
+                            {
+                                "label": "Variable Value",
+                                "name": "variableValue",
+                                "type": "string",
+                                "acceptVariable": true
+                            }
+                        ],
+                        "id": "customFunctionAgentflow_0-input-customFunctionInputVariables-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Javascript Function",
+                        "name": "customFunctionJavascriptFunction",
+                        "type": "code",
+                        "codeExample": "/*\n* You can use any libraries imported in Flowise\n* You can use properties specified in Input Schema as variables. Ex: Property = userid, Variable = $userid\n* You can get default flow config: $flow.sessionId, $flow.chatId, $flow.chatflowId, $flow.input, $flow.state\n* You can get custom variables: $vars.<variable-name>\n* Must return a string value at the end of function\n*/\n\nconst fetch = require('node-fetch');\nconst url = 'https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&current_weather=true';\nconst options = {\n    method: 'GET',\n    headers: {\n        'Content-Type': 'application/json'\n    }\n};\ntry {\n    const response = await fetch(url, options);\n    const text = await response.text();\n    return text;\n} catch (error) {\n    console.error(error);\n    return '';\n}",
+                        "description": "The function to execute. Must return a string or an object that can be converted to a string.",
+                        "id": "customFunctionAgentflow_0-input-customFunctionJavascriptFunction-code",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "customFunctionUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "customFunctionAgentflow_0-input-customFunctionUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "customFunctionInputVariables": [
+                        {
+                            "variableName": "draftImageRequests",
+                            "variableValue": "{{ $flow.state.draftImageRequests }}"
+                        },
+                        {
+                            "variableName": "draftGenerationResult",
+                            "variableValue": "{{ $flow.state.draftGenerationResult }}"
+                        },
+                        {
+                            "variableName": "reviewReport",
+                            "variableValue": "{{ $flow.state.reviewReport }}"
+                        }
+                    ],
+                    "customFunctionJavascriptFunction": "const parseJson = (value) => {\n    if (!value) return {}\n    if (typeof value === 'object') return value\n    const text = String(value).trim()\n    if (!text) return {}\n    const fenced = text.match(/^```(?:json)?\\s*([\\s\\S]*?)\\s*```$/i)\n    const cleaned = fenced ? fenced[1].trim() : text\n    try {\n        return JSON.parse(cleaned)\n    } catch (error) {\n        const start = cleaned.indexOf('{')\n        const end = cleaned.lastIndexOf('}')\n        if (start !== -1 && end !== -1 && end > start) {\n            return JSON.parse(cleaned.slice(start, end + 1))\n        }\n        throw error\n    }\n}\n\nconst draftRequests = parseJson($draftImageRequests)\nconst draftResult = parseJson($draftGenerationResult)\nconst reviewReport = parseJson($reviewReport)\n\nconst firstRequest = Array.isArray(draftRequests.requests) && draftRequests.requests.length ? draftRequests.requests[0] : {}\nconst generatedImages = Array.isArray(draftResult.generatedImages) ? draftResult.generatedImages : []\nconst firstGenerated = generatedImages.length ? generatedImages[0] : {}\nconst fileNames = Array.isArray(firstGenerated.fileNames) ? firstGenerated.fileNames.filter(Boolean) : []\n\nif (!fileNames.length) {\n    throw new Error('No generated image file name found for refinement')\n}\n\nconst basePrompt = typeof firstRequest.prompt === 'string' ? firstRequest.prompt.trim() : ''\nconst refineAddendum = typeof reviewReport.refinePromptAddendum === 'string' ? reviewReport.refinePromptAddendum.trim() : ''\nconst preserve = Array.isArray(reviewReport.preserve) ? reviewReport.preserve.filter(Boolean) : []\nconst preserveText = preserve.length ? `保留优点：${preserve.join('；')}` : ''\n\nconst refinedPrompt = [\n    basePrompt,\n    preserveText,\n    refineAddendum\n].filter(Boolean).join('\\n\\n')\n\nreturn {\n    requests: [\n        {\n            prompt: refinedPrompt || basePrompt,\n            size: firstRequest.size || '2048x2048',\n            outputFormat: firstRequest.outputFormat || 'png',\n            watermark: typeof firstRequest.watermark === 'boolean' ? firstRequest.watermark : false,\n            referenceImageFileNames: [fileNames[0]]\n        }\n    ]\n}",
+                    "customFunctionUpdateState": [
+                        {
+                            "key": "refineImageRequests",
+                            "value": "{{ output }}"
+                        }
+                    ]
+                },
+                "outputAnchors": [
+                    {
+                        "id": "customFunctionAgentflow_0-output-customFunctionAgentflow",
+                        "label": "Custom Function",
+                        "name": "customFunctionAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            }
+        },
+        {
+            "id": "toolAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 1780,
+                "y": 60
+            },
+            "data": {
+                "id": "toolAgentflow_0",
+                "label": "二轮润色",
+                "version": 1.2,
+                "name": "toolAgentflow",
+                "type": "Tool",
+                "color": "#d4a373",
+                "baseClasses": ["Tool"],
+                "category": "Agent Flows",
+                "description": "使用首稿作为参考图执行 Doubao 图生图精修，输出最终图片",
+                "inputParams": [
+                    {
+                        "label": "工具",
+                        "name": "toolAgentflowSelectedTool",
+                        "type": "asyncOptions",
+                        "loadMethod": "listTools",
+                        "loadConfig": true,
+                        "id": "toolAgentflow_0-input-toolAgentflowSelectedTool-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "工具输入参数",
+                        "name": "toolInputArgs",
+                        "type": "array",
+                        "acceptVariable": true,
+                        "refresh": true,
+                        "array": [
+                            {
+                                "label": "输入参数名",
+                                "name": "inputArgName",
+                                "type": "asyncOptions",
+                                "loadMethod": "listToolInputArgs",
+                                "refresh": true
+                            },
+                            {
+                                "label": "输入参数值",
+                                "name": "inputArgValue",
+                                "type": "string",
+                                "acceptVariable": true
+                            }
+                        ],
+                        "id": "toolAgentflow_0-input-toolInputArgs-array",
+                        "display": true
+                    },
+                    {
+                        "label": "更新流程状态",
+                        "name": "toolUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "键",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys"
+                            },
+                            {
+                                "label": "值",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "toolAgentflow_0-input-toolUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "toolAgentflowSelectedTool": "doubaoImageTool",
+                    "toolInputArgs": [
+                        {
+                            "inputArgName": "imageRequests",
+                            "inputArgValue": "{{ $flow.state.refineImageRequests }}"
+                        }
+                    ],
+                    "toolUpdateState": "",
+                    "toolAgentflowSelectedToolConfig": {
+                        "credential": "",
+                        "model": "doubao-seedream-5-0-260128",
+                        "size": "2048x2048",
+                        "outputFormat": "png",
+                        "watermark": false,
+                        "sequentialImageGeneration": "disabled",
+                        "toolAgentflowSelectedTool": "doubaoImageTool"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "toolAgentflow_0-output-toolAgentflow",
+                        "label": "工具",
+                        "name": "toolAgentflow"
+                    }
+                ],
+                "outputs": {}
+            }
+        }
+    ],
+    "edges": [
+        {
+            "source": "startAgentflow_0",
+            "sourceHandle": "startAgentflow_0-output-startAgentflow",
+            "target": "llmAgentflow_0",
+            "targetHandle": "llmAgentflow_0",
+            "data": {
+                "sourceColor": "#7EE787",
+                "targetColor": "#64B5F6",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "startAgentflow_0-startAgentflow_0-output-startAgentflow-llmAgentflow_0-llmAgentflow_0"
+        },
+        {
+            "source": "llmAgentflow_0",
+            "sourceHandle": "llmAgentflow_0-output-llmAgentflow",
+            "target": "llmAgentflow_1",
+            "targetHandle": "llmAgentflow_1",
+            "data": {
+                "sourceColor": "#64B5F6",
+                "targetColor": "#64B5F6",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "llmAgentflow_0-llmAgentflow_0-output-llmAgentflow-llmAgentflow_1-llmAgentflow_1"
+        },
+        {
+            "source": "llmAgentflow_1",
+            "sourceHandle": "llmAgentflow_1-output-llmAgentflow",
+            "target": "agentAgentflow_0",
+            "targetHandle": "agentAgentflow_0",
+            "data": {
+                "sourceColor": "#64B5F6",
+                "targetColor": "#4DD0E1",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "llmAgentflow_1-llmAgentflow_1-output-llmAgentflow-agentAgentflow_0-agentAgentflow_0"
+        },
+        {
+            "source": "agentAgentflow_0",
+            "sourceHandle": "agentAgentflow_0-output-agentAgentflow",
+            "target": "llmAgentflow_2",
+            "targetHandle": "llmAgentflow_2",
+            "data": {
+                "sourceColor": "#4DD0E1",
+                "targetColor": "#64B5F6",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "agentAgentflow_0-agentAgentflow_0-output-agentAgentflow-llmAgentflow_2-llmAgentflow_2"
+        },
+        {
+            "source": "llmAgentflow_2",
+            "sourceHandle": "llmAgentflow_2-output-llmAgentflow",
+            "target": "customFunctionAgentflow_0",
+            "targetHandle": "customFunctionAgentflow_0",
+            "data": {
+                "sourceColor": "#64B5F6",
+                "targetColor": "#E4B7FF",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "llmAgentflow_2-llmAgentflow_2-output-llmAgentflow-customFunctionAgentflow_0-customFunctionAgentflow_0"
+        },
+        {
+            "source": "customFunctionAgentflow_0",
+            "sourceHandle": "customFunctionAgentflow_0-output-customFunctionAgentflow",
+            "target": "toolAgentflow_0",
+            "targetHandle": "toolAgentflow_0",
+            "data": {
+                "sourceColor": "#E4B7FF",
+                "targetColor": "#d4a373",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "customFunctionAgentflow_0-customFunctionAgentflow_0-output-customFunctionAgentflow-toolAgentflow_0-toolAgentflow_0"
+        }
+    ]
+}

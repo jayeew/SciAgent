@@ -46,6 +46,24 @@ const hasConnectedDoubaoMediaModelWithImageInput = (nodes: IReactFlowNode[], edg
 }
 
 const hasConnectedDoubaoVideoWithImageInput = (nodes: IReactFlowNode[], edges: IReactFlowEdge[]): boolean => {
+    const hasAgentflowDoubaoVideoTool = nodes.some((node) => {
+        if (node.data.category !== 'Agent Flows') return false
+
+        if (node.data.name === 'toolAgentflow') {
+            return node.data.inputs?.toolAgentflowSelectedTool === 'doubaoVideoTool'
+        }
+
+        if (node.data.name === 'agentAgentflow' && Array.isArray(node.data.inputs?.agentTools)) {
+            return node.data.inputs.agentTools.some((tool: Record<string, any>) => tool?.agentSelectedTool === 'doubaoVideoTool')
+        }
+
+        return false
+    })
+
+    if (hasAgentflowDoubaoVideoTool) {
+        return true
+    }
+
     const mediaConversationNodeIds = new Set(nodes.filter((node) => node.data.name === 'mediaConversationChain').map((node) => node.id))
 
     if (mediaConversationNodeIds.size === 0) return false

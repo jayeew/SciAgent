@@ -2,6 +2,7 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import {
     ICommonObject,
     IDatabaseEntity,
+    IFileUpload,
     IHumanInput,
     IMessage,
     INode,
@@ -85,6 +86,61 @@ const sanitizeToolName = (name: string): string => {
 
     // Enforce 64 character limit common for tool names
     return sanitized.slice(0, 64)
+}
+
+const toImageUpload = (value: unknown): IFileUpload | undefined => {
+    if (!value || typeof value !== 'object') return undefined
+
+    const upload = value as Partial<IFileUpload>
+    const name = typeof upload.name === 'string' ? upload.name.trim() : ''
+    const mime = typeof upload.mime === 'string' ? upload.mime.trim() : ''
+    const type = typeof upload.type === 'string' ? upload.type.trim() : ''
+
+    if (!name || !mime.startsWith('image/') || !type) return undefined
+
+    return {
+        type,
+        name,
+        mime,
+        ...(typeof upload.data === 'string' ? { data: upload.data } : {})
+    }
+}
+
+const getRecentImageUploadsFromMessages = (messages: BaseMessageLike[]): IFileUpload[] | undefined => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index] as any
+
+        if (Array.isArray(message?.content)) {
+            const contentUploads = message.content.map(toImageUpload).filter(Boolean) as IFileUpload[]
+            if (contentUploads.length) {
+                return contentUploads
+            }
+        }
+
+        const rawFileUploads = message?.additional_kwargs?.fileUploads
+        if (!rawFileUploads) continue
+
+        let parsedFileUploads: unknown[] = []
+        if (Array.isArray(rawFileUploads)) {
+            parsedFileUploads = rawFileUploads
+        } else if (typeof rawFileUploads === 'string') {
+            try {
+                const parsedValue = JSON.parse(rawFileUploads)
+                if (Array.isArray(parsedValue)) {
+                    parsedFileUploads = parsedValue
+                }
+            } catch {
+                parsedFileUploads = []
+            }
+        }
+
+        const additionalUploads = parsedFileUploads.map(toImageUpload).filter(Boolean) as IFileUpload[]
+        if (additionalUploads.length) {
+            return additionalUploads
+        }
+    }
+
+    return undefined
 }
 
 class Agent_Agentflow implements INode {
@@ -1105,6 +1161,10 @@ class Agent_Agentflow implements INode {
             const humanInput: IHumanInput = typeof _humanInput === 'string' ? JSON.parse(_humanInput) : _humanInput
             const humanInputAction = options.humanInputAction
             const iterationContext = options.iterationContext
+            const recentImageUploads = getRecentImageUploadsFromMessages([
+                ...pastImageMessagesWithFileRef,
+                ...runtimeImageMessagesWithFileRef
+            ])
 
             // Track execution time
             const startTime = Date.now()
@@ -1129,6 +1189,7 @@ class Agent_Agentflow implements INode {
                     llmWithoutToolsBind,
                     isStreamable,
                     isLastNode,
+                    recentImageUploads,
                     iterationContext,
                     isStructuredOutput
                 })
@@ -1189,6 +1250,7 @@ class Agent_Agentflow implements INode {
                     llmNodeInstance,
                     isStreamable,
                     isLastNode,
+                    recentImageUploads,
                     iterationContext,
                     isStructuredOutput
                 })
@@ -1995,6 +2057,7 @@ class Agent_Agentflow implements INode {
         llmNodeInstance,
         isStreamable,
         isLastNode,
+        recentImageUploads,
         iterationContext,
         isStructuredOutput = false
     }: {
@@ -2009,6 +2072,7 @@ class Agent_Agentflow implements INode {
         llmNodeInstance: BaseChatModel
         isStreamable: boolean
         isLastNode: boolean
+        recentImageUploads?: IFileUpload[]
         iterationContext: ICommonObject
         isStructuredOutput?: boolean
     }): Promise<{
@@ -2088,7 +2152,8 @@ class Agent_Agentflow implements INode {
                     chatId: options.chatId,
                     orgId: options.orgId,
                     input: input,
-                    state: options.agentflowRuntime?.state
+                    state: options.agentflowRuntime?.state,
+                    recentImageUploads
                 }
 
                 if (isToolRequireHumanInput) {
@@ -2289,6 +2354,7 @@ class Agent_Agentflow implements INode {
                 isStreamable,
                 isLastNode,
                 iterationContext,
+                recentImageUploads,
                 isStructuredOutput
             })
 
@@ -2331,6 +2397,7 @@ class Agent_Agentflow implements INode {
         llmWithoutToolsBind,
         isStreamable,
         isLastNode,
+        recentImageUploads,
         iterationContext,
         isStructuredOutput = false
     }: {
@@ -2346,6 +2413,7 @@ class Agent_Agentflow implements INode {
         llmWithoutToolsBind: BaseChatModel
         isStreamable: boolean
         isLastNode: boolean
+        recentImageUploads?: IFileUpload[]
         iterationContext: ICommonObject
         isStructuredOutput?: boolean
     }): Promise<{
@@ -2445,7 +2513,8 @@ class Agent_Agentflow implements INode {
                     chatId: options.chatId,
                     orgId: options.orgId,
                     input: input,
-                    state: options.agentflowRuntime?.state
+                    state: options.agentflowRuntime?.state,
+                    recentImageUploads
                 }
 
                 if (humanInput.type === 'reject') {
@@ -2640,6 +2709,7 @@ class Agent_Agentflow implements INode {
                 isStreamable,
                 isLastNode,
                 iterationContext,
+                recentImageUploads,
                 isStructuredOutput
             })
 

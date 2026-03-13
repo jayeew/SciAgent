@@ -98,6 +98,20 @@ interface ICredentialGroup {
     calls: IAttributedUsageCall[]
 }
 
+interface IUsageSummaryRow {
+    inputTokens?: number
+    outputTokens?: number
+    totalTokens?: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+    reasoningTokens?: number
+    acceptedPredictionTokens?: number
+    rejectedPredictionTokens?: number
+    audioInputTokens?: number
+    audioOutputTokens?: number
+    usageBreakdown?: Record<string, any>
+}
+
 const createEmptyMetrics = (): ITokenUsageMetrics => ({
     inputTokens: 0,
     outputTokens: 0,
@@ -537,6 +551,55 @@ const parseJsonRecord = (value?: string): Record<string, any> => {
     } catch {
         return {}
     }
+}
+
+const summarizeUsageRows = (rows: IUsageSummaryRow[]): IUsageSummaryRow => {
+    const summary: IUsageSummaryRow = {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        acceptedPredictionTokens: 0,
+        rejectedPredictionTokens: 0,
+        audioInputTokens: 0,
+        audioOutputTokens: 0,
+        usageBreakdown: {}
+    }
+    const breakdownSources = new Set<string>()
+
+    for (const row of rows) {
+        summary.inputTokens = safeToNumber(summary.inputTokens) + safeToNumber(row.inputTokens)
+        summary.outputTokens = safeToNumber(summary.outputTokens) + safeToNumber(row.outputTokens)
+        summary.totalTokens = safeToNumber(summary.totalTokens) + safeToNumber(row.totalTokens)
+        summary.cacheReadTokens = safeToNumber(summary.cacheReadTokens) + safeToNumber(row.cacheReadTokens)
+        summary.cacheWriteTokens = safeToNumber(summary.cacheWriteTokens) + safeToNumber(row.cacheWriteTokens)
+        summary.reasoningTokens = safeToNumber(summary.reasoningTokens) + safeToNumber(row.reasoningTokens)
+        summary.acceptedPredictionTokens = safeToNumber(summary.acceptedPredictionTokens) + safeToNumber(row.acceptedPredictionTokens)
+        summary.rejectedPredictionTokens = safeToNumber(summary.rejectedPredictionTokens) + safeToNumber(row.rejectedPredictionTokens)
+        summary.audioInputTokens = safeToNumber(summary.audioInputTokens) + safeToNumber(row.audioInputTokens)
+        summary.audioOutputTokens = safeToNumber(summary.audioOutputTokens) + safeToNumber(row.audioOutputTokens)
+
+        for (const [key, value] of Object.entries(row.usageBreakdown || {})) {
+            if (key === 'source') {
+                if (typeof value === 'string' && value.trim()) {
+                    breakdownSources.add(value.trim())
+                }
+                continue
+            }
+
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                summary.usageBreakdown![key] = safeToNumber(summary.usageBreakdown?.[key]) + value
+            }
+        }
+    }
+
+    if (breakdownSources.size === 1) {
+        summary.usageBreakdown!.source = Array.from(breakdownSources)[0]
+    }
+
+    return summary
 }
 
 const getAssistantName = (assistant?: Assistant): string | undefined => {
@@ -1288,6 +1351,8 @@ export class TokenUsageService {
         }
 
         const records = executions.map((execution) => {
+            const executionCredentials = credentialByExecution.get(execution.id) || []
+            const credentialSummary = executionCredentials.length ? summarizeUsageRows(executionCredentials) : undefined
             const flowName =
                 execution.flowType === 'ASSISTANT'
                     ? execution.flowId
@@ -1308,19 +1373,23 @@ export class TokenUsageService {
                 chatId: execution.chatId,
                 chatMessageId: execution.chatMessageId,
                 sessionId: execution.sessionId,
-                inputTokens: execution.inputTokens,
-                outputTokens: execution.outputTokens,
-                totalTokens: execution.totalTokens,
-                cacheReadTokens: execution.cacheReadTokens,
-                cacheWriteTokens: execution.cacheWriteTokens,
-                reasoningTokens: execution.reasoningTokens,
-                acceptedPredictionTokens: execution.acceptedPredictionTokens,
-                rejectedPredictionTokens: execution.rejectedPredictionTokens,
-                audioInputTokens: execution.audioInputTokens,
-                audioOutputTokens: execution.audioOutputTokens,
-                usageBreakdown: parseJsonRecord(execution.usageBreakdown),
+                inputTokens: credentialSummary ? safeToNumber(credentialSummary.inputTokens) : execution.inputTokens,
+                outputTokens: credentialSummary ? safeToNumber(credentialSummary.outputTokens) : execution.outputTokens,
+                totalTokens: credentialSummary ? safeToNumber(credentialSummary.totalTokens) : execution.totalTokens,
+                cacheReadTokens: credentialSummary ? safeToNumber(credentialSummary.cacheReadTokens) : execution.cacheReadTokens,
+                cacheWriteTokens: credentialSummary ? safeToNumber(credentialSummary.cacheWriteTokens) : execution.cacheWriteTokens,
+                reasoningTokens: credentialSummary ? safeToNumber(credentialSummary.reasoningTokens) : execution.reasoningTokens,
+                acceptedPredictionTokens: credentialSummary
+                    ? safeToNumber(credentialSummary.acceptedPredictionTokens)
+                    : execution.acceptedPredictionTokens,
+                rejectedPredictionTokens: credentialSummary
+                    ? safeToNumber(credentialSummary.rejectedPredictionTokens)
+                    : execution.rejectedPredictionTokens,
+                audioInputTokens: credentialSummary ? safeToNumber(credentialSummary.audioInputTokens) : execution.audioInputTokens,
+                audioOutputTokens: credentialSummary ? safeToNumber(credentialSummary.audioOutputTokens) : execution.audioOutputTokens,
+                usageBreakdown: credentialSummary?.usageBreakdown || parseJsonRecord(execution.usageBreakdown),
                 modelBreakdown: parseJsonRecord(execution.modelBreakdown),
-                credentials: credentialByExecution.get(execution.id) || []
+                credentials: executionCredentials
             }
         })
 

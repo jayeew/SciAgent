@@ -46,6 +46,7 @@ import { AddCredentialConsumptionMultiplier1765700000000 } from './1765700000000
 import { AddCredentialModelConsumptionMultiplier1765900000000 } from './1765900000000-AddCredentialModelConsumptionMultiplier'
 import { AddCredentialBillingRules1766000000000 } from './1766000000000-AddCredentialBillingRules'
 import { AddTokenUsageAudit1765800000000 } from '../../../enterprise/database/migrations/mariadb/1765800000000-AddTokenUsageAudit'
+import { AddTokenUsageCredentialCalls1765900000000 } from '../../../enterprise/database/migrations/mariadb/1765900000000-AddTokenUsageCredentialCalls'
 
 import { AddAuthTables1720230151482 } from '../../../enterprise/database/migrations/mariadb/1720230151482-AddAuthTables'
 import { AddWorkspace1725437498242 } from '../../../enterprise/database/migrations/mariadb/1725437498242-AddWorkspace'
@@ -120,6 +121,7 @@ export const mariadbMigrations = [
     AddApiKeyPermission1765360298674,
     AddCredentialConsumptionMultiplier1765700000000,
     AddCredentialModelConsumptionMultiplier1765900000000,
+    AddTokenUsageCredentialCalls1765900000000,
     AddCredentialBillingRules1766000000000,
     OwnerRoleFullPermissions1765400000000,
     CredentialOwnerOnlyAndSharedWorkspace1765500000000,

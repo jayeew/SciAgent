@@ -2,6 +2,9 @@ import { TokenUsageCredential } from '../../../src/enterprise/database/entities/
 import { TokenUsageCredentialCall } from '../../../src/enterprise/database/entities/token-usage-credential-call.entity'
 import { TokenUsageExecution } from '../../../src/enterprise/database/entities/token-usage-execution.entity'
 import { WorkspaceCreditTransaction } from '../../../src/enterprise/database/entities/workspace-credit-transaction.entity'
+import { ChatFlow } from '../../../src/database/entities/ChatFlow'
+import { Assistant } from '../../../src/database/entities/Assistant'
+import { User } from '../../../src/enterprise/database/entities/user.entity'
 
 const mockConsumeCreditByCredentialUsages = jest.fn()
 const mockGetRunningExpressApp = jest.fn()
@@ -20,6 +23,30 @@ describe('TokenUsageService', () => {
     beforeEach(() => {
         jest.clearAllMocks()
     })
+
+    const createQueryBuilderMock = <T>(options: { count?: number; many?: T[]; rawOne?: Record<string, any> }) => {
+        const queryBuilder = {
+            where: jest.fn().mockReturnThis(),
+            andWhere: jest.fn().mockReturnThis(),
+            orderBy: jest.fn().mockReturnThis(),
+            skip: jest.fn().mockReturnThis(),
+            take: jest.fn().mockReturnThis(),
+            select: jest.fn().mockReturnThis(),
+            addSelect: jest.fn().mockReturnThis(),
+            clone: jest.fn()
+        }
+
+        queryBuilder.clone.mockImplementation(() => queryBuilder)
+        ;(queryBuilder as any).getCount = jest.fn().mockResolvedValue(options.count ?? 0)
+        ;(queryBuilder as any).getMany = jest.fn().mockResolvedValue(options.many ?? [])
+        ;(queryBuilder as any).getRawOne = jest.fn().mockResolvedValue(options.rawOne ?? {})
+
+        return queryBuilder as typeof queryBuilder & {
+            getCount: jest.Mock
+            getMany: jest.Mock
+            getRawOne: jest.Mock
+        }
+    }
 
     it('groups ordered credential rows but bills each attributed usage separately', async () => {
         const savedExecutions: Record<string, any>[] = []
@@ -234,5 +261,168 @@ describe('TokenUsageService', () => {
             source: 'media_generation'
         })
         expect(billedImageUsage.tokenUsageCredentialCallId).toBe('call-doubao-1')
+    })
+
+    it('uses aggregated credential metrics for record details when credential rows exist', async () => {
+        const executionQueryBuilder = createQueryBuilderMock({
+            count: 1,
+            many: [
+                {
+                    id: 'execution-1',
+                    workspaceId: 'workspace-1',
+                    flowType: 'CHATFLOW',
+                    flowId: 'flow-1',
+                    executionId: 'run-1',
+                    chatId: 'chat-1',
+                    chatMessageId: 'message-1',
+                    sessionId: 'session-1',
+                    inputTokens: 120,
+                    outputTokens: 45,
+                    totalTokens: 165,
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                    reasoningTokens: 0,
+                    acceptedPredictionTokens: 0,
+                    rejectedPredictionTokens: 0,
+                    audioInputTokens: 0,
+                    audioOutputTokens: 0,
+                    usageBreakdown: JSON.stringify({ units: 2 }),
+                    modelBreakdown: JSON.stringify({ 'doubao-seedream-5-0-250821': 165 }),
+                    createdDate: new Date('2026-03-13T02:00:00.000Z')
+                }
+            ],
+            rawOne: {
+                inputTokens: 120,
+                outputTokens: 45,
+                totalTokens: 165,
+                cacheReadTokens: 0,
+                cacheWriteTokens: 0,
+                reasoningTokens: 0,
+                acceptedPredictionTokens: 0,
+                rejectedPredictionTokens: 0,
+                audioInputTokens: 0,
+                audioOutputTokens: 0
+            }
+        })
+
+        const credentialQueryBuilder = createQueryBuilderMock({
+            many: [
+                {
+                    id: 'credential-llm',
+                    usageExecutionId: 'execution-1',
+                    credentialId: 'credential-text',
+                    credentialName: 'Text Credential',
+                    model: 'deepseek-chat',
+                    usageCount: 1,
+                    attributionMode: 'ordered',
+                    inputTokens: 120,
+                    outputTokens: 45,
+                    totalTokens: 165,
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                    reasoningTokens: 0,
+                    acceptedPredictionTokens: 0,
+                    rejectedPredictionTokens: 0,
+                    audioInputTokens: 0,
+                    audioOutputTokens: 0,
+                    usageBreakdown: JSON.stringify({ source: 'usage_metadata' }),
+                    chargedCredit: 100,
+                    createdDate: new Date('2026-03-13T02:00:00.000Z')
+                },
+                {
+                    id: 'credential-image',
+                    usageExecutionId: 'execution-1',
+                    credentialId: 'credential-image',
+                    credentialName: 'Image Credential',
+                    model: 'doubao-seedream-5-0-250821',
+                    usageCount: 1,
+                    attributionMode: 'ordered',
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    totalTokens: 0,
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                    reasoningTokens: 0,
+                    acceptedPredictionTokens: 0,
+                    rejectedPredictionTokens: 0,
+                    audioInputTokens: 0,
+                    audioOutputTokens: 0,
+                    usageBreakdown: JSON.stringify({ units: 2, generated_images: 2, source: 'media_generation' }),
+                    chargedCredit: 220,
+                    createdDate: new Date('2026-03-13T02:00:01.000Z')
+                }
+            ]
+        })
+
+        const credentialCallQueryBuilder = createQueryBuilderMock({
+            many: []
+        })
+
+        mockGetRunningExpressApp.mockReturnValue({
+            AppDataSource: {
+                getRepository: jest.fn((entity: any) => {
+                    if (entity === TokenUsageExecution) {
+                        return {
+                            createQueryBuilder: jest.fn(() => executionQueryBuilder)
+                        }
+                    }
+
+                    if (entity === TokenUsageCredential) {
+                        return {
+                            createQueryBuilder: jest.fn(() => credentialQueryBuilder)
+                        }
+                    }
+
+                    if (entity === TokenUsageCredentialCall) {
+                        return {
+                            createQueryBuilder: jest.fn(() => credentialCallQueryBuilder)
+                        }
+                    }
+
+                    if (entity === ChatFlow) {
+                        return {
+                            findBy: jest.fn().mockResolvedValue([{ id: 'flow-1', name: 'Flow 1' }])
+                        }
+                    }
+
+                    if (entity === Assistant) {
+                        return {
+                            findBy: jest.fn().mockResolvedValue([])
+                        }
+                    }
+
+                    if (entity === User) {
+                        return {
+                            findOneBy: jest.fn().mockResolvedValue({
+                                id: 'user-1',
+                                name: 'User One',
+                                email: 'user@example.com'
+                            })
+                        }
+                    }
+
+                    throw new Error(`Unexpected repository request: ${entity?.name || entity}`)
+                })
+            }
+        })
+
+        const { TokenUsageService } = await import('../../../src/enterprise/services/token-usage.service')
+        const service = new TokenUsageService()
+
+        const result = await service.getUsageDetailsByUser('org-1', 'user-1')
+
+        expect(result.records).toHaveLength(1)
+        expect(result.records[0]).toEqual(
+            expect.objectContaining({
+                inputTokens: 120,
+                outputTokens: 45,
+                totalTokens: 165,
+                flowName: 'Flow 1',
+                usageBreakdown: expect.objectContaining({
+                    units: 2,
+                    generated_images: 2
+                })
+            })
+        )
     })
 })

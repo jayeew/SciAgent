@@ -1,11 +1,11 @@
 import path from 'path'
 import { z } from 'zod'
-import { FILE_ANNOTATIONS_PREFIX, MEDIA_BILLING_PREFIX, TOOL_ARGS_PREFIX, formatToolError } from '../../../src/agents'
+import { ARTIFACTS_PREFIX, FILE_ANNOTATIONS_PREFIX, MEDIA_BILLING_PREFIX, TOOL_ARGS_PREFIX, formatToolError } from '../../../src/agents'
 import { ICommonObject, IFileUpload } from '../../../src/Interface'
 import { IMediaGenerationResult, IMediaVideoSummary } from '../../../src/mediaModels'
 import { parseJsonBody } from '../../../src/utils'
 import { DoubaoVideoModel, normalizeDoubaoVideoRatio, normalizeDoubaoVideoResolution } from '../../mediamodels/DoubaoVideo/core'
-import { DynamicStructuredTool } from '../OpenAPIToolkit/core'
+import { DynamicStructuredTool, IToolFlowConfig } from '../OpenAPIToolkit/core'
 
 export const DoubaoVideoRequestSchema = z.object({
     prompt: z.string().min(1).describe('Video prompt used to generate the clip'),
@@ -56,9 +56,15 @@ export interface IRequestParameters {
 }
 
 interface IGeneratedVideoResult {
+    artifacts: IMediaGenerationResult['artifacts']
     fileAnnotations: Array<{ fileName: string; filePath: string }>
     request: IDoubaoVideoRequest
     videos: IMediaVideoSummary[]
+}
+
+interface IResolvedReferenceImages {
+    referenceImageFileNames: string[]
+    referenceImages?: IFileUpload[]
 }
 
 const getMimeTypeFromFilename = (fileName: string): string => {
@@ -145,11 +151,13 @@ const normalizeVideoRequests = (params: IGenerateDoubaoVideosInput): IDoubaoVide
     throw new Error('videoRequests must be an array, an object with requests[], or a single request object')
 }
 
+const normalizeStoredFileName = (fileName: string): string => fileName.replace(/^FILE-STORAGE::/, '').trim()
+
 const buildReferenceImages = (fileNames?: string[]): IFileUpload[] | undefined => {
     if (!fileNames?.length) return undefined
 
     return fileNames.map((fileName) => {
-        const normalizedFileName = fileName.replace(/^FILE-STORAGE::/, '').trim()
+        const normalizedFileName = normalizeStoredFileName(fileName)
         return {
             type: 'stored-file',
             name: `FILE-STORAGE::${normalizedFileName}`,
@@ -157,6 +165,87 @@ const buildReferenceImages = (fileNames?: string[]): IFileUpload[] | undefined =
             data: ''
         }
     })
+}
+
+const normalizeReferenceImageFileNames = (fileNames?: string[]): string[] => {
+    if (!fileNames?.length) return []
+
+    return fileNames.map(normalizeStoredFileName).filter(Boolean)
+}
+
+const normalizeReferenceUpload = (upload: IFileUpload): IFileUpload | undefined => {
+    if (!upload?.mime?.startsWith('image/')) return undefined
+
+    if (upload.type === 'stored-file') {
+        const normalizedFileName = normalizeStoredFileName(upload.name)
+        if (!normalizedFileName) return undefined
+
+        return {
+            type: 'stored-file',
+            name: `FILE-STORAGE::${normalizedFileName}`,
+            mime: upload.mime || getMimeTypeFromFilename(normalizedFileName),
+            data: upload.data || ''
+        }
+    }
+
+    if (upload.type === 'url') {
+        if (!upload.data?.trim()) return undefined
+
+        return {
+            type: 'url',
+            name: upload.name,
+            mime: upload.mime,
+            data: upload.data
+        }
+    }
+
+    return {
+        ...upload
+    }
+}
+
+const getReferenceImageDisplayName = (upload: IFileUpload): string => {
+    if (upload.type === 'stored-file') {
+        return normalizeStoredFileName(upload.name)
+    }
+
+    return upload.name?.trim() || 'reference-image'
+}
+
+const resolveReferenceImages = (
+    request: IDoubaoVideoRequest,
+    params: IGenerateDoubaoVideosInput,
+    flowConfig?: IToolFlowConfig
+): IResolvedReferenceImages => {
+    const explicitReferenceImageFileNames = normalizeReferenceImageFileNames(
+        request.referenceImageFileNames || params.referenceImageFileNames
+    )
+
+    if (explicitReferenceImageFileNames.length) {
+        return {
+            referenceImages: buildReferenceImages(explicitReferenceImageFileNames),
+            referenceImageFileNames: explicitReferenceImageFileNames
+        }
+    }
+
+    const candidateUploads = (flowConfig?.recentImageUploads || flowConfig?.uploads || [])
+        .map(normalizeReferenceUpload)
+        .filter(Boolean) as IFileUpload[]
+
+    if (!candidateUploads.length) {
+        return {
+            referenceImageFileNames: []
+        }
+    }
+
+    if (candidateUploads.length > 2) {
+        throw new Error('最多只能自动使用 2 张人物参考图，请保留最新上传中的 1-2 张图片后再生成视频。')
+    }
+
+    return {
+        referenceImages: candidateUploads,
+        referenceImageFileNames: candidateUploads.map(getReferenceImageDisplayName)
+    }
 }
 
 const extractFileAnnotations = (result: IMediaGenerationResult): Array<{ fileName: string; filePath: string }> => {
@@ -226,11 +315,7 @@ class GenerateDoubaoVideosTool extends DynamicStructuredTool<typeof GenerateDoub
         this.mediaModel = args.mediaModel
     }
 
-    protected async _call(
-        arg: z.output<typeof GenerateDoubaoVideosSchema>,
-        _: unknown,
-        flowConfig?: { sessionId?: string; chatId?: string; chatflowId?: string; orgId?: string; state?: ICommonObject }
-    ): Promise<string> {
+    protected async _call(arg: z.output<typeof GenerateDoubaoVideosSchema>, _: unknown, flowConfig?: IToolFlowConfig): Promise<string> {
         const params = {
             ...this.defaultParams,
             ...arg
@@ -253,32 +338,34 @@ class GenerateDoubaoVideosTool extends DynamicStructuredTool<typeof GenerateDoub
 
             for (const request of requests) {
                 try {
+                    const { referenceImages, referenceImageFileNames } = resolveReferenceImages(request, params, flowConfig)
+                    const effectiveRequest = {
+                        ...request,
+                        ...(referenceImageFileNames.length ? { referenceImageFileNames } : {})
+                    }
+
                     const result = await this.mediaModel.invoke(
                         {
-                            prompt: request.prompt,
-                            ...(request.ratio || params.ratio ? { ratio: normalizeDoubaoVideoRatio(request.ratio || params.ratio) } : {}),
-                            ...(request.resolution || params.resolution
-                                ? { resolution: normalizeDoubaoVideoResolution(request.resolution || params.resolution) }
+                            prompt: effectiveRequest.prompt,
+                            ...(effectiveRequest.ratio || params.ratio
+                                ? { ratio: normalizeDoubaoVideoRatio(effectiveRequest.ratio || params.ratio) }
                                 : {}),
-                            ...(typeof request.duration === 'number' || typeof params.duration === 'number'
-                                ? { duration: request.duration ?? params.duration }
+                            ...(effectiveRequest.resolution || params.resolution
+                                ? { resolution: normalizeDoubaoVideoResolution(effectiveRequest.resolution || params.resolution) }
                                 : {}),
-                            ...(typeof request.seed === 'number' || typeof params.seed === 'number'
-                                ? { seed: request.seed ?? params.seed }
+                            ...(typeof effectiveRequest.duration === 'number' || typeof params.duration === 'number'
+                                ? { duration: effectiveRequest.duration ?? params.duration }
                                 : {}),
-                            ...(typeof request.cameraFixed === 'boolean' || typeof params.cameraFixed === 'boolean'
-                                ? { cameraFixed: request.cameraFixed ?? params.cameraFixed }
+                            ...(typeof effectiveRequest.seed === 'number' || typeof params.seed === 'number'
+                                ? { seed: effectiveRequest.seed ?? params.seed }
                                 : {}),
-                            ...(typeof request.watermark === 'boolean' || typeof params.watermark === 'boolean'
-                                ? { watermark: request.watermark ?? params.watermark }
+                            ...(typeof effectiveRequest.cameraFixed === 'boolean' || typeof params.cameraFixed === 'boolean'
+                                ? { cameraFixed: effectiveRequest.cameraFixed ?? params.cameraFixed }
                                 : {}),
-                            ...(request.referenceImageFileNames?.length || params.referenceImageFileNames?.length
-                                ? {
-                                      referenceImages: buildReferenceImages(
-                                          request.referenceImageFileNames || params.referenceImageFileNames
-                                      )
-                                  }
-                                : {})
+                            ...(typeof effectiveRequest.watermark === 'boolean' || typeof params.watermark === 'boolean'
+                                ? { watermark: effectiveRequest.watermark ?? params.watermark }
+                                : {}),
+                            ...(referenceImages?.length ? { referenceImages } : {})
                         },
                         {
                             chatflowid: flowConfig?.chatflowId,
@@ -295,7 +382,8 @@ class GenerateDoubaoVideosTool extends DynamicStructuredTool<typeof GenerateDoub
                     }
 
                     generatedVideos.push({
-                        request,
+                        artifacts: result.artifacts,
+                        request: effectiveRequest,
                         fileAnnotations,
                         videos
                     })
@@ -308,8 +396,13 @@ class GenerateDoubaoVideosTool extends DynamicStructuredTool<typeof GenerateDoub
                         throw error
                     }
 
-                    warnings.push(`Failed to generate video for prompt: ${request.prompt}`)
+                    const errorMessage = error instanceof Error ? error.message : String(error)
+                    warnings.push(`Failed to generate video for prompt "${request.prompt}": ${errorMessage}`)
                 }
+            }
+
+            if (!generatedVideos.length && warnings.length) {
+                throw new Error(warnings.join('\n'))
             }
 
             const toolOutput = {
@@ -325,10 +418,13 @@ class GenerateDoubaoVideosTool extends DynamicStructuredTool<typeof GenerateDoub
                 warnings
             }
 
+            const allArtifacts = generatedVideos.flatMap((generatedVideo) => generatedVideo.artifacts)
             const allFileAnnotations = generatedVideos.flatMap((generatedVideo) => generatedVideo.fileAnnotations)
 
             return (
                 JSON.stringify(toolOutput, null, 2) +
+                ARTIFACTS_PREFIX +
+                JSON.stringify(allArtifacts) +
                 FILE_ANNOTATIONS_PREFIX +
                 JSON.stringify(allFileAnnotations) +
                 MEDIA_BILLING_PREFIX +

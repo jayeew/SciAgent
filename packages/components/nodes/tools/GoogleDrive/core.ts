@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import fetch from 'node-fetch'
 import { DynamicStructuredTool } from '../OpenAPIToolkit/core'
-import { TOOL_ARGS_PREFIX, formatToolError } from '../../../src/agents'
+import { FILE_ANNOTATIONS_PREFIX, TOOL_ARGS_PREFIX, formatToolError } from '../../../src/agents'
+import { addSingleFileToStorage } from '../../../src/storageUtils'
 
 export const desc = `Use this when you want to access Google Drive API for managing files and folders`
 
@@ -85,6 +86,17 @@ const DownloadFileSchema = z.object({
         .boolean()
         .optional()
         .describe('Whether the user is acknowledging the risk of downloading known malware or other abusive files'),
+    supportsAllDrives: z.boolean().optional().describe('Whether the requesting application supports both My Drives and shared drives')
+})
+
+const ExportFileSchema = z.object({
+    fileId: z.string().describe('Google Workspace file ID to export'),
+    mimeType: z
+        .string()
+        .optional()
+        .default('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        .describe('Target export MIME type. Use application/vnd.openxmlformats-officedocument.wordprocessingml.document for DOCX.'),
+    name: z.string().optional().describe('Optional output file name for the exported file'),
     supportsAllDrives: z.boolean().optional().describe('Whether the requesting application supports both My Drives and shared drives')
 })
 
@@ -584,6 +596,143 @@ class DownloadFileTool extends BaseGoogleDriveTool {
     }
 }
 
+const getFileExtensionForMimeType = (mimeType: string): string => {
+    switch (mimeType) {
+        case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+            return '.docx'
+        case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+            return '.xlsx'
+        case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+            return '.pptx'
+        case 'application/pdf':
+            return '.pdf'
+        case 'text/plain':
+            return '.txt'
+        case 'text/html':
+            return '.html'
+        case 'text/markdown':
+            return '.md'
+        default:
+            return ''
+    }
+}
+
+const normalizeExportFileName = (fileName: string, mimeType: string): string => {
+    const trimmedFileName = fileName.trim()
+    const extension = getFileExtensionForMimeType(mimeType)
+
+    if (!extension || trimmedFileName.toLowerCase().endsWith(extension.toLowerCase())) {
+        return trimmedFileName
+    }
+
+    return `${trimmedFileName}${extension}`
+}
+
+class ExportFileTool extends BaseGoogleDriveTool {
+    defaultParams: any
+
+    constructor(args: any) {
+        const toolInput = {
+            name: 'export_file',
+            description: 'Export a Google Workspace file such as Google Docs to a downloadable format like DOCX',
+            schema: ExportFileSchema,
+            baseUrl: '',
+            method: 'GET',
+            headers: {}
+        }
+        super({
+            ...toolInput,
+            accessToken: args.accessToken
+        })
+        this.defaultParams = args.defaultParams || {}
+    }
+
+    async _call(
+        arg: any,
+        _: unknown,
+        flowConfig?: { sessionId?: string; chatId?: string; chatflowId?: string; orgId?: string }
+    ): Promise<string> {
+        const params = { ...arg, ...this.defaultParams }
+
+        try {
+            if (!flowConfig?.chatflowId || !flowConfig?.chatId) {
+                throw new Error('chatflowId and chatId are required to export and store Google Drive files')
+            }
+
+            const metadataQueryParams = new URLSearchParams()
+            metadataQueryParams.append('fields', 'id,name,mimeType')
+            if (params.supportsAllDrives) metadataQueryParams.append('supportsAllDrives', params.supportsAllDrives.toString())
+
+            const metadataEndpoint = `files/${encodeURIComponent(params.fileId)}?${metadataQueryParams.toString()}`
+            const metadataResponse = await this.makeGoogleDriveRequest({
+                endpoint: metadataEndpoint,
+                params
+            })
+            const fileMetadata = JSON.parse(metadataResponse.split(TOOL_ARGS_PREFIX)[0])
+
+            const exportMimeType = params.mimeType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            const exportQueryParams = new URLSearchParams()
+            exportQueryParams.append('mimeType', exportMimeType)
+            if (params.supportsAllDrives) exportQueryParams.append('supportsAllDrives', params.supportsAllDrives.toString())
+
+            const exportUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+                params.fileId
+            )}/export?${exportQueryParams.toString()}`
+            const response = await fetch(exportUrl, {
+                method: 'GET',
+                headers: {
+                    Authorization: `Bearer ${this.accessToken}`
+                }
+            })
+
+            if (!response.ok) {
+                const errorText = await response.text()
+                throw new Error(`Google Drive export failed ${response.status}: ${response.statusText} - ${errorText}`)
+            }
+
+            const arrayBuffer = await response.arrayBuffer()
+            const buffer = Buffer.from(arrayBuffer)
+            const requestedFileName = params.name || fileMetadata.name || `exported-${params.fileId}`
+            const outputFileName = normalizeExportFileName(requestedFileName, exportMimeType)
+            const storagePaths = [flowConfig.orgId, flowConfig.chatflowId, flowConfig.chatId].filter(Boolean) as string[]
+            const savedFile = await addSingleFileToStorage(exportMimeType, buffer, outputFileName, ...storagePaths)
+            const storedFileName = savedFile.path.replace('FILE-STORAGE::', '')
+            const googleDocUrl = `https://docs.google.com/document/d/${params.fileId}/edit`
+
+            return (
+                JSON.stringify(
+                    {
+                        sourceFileId: params.fileId,
+                        sourceFileName: fileMetadata.name || '',
+                        sourceMimeType: fileMetadata.mimeType || '',
+                        googleDocUrl,
+                        exportedMimeType: exportMimeType,
+                        exportedFileName: storedFileName,
+                        exportedFilePath: savedFile.path
+                    },
+                    null,
+                    2
+                ) +
+                FILE_ANNOTATIONS_PREFIX +
+                JSON.stringify([
+                    {
+                        filePath: savedFile.path,
+                        fileName: storedFileName
+                    }
+                ]) +
+                TOOL_ARGS_PREFIX +
+                JSON.stringify({
+                    fileId: params.fileId,
+                    mimeType: exportMimeType,
+                    outputFileName: storedFileName
+                })
+            )
+        } catch (error) {
+            return formatToolError(`Error exporting file: ${error}`, params)
+        }
+    }
+}
+
 class CreateFolderTool extends BaseGoogleDriveTool {
     defaultParams: any
 
@@ -948,6 +1097,10 @@ export const createGoogleDriveTools = (args?: RequestParameters): DynamicStructu
 
     if (actions.includes('downloadFile')) {
         tools.push(new DownloadFileTool({ accessToken, defaultParams }))
+    }
+
+    if (actions.includes('exportFile')) {
+        tools.push(new ExportFileTool({ accessToken, defaultParams }))
     }
 
     if (actions.includes('createFolder')) {

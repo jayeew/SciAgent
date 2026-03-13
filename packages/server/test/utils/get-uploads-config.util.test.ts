@@ -144,4 +144,46 @@ describe('utilGetUploadsConfig', () => {
         expect(result.imageUploadHint).toBeUndefined()
         expect(result.imgUploadSizeAndTypes).toEqual([])
     })
+
+    it('shows Doubao Video upload hint for agentflows that use doubaoVideoTool', async () => {
+        mockChatflowLookup({
+            nodes: [
+                createNode('start-1', {
+                    name: 'startAgentflow',
+                    type: 'Start',
+                    category: 'Agent Flows',
+                    inputs: {},
+                    inputParams: []
+                }),
+                createNode('agent-1', {
+                    name: 'agentAgentflow',
+                    type: 'Agent',
+                    category: 'Agent Flows',
+                    inputs: {
+                        agentModelConfig: {
+                            allowImageUploads: true
+                        },
+                        agentTools: [
+                            {
+                                agentSelectedTool: 'doubaoVideoTool'
+                            }
+                        ]
+                    },
+                    inputParams: []
+                })
+            ],
+            edges: []
+        })
+
+        const result = await utilGetUploadsConfig('flow-1')
+
+        expect(result.isImageUploadAllowed).toBe(true)
+        expect(result.imageUploadHint).toBe('Doubao Video 上传提示：最多上传两张图片，第一张=首帧，第二张=尾帧。')
+        expect(result.imgUploadSizeAndTypes).toEqual([
+            {
+                fileTypes: ['image/gif', 'image/jpeg', 'image/png', 'image/webp'],
+                maxUploadSize: 5
+            }
+        ])
+    })
 })

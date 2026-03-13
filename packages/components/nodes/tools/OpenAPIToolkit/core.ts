@@ -4,7 +4,7 @@ import { RunnableConfig } from '@langchain/core/runnables'
 import { StructuredTool, ToolParams } from '@langchain/core/tools'
 import { CallbackManagerForToolRun, Callbacks, CallbackManager, parseCallbackConfigArg } from '@langchain/core/callbacks/manager'
 import { executeJavaScriptCode, createCodeExecutionSandbox, parseWithTypeConversion } from '../../../src/utils'
-import { ICommonObject } from '../../../src/Interface'
+import { ICommonObject, IFileUpload } from '../../../src/Interface'
 
 const removeNulls = (obj: Record<string, any>) => {
     Object.keys(obj).forEach((key) => {
@@ -121,6 +121,18 @@ export interface DynamicStructuredToolInput<
     removeNulls?: boolean
 }
 
+export interface IToolFlowConfig {
+    sessionId?: string
+    chatId?: string
+    chatflowid?: string
+    chatflowId?: string
+    orgId?: string
+    input?: string
+    state?: ICommonObject
+    uploads?: IFileUpload[]
+    recentImageUploads?: IFileUpload[]
+}
+
 export class DynamicStructuredTool<
     // eslint-disable-next-line
     T extends z.ZodObject<any, any, any, any> = z.ZodObject<any, any, any, any>
@@ -162,12 +174,7 @@ export class DynamicStructuredTool<
         this.removeNulls = fields.removeNulls ?? false
     }
 
-    async call(
-        arg: z.output<T>,
-        configArg?: RunnableConfig | Callbacks,
-        tags?: string[],
-        flowConfig?: { sessionId?: string; chatId?: string; input?: string; state?: ICommonObject }
-    ): Promise<string> {
+    async call(arg: z.output<T>, configArg?: RunnableConfig | Callbacks, tags?: string[], flowConfig?: IToolFlowConfig): Promise<string> {
         const config = parseCallbackConfigArg(configArg)
         if (config.runName === undefined) {
             config.runName = this.name
@@ -211,11 +218,7 @@ export class DynamicStructuredTool<
     }
 
     // @ts-ignore
-    protected async _call(
-        arg: z.output<T>,
-        _?: CallbackManagerForToolRun,
-        flowConfig?: { sessionId?: string; chatId?: string; input?: string; state?: ICommonObject }
-    ): Promise<string> {
+    protected async _call(arg: z.output<T>, _?: CallbackManagerForToolRun, flowConfig?: IToolFlowConfig): Promise<string> {
         let processedArg = { ...arg }
 
         if (this.removeNulls && typeof processedArg === 'object' && processedArg !== null) {

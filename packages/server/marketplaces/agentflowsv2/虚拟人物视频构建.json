@@ -1,0 +1,567 @@
+{
+    "description": "一个中文 Agentflow V2 模板：通过多轮对话明确人物形象、话术与风格，在用户确认后调用 Doubao Video Tool 生成虚拟人物短视频。",
+    "usecases": ["视频生成", "虚拟人物", "多轮交互", "人机协同"],
+    "nodes": [
+        {
+            "id": "startAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 80,
+                "y": 180
+            },
+            "data": {
+                "id": "startAgentflow_0",
+                "label": "开始",
+                "version": 1.1,
+                "name": "startAgentflow",
+                "type": "Start",
+                "color": "#7EE787",
+                "hideInput": true,
+                "baseClasses": ["Start"],
+                "category": "Agent Flows",
+                "description": "虚拟人物视频构建流程的起始节点",
+                "inputParams": [
+                    {
+                        "label": "Input Type",
+                        "name": "startInputType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "Chat Input",
+                                "name": "chatInput",
+                                "description": "Start the conversation with chat input"
+                            },
+                            {
+                                "label": "Form Input",
+                                "name": "formInput",
+                                "description": "Start the workflow with form inputs"
+                            }
+                        ],
+                        "default": "chatInput",
+                        "id": "startAgentflow_0-input-startInputType-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Form Title",
+                        "name": "formTitle",
+                        "type": "string",
+                        "placeholder": "Please Fill Out The Form",
+                        "show": {
+                            "startInputType": "formInput"
+                        },
+                        "id": "startAgentflow_0-input-formTitle-string",
+                        "display": false
+                    },
+                    {
+                        "label": "Form Description",
+                        "name": "formDescription",
+                        "type": "string",
+                        "placeholder": "Complete all fields below to continue",
+                        "show": {
+                            "startInputType": "formInput"
+                        },
+                        "id": "startAgentflow_0-input-formDescription-string",
+                        "display": false
+                    },
+                    {
+                        "label": "Form Input Types",
+                        "name": "formInputTypes",
+                        "description": "Specify the type of form input",
+                        "type": "array",
+                        "show": {
+                            "startInputType": "formInput"
+                        },
+                        "array": [
+                            {
+                                "label": "Type",
+                                "name": "type",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "String",
+                                        "name": "string"
+                                    },
+                                    {
+                                        "label": "Number",
+                                        "name": "number"
+                                    },
+                                    {
+                                        "label": "Boolean",
+                                        "name": "boolean"
+                                    },
+                                    {
+                                        "label": "Options",
+                                        "name": "options"
+                                    }
+                                ],
+                                "default": "string"
+                            },
+                            {
+                                "label": "Label",
+                                "name": "label",
+                                "type": "string",
+                                "placeholder": "Label for the input"
+                            },
+                            {
+                                "label": "Variable Name",
+                                "name": "name",
+                                "type": "string",
+                                "placeholder": "Variable name for the input (must be camel case)",
+                                "description": "Variable name must be camel case. For example: firstName, lastName, etc."
+                            },
+                            {
+                                "label": "Add Options",
+                                "name": "addOptions",
+                                "type": "array",
+                                "show": {
+                                    "formInputTypes[$index].type": "options"
+                                },
+                                "array": [
+                                    {
+                                        "label": "Option",
+                                        "name": "option",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        ],
+                        "id": "startAgentflow_0-input-formInputTypes-array",
+                        "display": false
+                    },
+                    {
+                        "label": "Ephemeral Memory",
+                        "name": "startEphemeralMemory",
+                        "type": "boolean",
+                        "description": "Start fresh for every execution without past chat history",
+                        "optional": true,
+                        "id": "startAgentflow_0-input-startEphemeralMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Flow State",
+                        "name": "startState",
+                        "description": "Runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "string",
+                                "placeholder": "Foo"
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "placeholder": "Bar",
+                                "optional": true
+                            }
+                        ],
+                        "id": "startAgentflow_0-input-startState-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Persist State",
+                        "name": "startPersistState",
+                        "type": "boolean",
+                        "description": "Persist the state in the same session",
+                        "optional": true,
+                        "id": "startAgentflow_0-input-startPersistState-boolean",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "startInputType": "chatInput",
+                    "formTitle": "",
+                    "formDescription": "",
+                    "formInputTypes": "",
+                    "startEphemeralMemory": "",
+                    "startState": [],
+                    "startPersistState": true
+                },
+                "outputAnchors": [
+                    {
+                        "id": "startAgentflow_0-output-startAgentflow",
+                        "label": "开始",
+                        "name": "startAgentflow"
+                    }
+                ],
+                "outputs": {}
+            },
+            "width": 175,
+            "height": 65,
+            "selected": false,
+            "positionAbsolute": {
+                "x": 80,
+                "y": 180
+            },
+            "dragging": false
+        },
+        {
+            "id": "agentAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 380,
+                "y": 150
+            },
+            "data": {
+                "id": "agentAgentflow_0",
+                "label": "虚拟人物视频构建 Agent",
+                "version": 3.2,
+                "name": "agentAgentflow",
+                "type": "Agent",
+                "color": "#4DD0E1",
+                "baseClasses": ["Agent"],
+                "category": "Agent Flows",
+                "description": "多轮采集人物形象、话术和风格，确认后调用 Doubao Video Tool 生成视频",
+                "inputParams": [
+                    {
+                        "label": "Model",
+                        "name": "agentModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "agentAgentflow_0-input-agentModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Messages",
+                        "name": "agentMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Role",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "System",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "Assistant",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "Developer",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "User",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Content",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "agentAgentflow_0-input-agentMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Tools",
+                        "name": "agentTools",
+                        "type": "array",
+                        "optional": true,
+                        "array": [
+                            {
+                                "label": "Tool",
+                                "name": "agentSelectedTool",
+                                "type": "asyncOptions",
+                                "loadMethod": "listTools",
+                                "loadConfig": true
+                            },
+                            {
+                                "label": "Require Human Input",
+                                "name": "agentSelectedToolRequiresHumanInput",
+                                "type": "boolean",
+                                "optional": true
+                            }
+                        ],
+                        "id": "agentAgentflow_0-input-agentTools-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Knowledge (Document Stores)",
+                        "name": "agentKnowledgeDocumentStores",
+                        "type": "array",
+                        "description": "Give your agent context about different document sources. Document stores must be upserted in advance.",
+                        "array": [
+                            {
+                                "label": "Document Store",
+                                "name": "documentStore",
+                                "type": "asyncOptions",
+                                "loadMethod": "listStores"
+                            },
+                            {
+                                "label": "Describe Knowledge",
+                                "name": "docStoreDescription",
+                                "type": "string",
+                                "generateDocStoreDescription": true,
+                                "placeholder": "Describe what the document store contains. This will be used by the agent to decide which tool to use."
+                            },
+                            {
+                                "label": "Return Source Documents",
+                                "name": "returnSourceDocuments",
+                                "type": "boolean",
+                                "optional": true
+                            }
+                        ],
+                        "id": "agentAgentflow_0-input-agentKnowledgeDocumentStores-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Knowledge (Vector Store with Embeddings)",
+                        "name": "agentKnowledgeVSEmbeddings",
+                        "type": "array",
+                        "description": "Give your agent context about different vector stores with embeddings. Vector stores must be upserted in advance.",
+                        "optional": true,
+                        "array": [
+                            {
+                                "label": "Vector Store",
+                                "name": "vectorStore",
+                                "type": "asyncOptions",
+                                "loadMethod": "listVectorStores"
+                            },
+                            {
+                                "label": "Embedding Model",
+                                "name": "embeddingModel",
+                                "type": "asyncOptions",
+                                "loadMethod": "listEmbeddingModels",
+                                "loadConfig": true
+                            },
+                            {
+                                "label": "Knowledge Name",
+                                "name": "knowledgeName",
+                                "type": "string",
+                                "placeholder": "Short name for this knowledge source"
+                            },
+                            {
+                                "label": "Describe Knowledge",
+                                "name": "knowledgeDescription",
+                                "type": "string",
+                                "placeholder": "Describe what this knowledge source contains. This will be used by the agent to decide which tool to use."
+                            },
+                            {
+                                "label": "Return Source Documents",
+                                "name": "returnSourceDocuments",
+                                "type": "boolean",
+                                "optional": true
+                            }
+                        ],
+                        "id": "agentAgentflow_0-input-agentKnowledgeVSEmbeddings-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory",
+                        "name": "agentEnableMemory",
+                        "type": "boolean",
+                        "optional": true,
+                        "id": "agentAgentflow_0-input-agentEnableMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Type",
+                        "name": "agentMemoryType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Messages",
+                                "name": "allMessages",
+                                "description": "Retrieve all messages from the conversation"
+                            },
+                            {
+                                "label": "Window Size",
+                                "name": "windowSize",
+                                "description": "Uses a fixed window size to surface the last N messages"
+                            },
+                            {
+                                "label": "Conversation Summary",
+                                "name": "conversationSummary",
+                                "description": "Summarizes the whole conversation"
+                            },
+                            {
+                                "label": "Conversation Summary Buffer",
+                                "name": "conversationSummaryBuffer",
+                                "description": "Summarize conversations once token limit is reached. Default to 2000"
+                            }
+                        ],
+                        "optional": true,
+                        "default": "allMessages",
+                        "show": {
+                            "agentEnableMemory": true
+                        },
+                        "id": "agentAgentflow_0-input-agentMemoryType-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Window Size",
+                        "name": "agentMemoryWindowSize",
+                        "type": "number",
+                        "default": "5",
+                        "description": "Retrieve the last N messages from the conversation. Default to 5",
+                        "show": {
+                            "agentMemoryType": "windowSize"
+                        },
+                        "id": "agentAgentflow_0-input-agentMemoryWindowSize-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Max Token Limit",
+                        "name": "agentMemoryMaxTokenLimit",
+                        "type": "number",
+                        "default": "2000",
+                        "description": "Summarize conversations once token limit is reached. Default to 2000",
+                        "show": {
+                            "agentMemoryType": "conversationSummaryBuffer"
+                        },
+                        "id": "agentAgentflow_0-input-agentMemoryMaxTokenLimit-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Input Message",
+                        "name": "agentUserMessage",
+                        "type": "string",
+                        "description": "Add an input message as user message at the end of the conversation",
+                        "rows": 4,
+                        "optional": true,
+                        "acceptVariable": true,
+                        "show": {
+                            "agentEnableMemory": true
+                        },
+                        "id": "agentAgentflow_0-input-agentUserMessage-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Return Response As",
+                        "name": "agentReturnResponseAs",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "User Message",
+                                "name": "userMessage"
+                            },
+                            {
+                                "label": "Assistant Message",
+                                "name": "assistantMessage"
+                            }
+                        ],
+                        "default": "userMessage",
+                        "id": "agentAgentflow_0-input-agentReturnResponseAs-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "agentUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "agentAgentflow_0-input-agentUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "agentModel": "chatAlibabaTongyi",
+                    "agentMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是“虚拟人物视频构建”中文创作代理。</p><p>你的目标是通过多轮对话，帮助用户逐步确定一个可直接生成的视频方案，并在用户明确确认后再调用 <code>doubaoVideoTool</code> 生成最终视频。</p><p>你必须遵守以下规则：</p><ul><li><p>在信息不足时，先追问，不要急于生成。</p></li><li><p>你必须覆盖并确认这些要点：人物形象、人物身份/设定、台词或口播文案、说话语气、镜头/画面风格、背景或动作、时长、画面比例。</p></li><li><p>当用户描述模糊时，优先给出 2-3 个明确选项，让用户选择，而不是泛泛追问。</p></li><li><p>如果用户上传了 1-2 张人物参考图，默认将它们视为人物形象参考；1 张图视为首帧/主参考，2 张图视为首帧+尾帧参考。</p></li><li><p>如果用户上传超过 2 张图片，你必须先请用户删减到最多 2 张，再继续。</p></li><li><p>在用户没有明确表达“可以生成 / 开始生成 / 确认生成 / 就按这个来”等确认意图前，绝对不要调用工具。</p></li><li><p>当你准备生成时，先用简短清单总结最终方案，并再次征求确认。</p></li><li><p>你只有一个可用工具：<code>doubaoVideoTool</code>。</p></li><li><p>调用工具时只生成 1 条最终视频，不要做多候选批量生成。</p></li><li><p>如果你无法准确获得上传图片的文件名，不要编造 <code>referenceImageFileNames</code>；系统会自动使用最近一次上传中的 1-2 张图片作为参考。</p></li><li><p>生成用的 <code>prompt</code> 必须把人物外观、身份、口播内容、语气、场景、动作、镜头语言、视觉风格、质量要求整合成一段高质量中文视频提示词。</p></li><li><p>工具返回后，用简短中文告诉用户视频已生成，并提示查看返回的视频文件；不要编造不存在的链接或额外结果。</p></li></ul><p>如果用户当前仍在修改方案，就继续协助打磨，直到用户满意。</p>"
+                        }
+                    ],
+                    "agentTools": [
+                        {
+                            "agentSelectedTool": "doubaoVideoTool",
+                            "agentSelectedToolRequiresHumanInput": true,
+                            "agentSelectedToolConfig": {
+                                "credential": "",
+                                "model": "doubao-seedance-1-5-pro-251215",
+                                "resolution": "720p",
+                                "ratio": "9:16",
+                                "duration": 5,
+                                "cameraFixed": true,
+                                "watermark": false,
+                                "agentSelectedTool": "doubaoVideoTool"
+                            }
+                        }
+                    ],
+                    "agentKnowledgeDocumentStores": [],
+                    "agentKnowledgeVSEmbeddings": "",
+                    "agentEnableMemory": true,
+                    "agentMemoryType": "allMessages",
+                    "agentUserMessage": "",
+                    "agentReturnResponseAs": "assistantMessage",
+                    "agentUpdateState": "",
+                    "agentModelConfig": {
+                        "credential": "",
+                        "modelName": "qwen-plus",
+                        "temperature": 0,
+                        "streaming": true,
+                        "allowImageUploads": true,
+                        "imageResolution": "low",
+                        "agentModel": "chatAlibabaTongyi"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "agentAgentflow_0-output-agentAgentflow",
+                        "label": "Agent",
+                        "name": "agentAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "width": 280,
+            "height": 72,
+            "selected": false,
+            "positionAbsolute": {
+                "x": 380,
+                "y": 150
+            },
+            "dragging": false
+        }
+    ],
+    "edges": [
+        {
+            "source": "startAgentflow_0",
+            "sourceHandle": "startAgentflow_0-output-startAgentflow",
+            "target": "agentAgentflow_0",
+            "targetHandle": "agentAgentflow_0",
+            "data": {
+                "sourceColor": "#7EE787",
+                "targetColor": "#4DD0E1",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "startAgentflow_0-startAgentflow_0-output-startAgentflow-agentAgentflow_0-agentAgentflow_0"
+        }
+    ]
+}
