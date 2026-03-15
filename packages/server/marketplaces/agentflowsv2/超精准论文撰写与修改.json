@@ -365,7 +365,7 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是论文项目任务解析器。目标是把用户输入解析为结构化写作/修稿任务档案。</p><p>请遵守：1）默认跟随用户语言，未指定时使用简体中文；2）只基于用户已提供的信息，不擅自补造事实；3）若缺少证据、格式要求或审稿意见，要在对应字段中明确说明需补充；4）不要输出 Markdown 代码块。</p><p>你需要识别这是新写论文、修改已有论文，还是混合任务，并提取主题、目标期刊/会议、引用风格、篇幅、必备章节、已有材料、成功标准与特殊约束。</p>"
+                            "content": "<p>你是论文项目任务解析器。目标是把用户输入解析为结构化写作/修稿任务档案。</p><p>请遵守：1）默认跟随用户语言，未指定时使用简体中文；2）只基于用户已提供的信息，不擅自补造事实；3）若缺少证据、格式要求或审稿意见，要在对应字段中明确说明需补充；4）不要输出 Markdown 代码块。</p><p>你需要识别这是新写论文、修改已有论文，还是混合任务，并提取主题、目标期刊/会议、引用风格、篇幅、必备章节、已有材料、成功标准与特殊约束。</p><p>输出必须是严格合法的 JSON 对象，且只能输出 JSON，不要输出 Markdown 代码块、不要输出任何解释或前后缀文本。键名固定为：taskMode, language, paperType, topic, targetVenue, citationStyle, lengthRequirement, mustHaveSections, availableMaterials, successCriteria, specialConstraints。其中特定字段要求：taskMode 为 draft/revise/hybrid 之一；mustHaveSections、availableMaterials、successCriteria、specialConstraints 为字符串数组。</p>"
                         },
                         {
                             "role": "user",
@@ -376,64 +376,7 @@
                     "llmMemoryType": "allMessages",
                     "llmUserMessage": "",
                     "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "taskMode",
-                            "type": "enum",
-                            "enumValues": "draft, revise, hybrid",
-                            "description": "Task mode"
-                        },
-                        {
-                            "key": "language",
-                            "type": "string",
-                            "description": "Primary output language"
-                        },
-                        {
-                            "key": "paperType",
-                            "type": "string",
-                            "description": "Type of paper"
-                        },
-                        {
-                            "key": "topic",
-                            "type": "string",
-                            "description": "Core topic or title direction"
-                        },
-                        {
-                            "key": "targetVenue",
-                            "type": "string",
-                            "description": "Target journal, conference or submission destination"
-                        },
-                        {
-                            "key": "citationStyle",
-                            "type": "string",
-                            "description": "Citation style or venue citation requirement"
-                        },
-                        {
-                            "key": "lengthRequirement",
-                            "type": "string",
-                            "description": "Expected length, sections or word count"
-                        },
-                        {
-                            "key": "mustHaveSections",
-                            "type": "stringArray",
-                            "description": "Required sections"
-                        },
-                        {
-                            "key": "availableMaterials",
-                            "type": "stringArray",
-                            "description": "Existing materials user already provided"
-                        },
-                        {
-                            "key": "successCriteria",
-                            "type": "stringArray",
-                            "description": "What a successful deliverable must achieve"
-                        },
-                        {
-                            "key": "specialConstraints",
-                            "type": "stringArray",
-                            "description": "Special constraints or missing inputs"
-                        }
-                    ],
+                    "llmStructuredOutput": "",
                     "llmUpdateState": [
                         {
                             "key": "taskProfile",
@@ -670,7 +613,7 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "agentModel": "chatOpenAI",
+                    "agentModel": "chatDeepseek",
                     "agentMessages": [
                         {
                             "role": "system",
@@ -681,7 +624,7 @@
                             "content": "<p>用户原始任务：</p><p>{{ question }}</p><p>任务档案：</p><p>{{ $flow.state.taskProfile }}</p><p>请生成后续写作可直接使用的研究证据笔记。</p>"
                         }
                     ],
-                    "agentToolsBuiltInOpenAI": ["web_search_preview"],
+                    "agentToolsBuiltInOpenAI": [],
                     "agentTools": [
                         {
                             "agentSelectedTool": "arxiv",
@@ -719,24 +662,12 @@
                         }
                     ],
                     "agentModelConfig": {
-                        "cache": "",
-                        "modelName": "gpt-4o-mini",
+                        "credential": "",
+                        "modelName": "deepseek-chat",
                         "temperature": 0.2,
                         "streaming": true,
                         "maxTokens": "",
-                        "topP": "",
-                        "frequencyPenalty": "",
-                        "presencePenalty": "",
-                        "timeout": "",
-                        "strictToolCalling": "",
-                        "stopSequence": "",
-                        "basepath": "",
-                        "proxyUrl": "",
-                        "baseOptions": "",
-                        "allowImageUploads": "",
-                        "imageResolution": "low",
-                        "reasoningEffort": "",
-                        "agentModel": "chatOpenAI"
+                        "agentModel": "chatDeepseek"
                     }
                 },
                 "outputAnchors": [
@@ -984,7 +915,7 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "llmModel": "chatAnthropic",
+                    "llmModel": "chatDeepseek",
                     "llmMessages": [
                         {
                             "role": "system",
@@ -1007,17 +938,12 @@
                         }
                     ],
                     "llmModelConfig": {
-                        "cache": "",
-                        "modelName": "claude-sonnet-4-0",
+                        "credential": "",
+                        "modelName": "deepseek-chat",
                         "temperature": 0.3,
                         "streaming": true,
-                        "maxTokensToSample": "",
-                        "topP": "",
-                        "topK": "",
-                        "extendedThinking": false,
-                        "budgetTokens": "",
-                        "allowImageUploads": "",
-                        "llmModel": "chatAnthropic"
+                        "maxTokens": "",
+                        "llmModel": "chatDeepseek"
                     }
                 },
                 "outputAnchors": [
@@ -1541,11 +1467,11 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "llmModel": "chatOpenAI",
+                    "llmModel": "chatDeepseek",
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是论文内容审稿人，专注论证质量、研究完整性、审稿意见响应充分性。</p><p>请严格识别阻塞性问题、论证漏洞、证据缺口，以及用户如果给了审稿意见时未被回应的部分。</p><p>默认跟随用户语言；不要输出代码块。</p>"
+                            "content": "<p>你是论文内容审稿人，专注论证质量、研究完整性、审稿意见响应充分性。</p><p>请严格识别阻塞性问题、论证漏洞、证据缺口，以及用户如果给了审稿意见时未被回应的部分。</p><p>默认跟随用户语言；不要输出代码块。</p><p>输出必须是严格合法的 JSON 对象，且只能输出 JSON，不要输出 Markdown 代码块、不要输出任何解释或前后缀文本。键名固定为：overallScore, blockingIssues, argumentGaps, evidenceGaps, reviewerResponseGaps, rewriteInstructions。其中特定字段要求：overallScore 为数字；其余字段均为字符串数组。</p>"
                         },
                         {
                             "role": "user",
@@ -1556,38 +1482,7 @@
                     "llmMemoryType": "allMessages",
                     "llmUserMessage": "",
                     "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "overallScore",
-                            "type": "number",
-                            "description": "Overall content score from 0 to 100"
-                        },
-                        {
-                            "key": "blockingIssues",
-                            "type": "stringArray",
-                            "description": "Critical issues that block submission"
-                        },
-                        {
-                            "key": "argumentGaps",
-                            "type": "stringArray",
-                            "description": "Gaps in logic or argumentation"
-                        },
-                        {
-                            "key": "evidenceGaps",
-                            "type": "stringArray",
-                            "description": "Missing evidence, missing citations or weak support"
-                        },
-                        {
-                            "key": "reviewerResponseGaps",
-                            "type": "stringArray",
-                            "description": "Missing responses to reviewer comments if applicable"
-                        },
-                        {
-                            "key": "rewriteInstructions",
-                            "type": "stringArray",
-                            "description": "Concrete rewrite instructions"
-                        }
-                    ],
+                    "llmStructuredOutput": "",
                     "llmUpdateState": [
                         {
                             "key": "contentReview",
@@ -1595,24 +1490,12 @@
                         }
                     ],
                     "llmModelConfig": {
-                        "cache": "",
-                        "modelName": "gpt-4o-mini",
+                        "credential": "",
+                        "modelName": "deepseek-chat",
                         "temperature": 0.2,
                         "streaming": true,
                         "maxTokens": "",
-                        "topP": "",
-                        "frequencyPenalty": "",
-                        "presencePenalty": "",
-                        "timeout": "",
-                        "strictToolCalling": "",
-                        "stopSequence": "",
-                        "basepath": "",
-                        "proxyUrl": "",
-                        "baseOptions": "",
-                        "allowImageUploads": "",
-                        "imageResolution": "low",
-                        "reasoningEffort": "",
-                        "llmModel": "chatOpenAI"
+                        "llmModel": "chatDeepseek"
                     }
                 },
                 "outputAnchors": [
@@ -1860,11 +1743,11 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "llmModel": "chatAnthropic",
+                    "llmModel": "chatDeepseek",
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是论文格式规范审稿人，负责检查结构、章节完整性、引用格式、目标期刊/会议要求符合度。</p><p>你必须指出哪些地方不满足目标 venue 或用户明确提出的格式要求；若用户未提供足够格式信息，也要明确标注需补格式要求。</p><p>默认跟随用户语言；不要输出代码块。</p>"
+                            "content": "<p>你是论文格式规范审稿人，负责检查结构、章节完整性、引用格式、目标期刊/会议要求符合度。</p><p>你必须指出哪些地方不满足目标 venue 或用户明确提出的格式要求；若用户未提供足够格式信息，也要明确标注需补格式要求。</p><p>默认跟随用户语言；不要输出代码块。</p><p>输出必须是严格合法的 JSON 对象，且只能输出 JSON，不要输出 Markdown 代码块、不要输出任何解释或前后缀文本。键名固定为：overallScore, blockingIssues, structureIssues, citationIssues, venueComplianceIssues, rewriteInstructions。其中特定字段要求：overallScore 为数字；其余字段均为字符串数组。</p>"
                         },
                         {
                             "role": "user",
@@ -1875,38 +1758,7 @@
                     "llmMemoryType": "allMessages",
                     "llmUserMessage": "",
                     "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "overallScore",
-                            "type": "number",
-                            "description": "Overall formatting score from 0 to 100"
-                        },
-                        {
-                            "key": "blockingIssues",
-                            "type": "stringArray",
-                            "description": "Critical formatting issues"
-                        },
-                        {
-                            "key": "structureIssues",
-                            "type": "stringArray",
-                            "description": "Problems in sections, ordering or completeness"
-                        },
-                        {
-                            "key": "citationIssues",
-                            "type": "stringArray",
-                            "description": "Citation, bibliography or reference style issues"
-                        },
-                        {
-                            "key": "venueComplianceIssues",
-                            "type": "stringArray",
-                            "description": "Journal or conference compliance issues"
-                        },
-                        {
-                            "key": "rewriteInstructions",
-                            "type": "stringArray",
-                            "description": "Concrete formatting rewrite instructions"
-                        }
-                    ],
+                    "llmStructuredOutput": "",
                     "llmUpdateState": [
                         {
                             "key": "formatReview",
@@ -1914,17 +1766,12 @@
                         }
                     ],
                     "llmModelConfig": {
-                        "cache": "",
-                        "modelName": "claude-sonnet-4-0",
+                        "credential": "",
+                        "modelName": "deepseek-chat",
                         "temperature": 0.2,
                         "streaming": true,
-                        "maxTokensToSample": "",
-                        "topP": "",
-                        "topK": "",
-                        "extendedThinking": false,
-                        "budgetTokens": "",
-                        "allowImageUploads": "",
-                        "llmModel": "chatAnthropic"
+                        "maxTokens": "",
+                        "llmModel": "chatDeepseek"
                     }
                 },
                 "outputAnchors": [
@@ -2176,7 +2023,7 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是论文风格与语言审稿人，关注学术表达、清晰度、冗余、语气一致性和可读性。</p><p>请优先指出影响发表质量的语言问题，并给出可直接执行的改写建议。默认跟随用户语言；不要输出代码块。</p>"
+                            "content": "<p>你是论文风格与语言审稿人，关注学术表达、清晰度、冗余、语气一致性和可读性。</p><p>请优先指出影响发表质量的语言问题，并给出可直接执行的改写建议。默认跟随用户语言；不要输出代码块。</p><p>输出必须是严格合法的 JSON 对象，且只能输出 JSON，不要输出 Markdown 代码块、不要输出任何解释或前后缀文本。键名固定为：overallScore, blockingIssues, toneIssues, clarityIssues, repetitionIssues, rewriteInstructions。其中特定字段要求：overallScore 为数字；其余字段均为字符串数组。</p>"
                         },
                         {
                             "role": "user",
@@ -2187,38 +2034,7 @@
                     "llmMemoryType": "allMessages",
                     "llmUserMessage": "",
                     "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "overallScore",
-                            "type": "number",
-                            "description": "Overall style score from 0 to 100"
-                        },
-                        {
-                            "key": "blockingIssues",
-                            "type": "stringArray",
-                            "description": "Critical language or style blockers"
-                        },
-                        {
-                            "key": "toneIssues",
-                            "type": "stringArray",
-                            "description": "Tone issues"
-                        },
-                        {
-                            "key": "clarityIssues",
-                            "type": "stringArray",
-                            "description": "Clarity, ambiguity or readability issues"
-                        },
-                        {
-                            "key": "repetitionIssues",
-                            "type": "stringArray",
-                            "description": "Redundancy or repetition issues"
-                        },
-                        {
-                            "key": "rewriteInstructions",
-                            "type": "stringArray",
-                            "description": "Concrete language rewrite instructions"
-                        }
-                    ],
+                    "llmStructuredOutput": "",
                     "llmUpdateState": [
                         {
                             "key": "styleReview",
@@ -2479,7 +2295,7 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "llmModel": "chatAnthropic",
+                    "llmModel": "chatDeepseek",
                     "llmMessages": [
                         {
                             "role": "system",
@@ -2502,17 +2318,12 @@
                         }
                     ],
                     "llmModelConfig": {
-                        "cache": "",
-                        "modelName": "claude-sonnet-4-0",
+                        "credential": "",
+                        "modelName": "deepseek-chat",
                         "temperature": 0.25,
                         "streaming": true,
-                        "maxTokensToSample": "",
-                        "topP": "",
-                        "topK": "",
-                        "extendedThinking": false,
-                        "budgetTokens": "",
-                        "allowImageUploads": "",
-                        "llmModel": "chatAnthropic"
+                        "maxTokens": "",
+                        "llmModel": "chatDeepseek"
                     }
                 },
                 "outputAnchors": [
@@ -3144,11 +2955,11 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "llmModel": "chatOpenAI",
+                    "llmModel": "chatDeepseek",
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是论文终稿质检官，负责在提交前判断是否可以交付。</p><p>请检查四件事：1）终稿结构是否完整；2）修改说明是否解释了关键修订；3）投稿前检查表是否覆盖风险项；4）是否仍存在阻塞性交付问题。</p><p>默认跟随用户语言；不要输出代码块。</p>"
+                            "content": "<p>你是论文终稿质检官，负责在提交前判断是否可以交付。</p><p>请检查四件事：1）终稿结构是否完整；2）修改说明是否解释了关键修订；3）投稿前检查表是否覆盖风险项；4）是否仍存在阻塞性交付问题。</p><p>默认跟随用户语言；不要输出代码块。</p><p>输出必须是严格合法的 JSON 对象，且只能输出 JSON，不要输出 Markdown 代码块、不要输出任何解释或前后缀文本。键名固定为：isReady, finalScore, blockingIssues, rewriteInstructions。其中特定字段要求：isReady 为布尔值 true/false；finalScore 为数字；blockingIssues 与 rewriteInstructions 为字符串数组。</p>"
                         },
                         {
                             "role": "user",
@@ -3159,53 +2970,24 @@
                     "llmMemoryType": "allMessages",
                     "llmUserMessage": "",
                     "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "isReady",
-                            "type": "boolean",
-                            "description": "Whether the final package is ready to deliver"
-                        },
-                        {
-                            "key": "finalScore",
-                            "type": "number",
-                            "description": "Final quality score from 0 to 100"
-                        },
-                        {
-                            "key": "blockingIssues",
-                            "type": "stringArray",
-                            "description": "Critical issues that still block delivery"
-                        },
-                        {
-                            "key": "rewriteInstructions",
-                            "type": "stringArray",
-                            "description": "What to fix before the next final rewrite"
-                        }
-                    ],
+                    "llmStructuredOutput": "",
                     "llmUpdateState": [
                         {
                             "key": "qualityReview",
                             "value": "{{ output }}"
+                        },
+                        {
+                            "key": "qualityIsReady",
+                            "value": "{{ output.isReady }}"
                         }
                     ],
                     "llmModelConfig": {
-                        "cache": "",
-                        "modelName": "gpt-4o-mini",
+                        "credential": "",
+                        "modelName": "deepseek-chat",
                         "temperature": 0.1,
                         "streaming": true,
                         "maxTokens": "",
-                        "topP": "",
-                        "frequencyPenalty": "",
-                        "presencePenalty": "",
-                        "timeout": "",
-                        "strictToolCalling": "",
-                        "stopSequence": "",
-                        "basepath": "",
-                        "proxyUrl": "",
-                        "baseOptions": "",
-                        "allowImageUploads": "",
-                        "imageResolution": "low",
-                        "reasoningEffort": "",
-                        "llmModel": "chatOpenAI"
+                        "llmModel": "chatDeepseek"
                     }
                 },
                 "outputAnchors": [
@@ -3467,7 +3249,7 @@
                     "conditions": [
                         {
                             "type": "string",
-                            "value1": "{{ llmAgentflow_8.output.isReady }}",
+                            "value1": "{{ $flow.state.qualityIsReady }}",
                             "operation": "equal",
                             "value2": "true"
                         }
@@ -3495,6 +3277,57 @@
             "positionAbsolute": {
                 "x": 3300,
                 "y": 320
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "loopAgentflow_1",
+            "type": "agentFlow",
+            "position": {
+                "x": 2420,
+                "y": 470
+            },
+            "data": {
+                "id": "loopAgentflow_1",
+                "label": "回到修订总编",
+                "version": 1.2,
+                "name": "loopAgentflow",
+                "type": "Loop",
+                "color": "#FFA07A",
+                "hideOutput": true,
+                "baseClasses": ["Loop"],
+                "category": "Agent Flows",
+                "description": "Loop back to a previous node",
+                "inputParams": [
+                    {
+                        "label": "Loop Back To",
+                        "name": "loopBackToNode",
+                        "type": "asyncOptions",
+                        "loadMethod": "listPreviousNodes",
+                        "freeSolo": true
+                    },
+                    {
+                        "label": "Max Loop Count",
+                        "name": "maxLoopCount",
+                        "type": "number",
+                        "default": 5
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "loopBackToNode": "llmAgentflow_6-修订总编",
+                    "maxLoopCount": 99
+                },
+                "outputAnchors": [],
+                "outputs": {},
+                "selected": false
+            },
+            "width": 184,
+            "height": 66,
+            "positionAbsolute": {
+                "x": 2420,
+                "y": 470
             },
             "selected": false,
             "dragging": false
@@ -3535,7 +3368,8 @@
                 "inputAnchors": [],
                 "inputs": {
                     "loopBackToNode": "llmAgentflow_7-终稿改写",
-                    "maxLoopCount": 2
+                    "maxLoopCount": 2,
+                    "fallbackMessage": "__RETURN_LATEST_FINAL_PAPER__"
                 },
                 "outputAnchors": [],
                 "outputs": {},
@@ -3590,6 +3424,1102 @@
             "positionAbsolute": {
                 "x": 3570,
                 "y": 250
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_0",
+            "position": {
+                "x": 0,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "在这里输入论文任务。建议一次性写清研究主题、论文类型、目标期刊或会议、语言、篇幅、已有草稿、审稿意见与硬性格式要求；输入越完整，后续生成越精准。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 0,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_1",
+            "position": {
+                "x": 240,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_1",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_1-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "把自然语言需求拆成结构化任务档案。若你没提供引用风格、成功标准或格式约束，这里会保留缺口，方便后续节点提醒补充。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_1-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 240,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_2",
+            "position": {
+                "x": 510,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_2",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_2-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "负责补研究证据与可引用线索。适合自动查找最新论文、网页资料和关键结论；如果你已有参考文献，也建议在起点一并给出。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_2-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 510,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_3",
+            "position": {
+                "x": 780,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_3",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_3-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "把任务档案和证据整理成可执行大纲。想控制章节结构、论证顺序、每节目标或方法部分写法，可重点调整这里。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_3-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 780,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_4",
+            "position": {
+                "x": 1050,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_4",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_4-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "按蓝图生成完整首稿。适合从零起草，也适合结合现有草稿重写；证据不足处会显式标注“需补证据/需补引用”。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_4-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1050,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_5",
+            "position": {
+                "x": 1320,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_5",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_5-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "专查论证逻辑、研究完整性和审稿意见响应是否充分。若你的场景是返修、大修或 rebuttal，这个节点尤其关键。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_5-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1320,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_6",
+            "position": {
+                "x": 1590,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_6",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_6-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "专查结构、章节完整性、引用格式和目标 venue 规范。未提供期刊/会议要求时，这里会明确提示仍需补充格式信息。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_6-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1590,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_7",
+            "position": {
+                "x": 1860,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_7",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_7-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "聚焦学术语气、清晰度、冗余和可读性。适合做中文润色、英文润色、去口语化和提高清晰表达。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_7-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1860,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_8",
+            "position": {
+                "x": 2130,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_8",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_8-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "汇总三路审稿意见，生成给作者确认的修订方案。开始人工确认前，先看这里是否准确反映了你的优先级与取舍。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_8-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 2130,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_9",
+            "position": {
+                "x": 2390,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_9",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_9-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "这是人工闸门。满意就继续生成终稿；不满意就在反馈框明确写出“保留 / 删除 / 加强”的点，流程会回到上一节点重整方案。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_9-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 2390,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_10",
+            "position": {
+                "x": 2670,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_10",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_10-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "基于首稿、审稿意见和人工反馈生成最终交付包。输出固定包含“终稿 / 修改说明 / 投稿前检查表”三部分。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_10-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 2670,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_11",
+            "position": {
+                "x": 2970,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_11",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_11-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "提交前最后一道质检。它会判断结构是否完整、修改说明是否解释到位，以及是否还存在阻塞性交付问题。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_11-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 2970,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_12",
+            "position": {
+                "x": 3280,
+                "y": 110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_12",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_12-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "这里决定流程向右交付还是向下回改。默认判断标准是终稿质检里的 `isReady=true`，你可按自己的门槛调整条件。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_12-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 3280,
+                "y": 110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_13",
+            "position": {
+                "x": 3280,
+                "y": 560
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_13",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_13-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "自动回到“终稿改写”再修一轮，默认最多 2 轮。轮次太多可能让文本漂移，通常建议只在质检规则明确时提高次数。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_13-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 150,
+            "positionAbsolute": {
+                "x": 3280,
+                "y": 560
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_14",
+            "position": {
+                "x": 3540,
+                "y": 20
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_14",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_14-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "最终返回给用户的内容就在这里。默认会直接输出完整交付包，因此你能一次拿到终稿正文、修改说明和检查表。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_14-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 150,
+            "positionAbsolute": {
+                "x": 3540,
+                "y": 20
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "conditionAgentflow_1",
+            "type": "agentFlow",
+            "position": {
+                "x": 3570,
+                "y": 470
+            },
+            "data": {
+                "id": "conditionAgentflow_1",
+                "label": "是否达到最大尝试次数",
+                "version": 1,
+                "name": "conditionAgentflow",
+                "type": "Condition",
+                "color": "#FFB938",
+                "baseClasses": ["Condition"],
+                "category": "Agent Flows",
+                "description": "Split flows based on If Else conditions",
+                "inputParams": [
+                    {
+                        "label": "Conditions",
+                        "name": "conditions",
+                        "type": "array",
+                        "description": "Values to compare",
+                        "acceptVariable": true,
+                        "default": [
+                            {
+                                "type": "number",
+                                "value1": "",
+                                "operation": "equal",
+                                "value2": ""
+                            }
+                        ],
+                        "array": [
+                            {
+                                "label": "Type",
+                                "name": "type",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "String",
+                                        "name": "string"
+                                    },
+                                    {
+                                        "label": "Number",
+                                        "name": "number"
+                                    },
+                                    {
+                                        "label": "Boolean",
+                                        "name": "boolean"
+                                    }
+                                ],
+                                "default": "string"
+                            },
+                            {
+                                "label": "Value 1",
+                                "name": "value1",
+                                "type": "string",
+                                "default": "",
+                                "description": "First value to be compared with",
+                                "acceptVariable": true,
+                                "show": {
+                                    "conditions[$index].type": "string"
+                                }
+                            },
+                            {
+                                "label": "Operation",
+                                "name": "operation",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "Contains",
+                                        "name": "contains"
+                                    },
+                                    {
+                                        "label": "Ends With",
+                                        "name": "endsWith"
+                                    },
+                                    {
+                                        "label": "Equal",
+                                        "name": "equal"
+                                    },
+                                    {
+                                        "label": "Not Contains",
+                                        "name": "notContains"
+                                    },
+                                    {
+                                        "label": "Not Equal",
+                                        "name": "notEqual"
+                                    },
+                                    {
+                                        "label": "Regex",
+                                        "name": "regex"
+                                    },
+                                    {
+                                        "label": "Starts With",
+                                        "name": "startsWith"
+                                    },
+                                    {
+                                        "label": "Is Empty",
+                                        "name": "isEmpty"
+                                    },
+                                    {
+                                        "label": "Not Empty",
+                                        "name": "notEmpty"
+                                    }
+                                ],
+                                "default": "equal",
+                                "description": "Type of operation",
+                                "show": {
+                                    "conditions[$index].type": "string"
+                                }
+                            },
+                            {
+                                "label": "Value 2",
+                                "name": "value2",
+                                "type": "string",
+                                "default": "",
+                                "description": "Second value to be compared with",
+                                "acceptVariable": true,
+                                "show": {
+                                    "conditions[$index].type": "string"
+                                },
+                                "hide": {
+                                    "conditions[$index].operation": ["isEmpty", "notEmpty"]
+                                }
+                            },
+                            {
+                                "label": "Value 1",
+                                "name": "value1",
+                                "type": "number",
+                                "default": "",
+                                "description": "First value to be compared with",
+                                "acceptVariable": true,
+                                "show": {
+                                    "conditions[$index].type": "number"
+                                }
+                            },
+                            {
+                                "label": "Operation",
+                                "name": "operation",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "Smaller",
+                                        "name": "smaller"
+                                    },
+                                    {
+                                        "label": "Smaller Equal",
+                                        "name": "smallerEqual"
+                                    },
+                                    {
+                                        "label": "Equal",
+                                        "name": "equal"
+                                    },
+                                    {
+                                        "label": "Not Equal",
+                                        "name": "notEqual"
+                                    },
+                                    {
+                                        "label": "Larger",
+                                        "name": "larger"
+                                    },
+                                    {
+                                        "label": "Larger Equal",
+                                        "name": "largerEqual"
+                                    },
+                                    {
+                                        "label": "Is Empty",
+                                        "name": "isEmpty"
+                                    },
+                                    {
+                                        "label": "Not Empty",
+                                        "name": "notEmpty"
+                                    }
+                                ],
+                                "default": "equal",
+                                "description": "Type of operation",
+                                "show": {
+                                    "conditions[$index].type": "number"
+                                }
+                            },
+                            {
+                                "label": "Value 2",
+                                "name": "value2",
+                                "type": "number",
+                                "default": 0,
+                                "description": "Second value to be compared with",
+                                "acceptVariable": true,
+                                "show": {
+                                    "conditions[$index].type": "number"
+                                }
+                            },
+                            {
+                                "label": "Value 1",
+                                "name": "value1",
+                                "type": "boolean",
+                                "default": false,
+                                "description": "First value to be compared with",
+                                "show": {
+                                    "conditions[$index].type": "boolean"
+                                }
+                            },
+                            {
+                                "label": "Operation",
+                                "name": "operation",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "Equal",
+                                        "name": "equal"
+                                    },
+                                    {
+                                        "label": "Not Equal",
+                                        "name": "notEqual"
+                                    }
+                                ],
+                                "default": "equal",
+                                "description": "Type of operation",
+                                "show": {
+                                    "conditions[$index].type": "boolean"
+                                }
+                            },
+                            {
+                                "label": "Value 2",
+                                "name": "value2",
+                                "type": "boolean",
+                                "default": false,
+                                "description": "Second value to be compared with",
+                                "show": {
+                                    "conditions[$index].type": "boolean"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "conditions": [
+                        {
+                            "type": "string",
+                            "value1": "{{ loopAgentflow_0.output.content }}",
+                            "operation": "equal",
+                            "value2": "__RETURN_LATEST_FINAL_PAPER__"
+                        }
+                    ]
+                },
+                "outputAnchors": [
+                    {
+                        "id": "conditionAgentflow_1-output-0",
+                        "label": "Condition",
+                        "name": "conditionAgentflow"
+                    },
+                    {
+                        "id": "conditionAgentflow_1-output-1",
+                        "label": "Condition",
+                        "name": "conditionAgentflow"
+                    }
+                ],
+                "outputs": {
+                    "conditionAgentflow": ""
+                },
+                "selected": false
+            },
+            "width": 178,
+            "height": 80,
+            "positionAbsolute": {
+                "x": 3570,
+                "y": 470
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "directReplyAgentflow_1",
+            "type": "agentFlow",
+            "position": {
+                "x": 3840,
+                "y": 470
+            },
+            "data": {
+                "id": "directReplyAgentflow_1",
+                "label": "达到上限返回终稿",
+                "version": 1,
+                "name": "directReplyAgentflow",
+                "type": "DirectReply",
+                "color": "#4DDBBB",
+                "hideOutput": true,
+                "baseClasses": ["DirectReply"],
+                "category": "Agent Flows",
+                "description": "Directly reply to the user with a message",
+                "inputParams": [
+                    {
+                        "label": "Message",
+                        "name": "directReplyMessage",
+                        "type": "string",
+                        "rows": 4,
+                        "acceptVariable": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "directReplyMessage": "已达到最大改写尝试次数，现返回当前最新终稿版本，供你继续微调。\n\n{{ $flow.state.finalPaperPackage }}"
+                },
+                "outputAnchors": [],
+                "outputs": {},
+                "selected": false
+            },
+            "width": 160,
+            "height": 66,
+            "positionAbsolute": {
+                "x": 3840,
+                "y": 470
             },
             "selected": false,
             "dragging": false
@@ -3716,15 +4646,15 @@
         {
             "source": "humanInputAgentflow_0",
             "sourceHandle": "humanInputAgentflow_0-output-1",
-            "target": "llmAgentflow_6",
-            "targetHandle": "llmAgentflow_6",
+            "target": "loopAgentflow_1",
+            "targetHandle": "loopAgentflow_1",
             "data": {
                 "sourceColor": "#6E6EFD",
-                "targetColor": "#64B5F6",
+                "targetColor": "#FFA07A",
                 "isHumanInput": true
             },
             "type": "agentFlow",
-            "id": "humanInputAgentflow_0-humanInputAgentflow_0-output-1-llmAgentflow_6-llmAgentflow_6"
+            "id": "humanInputAgentflow_0-humanInputAgentflow_0-output-1-loopAgentflow_1-loopAgentflow_1"
         },
         {
             "source": "humanInputAgentflow_0",
@@ -3738,19 +4668,6 @@
             },
             "type": "agentFlow",
             "id": "humanInputAgentflow_0-humanInputAgentflow_0-output-0-llmAgentflow_7-llmAgentflow_7"
-        },
-        {
-            "source": "llmAgentflow_7",
-            "sourceHandle": "llmAgentflow_7-output-llmAgentflow",
-            "target": "llmAgentflow_8",
-            "targetHandle": "llmAgentflow_8",
-            "data": {
-                "sourceColor": "#64B5F6",
-                "targetColor": "#64B5F6",
-                "isHumanInput": false
-            },
-            "type": "agentFlow",
-            "id": "llmAgentflow_7-llmAgentflow_7-output-llmAgentflow-llmAgentflow_8-llmAgentflow_8"
         },
         {
             "source": "llmAgentflow_8",
@@ -3792,17 +4709,43 @@
             "id": "conditionAgentflow_0-conditionAgentflow_0-output-1-loopAgentflow_0-loopAgentflow_0"
         },
         {
-            "source": "loopAgentflow_0",
-            "sourceHandle": "loopAgentflow_0",
-            "target": "llmAgentflow_7",
-            "targetHandle": "llmAgentflow_7",
+            "source": "llmAgentflow_7",
+            "sourceHandle": "llmAgentflow_7-output-llmAgentflow",
+            "target": "llmAgentflow_8",
+            "targetHandle": "llmAgentflow_8",
             "data": {
-                "sourceColor": "#FFA07A",
+                "sourceColor": "#64B5F6",
                 "targetColor": "#64B5F6",
                 "isHumanInput": false
             },
             "type": "agentFlow",
-            "id": "loopAgentflow_0-loopAgentflow_0-llmAgentflow_7-llmAgentflow_7"
+            "id": "llmAgentflow_7-llmAgentflow_7-output-llmAgentflow-llmAgentflow_8-llmAgentflow_8"
+        },
+        {
+            "source": "loopAgentflow_0",
+            "sourceHandle": "loopAgentflow_0",
+            "target": "conditionAgentflow_1",
+            "targetHandle": "conditionAgentflow_1",
+            "data": {
+                "sourceColor": "#FFA07A",
+                "targetColor": "#FFB938",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "loopAgentflow_0-loopAgentflow_0-conditionAgentflow_1-conditionAgentflow_1"
+        },
+        {
+            "source": "conditionAgentflow_1",
+            "sourceHandle": "conditionAgentflow_1-output-0",
+            "target": "directReplyAgentflow_1",
+            "targetHandle": "directReplyAgentflow_1",
+            "data": {
+                "sourceColor": "#FFB938",
+                "targetColor": "#4DDBBB",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "conditionAgentflow_1-conditionAgentflow_1-output-0-directReplyAgentflow_1-directReplyAgentflow_1"
         }
     ]
 }
