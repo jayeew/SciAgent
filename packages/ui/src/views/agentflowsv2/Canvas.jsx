@@ -49,6 +49,8 @@ import {
     getUniqueNodeLabel,
     getUniqueNodeId,
     initNode,
+    showHideInputAnchors,
+    showHideInputParams,
     updateOutdatedNodeData,
     updateOutdatedNodeEdge,
     isValidConnectionAgentflowV2
@@ -61,6 +63,80 @@ import { FLOWISE_CREDENTIAL_ID, AGENTFLOW_ICONS } from '@/store/constant'
 
 const nodeTypes = { agentFlow: CanvasNode, stickyNote: StickyNote, iteration: IterationNode }
 const edgeTypes = { agentFlow: AgentFlowEdge }
+
+const normalizeBooleanInputValue = (value) => {
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'string') {
+        const normalizedValue = value.trim().toLowerCase()
+        if (!normalizedValue) return false
+        if (normalizedValue === 'true') return true
+        if (normalizedValue === 'false') return false
+    }
+
+    return Boolean(value)
+}
+
+const normalizeNumberInputValue = (value) => {
+    if (typeof value === 'number' || value === '') return value
+    if (typeof value === 'string') {
+        const normalizedValue = value.trim()
+        if (!normalizedValue) return ''
+
+        const parsedValue = Number(normalizedValue)
+        return Number.isNaN(parsedValue) ? value : parsedValue
+    }
+
+    return value
+}
+
+const normalizeArrayInputValue = (value) => {
+    if (Array.isArray(value)) return value
+    if (value === '' || value === null || typeof value === 'undefined') return []
+
+    if (typeof value === 'string') {
+        const normalizedValue = value.trim()
+        if (!normalizedValue) return []
+
+        try {
+            const parsedValue = JSON.parse(normalizedValue)
+            return Array.isArray(parsedValue) ? parsedValue : []
+        } catch {
+            return []
+        }
+    }
+
+    return []
+}
+
+const sanitizeLoadedNodeData = (nodeData) => {
+    if (!nodeData?.inputs || !nodeData?.inputParams) return nodeData
+
+    const sanitizedInputs = { ...nodeData.inputs }
+
+    for (const inputParam of nodeData.inputParams) {
+        if (!Object.prototype.hasOwnProperty.call(sanitizedInputs, inputParam.name)) continue
+
+        const currentValue = sanitizedInputs[inputParam.name]
+
+        if (inputParam.type === 'array' && !Array.isArray(currentValue)) {
+            sanitizedInputs[inputParam.name] = normalizeArrayInputValue(currentValue)
+        } else if (inputParam.type === 'boolean' && typeof currentValue !== 'boolean') {
+            sanitizedInputs[inputParam.name] = normalizeBooleanInputValue(currentValue)
+        } else if (inputParam.type === 'number' && typeof currentValue !== 'number') {
+            sanitizedInputs[inputParam.name] = normalizeNumberInputValue(currentValue)
+        }
+    }
+
+    const sanitizedNodeData = {
+        ...nodeData,
+        inputs: sanitizedInputs
+    }
+
+    sanitizedNodeData.inputParams = showHideInputParams(sanitizedNodeData)
+    sanitizedNodeData.inputAnchors = showHideInputAnchors(sanitizedNodeData)
+
+    return sanitizedNodeData
+}
 
 // ==============================|| CANVAS ||============================== //
 
@@ -100,6 +176,7 @@ const AgentflowCanvas = () => {
     const [isSyncNodesButtonEnabled, setIsSyncNodesButtonEnabled] = useState(false)
     const [editNodeDialogOpen, setEditNodeDialogOpen] = useState(false)
     const [editNodeDialogProps, setEditNodeDialogProps] = useState({})
+    const [shouldNormalizeLoadedNodes, setShouldNormalizeLoadedNodes] = useState(false)
     const [isSnappingEnabled, setIsSnappingEnabled] = useState(false)
     const [isBackgroundEnabled, setIsBackgroundEnabled] = useState(true)
 
@@ -157,13 +234,55 @@ const AgentflowCanvas = () => {
         setEdges((eds) => addEdge(newEdge, eds))
     }
 
+    const normalizeLoadedFlow = useCallback(
+        (flowData) => {
+            const componentNodes = getNodesApi.data || []
+            const clonedEdges = cloneDeep(flowData.edges || [])
+            const removedEdges = []
+
+            const normalizedNodes = (flowData.nodes || []).map((node) => {
+                if (!node?.data) return node
+
+                const componentNode = componentNodes.find((cn) => cn.name === node.data.name)
+                let normalizedNodeData = cloneDeep(node.data)
+
+                if (componentNode) {
+                    normalizedNodeData = updateOutdatedNodeData(cloneDeep(componentNode), cloneDeep(node.data), true)
+
+                    if (componentNode.version > node.data.version) {
+                        removedEdges.push(...updateOutdatedNodeEdge(normalizedNodeData, clonedEdges))
+                    }
+                }
+
+                normalizedNodeData = sanitizeLoadedNodeData(normalizedNodeData)
+
+                return {
+                    ...node,
+                    data: {
+                        ...normalizedNodeData,
+                        selected: false,
+                        status: undefined
+                    }
+                }
+            })
+
+            return {
+                nodes: normalizedNodes,
+                edges: clonedEdges.filter((edge) => !removedEdges.includes(edge))
+            }
+        },
+        [getNodesApi.data]
+    )
+
     const handleLoadFlow = (file) => {
         try {
             const flowData = JSON.parse(file)
-            const nodes = flowData.nodes || []
+            const normalizedFlow = normalizeLoadedFlow(flowData)
 
-            setNodes(nodes)
-            setEdges(flowData.edges || [])
+            setNodes(normalizedFlow.nodes)
+            setEdges(normalizedFlow.edges)
+            setShouldNormalizeLoadedNodes(!getNodesApi.data?.length)
+            setIsSyncNodesButtonEnabled(false)
             setTimeout(() => setDirty(), 0)
         } catch (e) {
             console.error(e)
@@ -638,6 +757,15 @@ const AgentflowCanvas = () => {
     usePrompt('You have unsaved changes! Do you want to navigate away?', canvasDataStore.isDirty)
 
     const [chatPopupOpen, setChatPopupOpen] = useState(false)
+
+    useEffect(() => {
+        if (!shouldNormalizeLoadedNodes || !getNodesApi.data?.length || !nodes.length) return
+
+        const normalizedFlow = normalizeLoadedFlow({ nodes, edges })
+        setNodes(normalizedFlow.nodes)
+        setEdges(normalizedFlow.edges)
+        setShouldNormalizeLoadedNodes(false)
+    }, [shouldNormalizeLoadedNodes, getNodesApi.data, nodes, edges, normalizeLoadedFlow, setNodes, setEdges])
 
     useEffect(() => {
         if (!chatflowId && !localStorage.getItem('duplicatedFlowData') && getNodesApi.data && nodes.length === 0) {

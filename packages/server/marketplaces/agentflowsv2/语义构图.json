@@ -1694,6 +1694,370 @@
                 ],
                 "outputs": {}
             }
+        },
+        {
+            "id": "stickyNoteAgentflow_note_startAgentflow_0",
+            "position": {
+                "x": 40,
+                "y": 50
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_startAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_startAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "在这里输入图片需求并上传参考素材，作为整条语义构图生成链路的起点。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_startAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 40,
+                "y": 50
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_llmAgentflow_0",
+            "position": {
+                "x": 240,
+                "y": -110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_llmAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "综合文字需求和上传图片，抽取主体、必保留元素、风格、构图和风险约束。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 240,
+                "y": -110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_llmAgentflow_1",
+            "position": {
+                "x": 540,
+                "y": -110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_llmAgentflow_1",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_1-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "把素材分析结果压缩成可直接执行的单图请求，明确六段式提示词结构。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_1-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 540,
+                "y": -110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_agentAgentflow_0",
+            "position": {
+                "x": 840,
+                "y": -110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_agentAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_agentAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "先调用图像生成能力产出第一版样张，给后续评审和二轮精修使用。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_agentAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 840,
+                "y": -110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_llmAgentflow_2",
+            "position": {
+                "x": 1160,
+                "y": -110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_llmAgentflow_2",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_2-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "从构图、贴合度和质量角度审看首稿，指出问题与必须保留的亮点。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_2-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1160,
+                "y": -110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_customFunctionAgentflow_0",
+            "position": {
+                "x": 1460,
+                "y": -110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_customFunctionAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_customFunctionAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "把评审意见和首稿结果转成二轮图生图请求，确保精修方向明确。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_customFunctionAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1460,
+                "y": -110
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_toolAgentflow_0",
+            "position": {
+                "x": 1760,
+                "y": -110
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_toolAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_toolAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "调用 DoubaoImageTool 执行二轮精修，输出更接近目标的最终图片。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_toolAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1760,
+                "y": -110
+            },
+            "selected": false,
+            "dragging": false
         }
     ],
     "edges": [
