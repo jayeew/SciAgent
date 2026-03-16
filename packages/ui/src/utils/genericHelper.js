@@ -1345,3 +1345,27 @@ export const showHideInputParams = (nodeData) => {
 export const showHideInputAnchors = (nodeData) => {
     return showHideInputs(nodeData, 'inputAnchors')
 }
+
+export const parseTemplateFlowData = (templateFlowData) => {
+    const parsedFlowData = typeof templateFlowData === 'string' ? JSON.parse(templateFlowData) : templateFlowData
+
+    const flowData =
+        parsedFlowData && Array.isArray(parsedFlowData.nodes) && Array.isArray(parsedFlowData.edges)
+            ? {
+                  nodes: parsedFlowData.nodes,
+                  edges: parsedFlowData.edges
+              }
+            : { nodes: [], edges: [] }
+
+    let chatbotConfig = ''
+
+    if (parsedFlowData?.chatbotConfig) {
+        chatbotConfig =
+            typeof parsedFlowData.chatbotConfig === 'string' ? parsedFlowData.chatbotConfig : JSON.stringify(parsedFlowData.chatbotConfig)
+    }
+
+    return {
+        flowData,
+        chatbotConfig
+    }
+}

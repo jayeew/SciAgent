@@ -1,4 +1,12 @@
-import { ICommonObject, INode, INodeData, INodeOptionsValue, INodeParams, IServerSideEventStreamer } from '../../../src/Interface'
+import {
+    ICommonObject,
+    IFileUpload,
+    INode,
+    INodeData,
+    INodeOptionsValue,
+    INodeParams,
+    IServerSideEventStreamer
+} from '../../../src/Interface'
 import { updateFlowState } from '../utils'
 import { processTemplateVariables } from '../../../src/utils'
 import { Tool } from '@langchain/core/tools'
@@ -10,6 +18,26 @@ interface IToolInputArgs {
     inputArgName: string
     inputArgValue: string
 }
+
+export const getRecentImageUploadsFromUploads = (uploads?: IFileUpload[]): IFileUpload[] | undefined => {
+    if (!uploads?.length) {
+        return undefined
+    }
+
+    const imageUploads = uploads.filter((upload) => upload?.mime?.startsWith('image/'))
+    return imageUploads.length ? imageUploads : undefined
+}
+
+export const buildToolFlowConfig = (options: ICommonObject, input: string | Record<string, any>) => ({
+    chatflowId: options.chatflowid,
+    sessionId: options.sessionId,
+    chatId: options.chatId,
+    orgId: options.orgId,
+    input,
+    state: options.agentflowRuntime?.state,
+    uploads: options.uploads,
+    recentImageUploads: getRecentImageUploadsFromUploads(options.uploads)
+})
 
 export const resolveToolInputTemplate = (value: unknown, context: ICommonObject): unknown => {
     if (Array.isArray(value)) {
@@ -349,14 +377,7 @@ class Tool_Agentflow implements INode {
             })
         }
 
-        const flowConfig = {
-            chatflowId: options.chatflowid,
-            sessionId: options.sessionId,
-            chatId: options.chatId,
-            orgId: options.orgId,
-            input: input,
-            state: options.agentflowRuntime?.state
-        }
+        const flowConfig = buildToolFlowConfig(options, input)
 
         try {
             let toolOutput: string
@@ -426,4 +447,4 @@ class Tool_Agentflow implements INode {
     }
 }
 
-module.exports = { nodeClass: Tool_Agentflow, resolveToolInputTemplate }
+module.exports = { nodeClass: Tool_Agentflow, resolveToolInputTemplate, getRecentImageUploadsFromUploads, buildToolFlowConfig }

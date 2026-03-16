@@ -121,6 +121,65 @@ class DoubaoImageTool_Tools implements INode {
                     sequentialImageGeneration: 'auto'
                 },
                 description: `Maximum generated images for sequential mode. Effective only when Sequential Image Generation is auto. Range: ${MIN_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES}-${MAX_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES}.`
+            },
+            {
+                label: 'Reference Image Source',
+                name: 'referenceImageSource',
+                type: 'options',
+                options: [
+                    {
+                        label: 'Disabled',
+                        name: 'disabled'
+                    },
+                    {
+                        label: 'Flow State',
+                        name: 'flowState'
+                    },
+                    {
+                        label: 'Current Uploads',
+                        name: 'currentUploads'
+                    },
+                    {
+                        label: 'Flow State Then Uploads',
+                        name: 'flowStateThenUploads'
+                    }
+                ],
+                default: 'disabled',
+                optional: true,
+                additionalParams: true
+            },
+            {
+                label: 'Reference State Key',
+                name: 'referenceImageStateKey',
+                type: 'string',
+                optional: true,
+                additionalParams: true,
+                show: {
+                    referenceImageSource: 'flowState|flowStateThenUploads'
+                },
+                description: 'Top-level flow state key used to auto-resolve one reference image from an earlier node result.'
+            },
+            {
+                label: 'Reference Image Selection',
+                name: 'referenceImageSelection',
+                type: 'options',
+                options: [
+                    {
+                        label: 'First',
+                        name: 'first'
+                    },
+                    {
+                        label: 'Last',
+                        name: 'last'
+                    }
+                ],
+                default: 'first',
+                optional: true,
+                additionalParams: true,
+                show: {
+                    referenceImageSource: 'flowState|currentUploads|flowStateThenUploads'
+                },
+                description: 'Choose whether automatic reference image resolution uses the first or last available candidate.'
             }
         ]
     }
@@ -141,6 +200,9 @@ class DoubaoImageTool_Tools implements INode {
             nodeInputs.sequentialImageGenerationMaxImages = nodeData.inputs.sequentialImageGenerationMaxImages
         }
         if (nodeData.inputs?.watermark !== undefined) nodeInputs.watermark = nodeData.inputs.watermark
+        if (nodeData.inputs?.referenceImageSource) nodeInputs.referenceImageSource = nodeData.inputs.referenceImageSource
+        if (nodeData.inputs?.referenceImageStateKey) nodeInputs.referenceImageStateKey = nodeData.inputs.referenceImageStateKey
+        if (nodeData.inputs?.referenceImageSelection) nodeInputs.referenceImageSelection = nodeData.inputs.referenceImageSelection
 
         return nodeInputs
     }

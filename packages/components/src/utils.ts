@@ -2080,6 +2080,46 @@ export const configureStructuredOutput = (llmNodeInstance: BaseChatModel, struct
     }
 }
 
+const structuredOutputJsonHint = 'Return the response as valid json only.'
+
+const containsJsonKeyword = (value: unknown): boolean => {
+    if (typeof value === 'string') {
+        return /json/i.test(value)
+    }
+
+    if (Array.isArray(value)) {
+        return value.some((item) => containsJsonKeyword(item))
+    }
+
+    if (value && typeof value === 'object') {
+        return Object.values(value as Record<string, unknown>).some((item) => containsJsonKeyword(item))
+    }
+
+    return false
+}
+
+export const ensureStructuredOutputJsonHint = <T>(input: T): T => {
+    if (containsJsonKeyword(input)) {
+        return input
+    }
+
+    if (typeof input === 'string') {
+        return `${input}\n\n${structuredOutputJsonHint}` as T
+    }
+
+    if (Array.isArray(input)) {
+        return [
+            ...input,
+            {
+                role: 'system',
+                content: structuredOutputJsonHint
+            }
+        ] as T
+    }
+
+    return input
+}
+
 /**
  * Creates a Zod schema from a JSON schema object
  * @param {any} jsonSchema - The JSON schema object

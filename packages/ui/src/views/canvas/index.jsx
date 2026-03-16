@@ -44,6 +44,7 @@ import { IconX, IconRefreshAlert, IconMagnetFilled, IconMagnetOff, IconArtboard,
 import {
     getUniqueNodeId,
     initNode,
+    parseTemplateFlowData,
     rearrangeToolsOrdering,
     getUpsertDetails,
     updateOutdatedNodeData,
@@ -81,6 +82,7 @@ const Canvas = () => {
     const canvas = useSelector((state) => state.canvas)
     const [canvasDataStore, setCanvasDataStore] = useState(canvas)
     const [chatflow, setChatflow] = useState(null)
+    const [templateChatbotConfig, setTemplateChatbotConfig] = useState('')
     const { reactFlowInstance, setReactFlowInstance } = useContext(flowContext)
 
     // ==============================|| Snackbar ||============================== //
@@ -163,13 +165,14 @@ const Canvas = () => {
         setEdges((eds) => addEdge(newEdge, eds))
     }
 
-    const handleLoadFlow = (file) => {
+    const handleLoadFlow = (file, options = {}) => {
         try {
-            const flowData = JSON.parse(file)
+            const { chatbotConfig, flowData } = parseTemplateFlowData(file)
             const nodes = flowData.nodes || []
 
             setNodes(nodes)
             setEdges(flowData.edges || [])
+            setTemplateChatbotConfig(options.isTemplate ? chatbotConfig : '')
             setTimeout(() => setDirty(), 0)
         } catch (e) {
             console.error(e)
@@ -233,7 +236,8 @@ const Canvas = () => {
                     deployed: false,
                     isPublic: false,
                     flowData,
-                    type: isAgentCanvas ? 'MULTIAGENT' : 'CHATFLOW'
+                    type: isAgentCanvas ? 'MULTIAGENT' : 'CHATFLOW',
+                    ...(templateChatbotConfig ? { chatbotConfig: templateChatbotConfig } : {})
                 }
                 createNewChatflowApi.request(newChatflowBody)
             } else {
@@ -416,6 +420,7 @@ const Canvas = () => {
             }
             const initialFlow = chatflow.flowData ? JSON.parse(chatflow.flowData) : []
             setLasUpdatedDateTime(chatflow.updatedDate)
+            setTemplateChatbotConfig('')
             setNodes(initialFlow.nodes || [])
             setEdges(initialFlow.edges || [])
             dispatch({ type: SET_CHATFLOW, chatflow })
@@ -549,8 +554,8 @@ const Canvas = () => {
     }, [])
 
     useEffect(() => {
-        if (templateFlowData && templateFlowData.includes('"nodes":[') && templateFlowData.includes('],"edges":[')) {
-            handleLoadFlow(templateFlowData)
+        if (templateFlowData) {
+            handleLoadFlow(templateFlowData, { isTemplate: true })
         }
 
         // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -49,6 +49,7 @@ import {
     getUniqueNodeLabel,
     getUniqueNodeId,
     initNode,
+    parseTemplateFlowData,
     showHideInputAnchors,
     showHideInputParams,
     updateOutdatedNodeData,
@@ -159,6 +160,7 @@ const AgentflowCanvas = () => {
     const canvas = useSelector((state) => state.canvas)
     const [canvasDataStore, setCanvasDataStore] = useState(canvas)
     const [chatflow, setChatflow] = useState(null)
+    const [templateChatbotConfig, setTemplateChatbotConfig] = useState('')
     const { reactFlowInstance, setReactFlowInstance } = useContext(flowContext)
 
     // ==============================|| Snackbar ||============================== //
@@ -274,13 +276,14 @@ const AgentflowCanvas = () => {
         [getNodesApi.data]
     )
 
-    const handleLoadFlow = (file) => {
+    const handleLoadFlow = (file, options = {}) => {
         try {
-            const flowData = JSON.parse(file)
+            const { chatbotConfig, flowData } = parseTemplateFlowData(file)
             const normalizedFlow = normalizeLoadedFlow(flowData)
 
             setNodes(normalizedFlow.nodes)
             setEdges(normalizedFlow.edges)
+            setTemplateChatbotConfig(options.isTemplate ? chatbotConfig : '')
             setShouldNormalizeLoadedNodes(!getNodesApi.data?.length)
             setIsSyncNodesButtonEnabled(false)
             setTimeout(() => setDirty(), 0)
@@ -347,7 +350,8 @@ const AgentflowCanvas = () => {
                     deployed: false,
                     isPublic: false,
                     flowData,
-                    type: 'AGENTFLOW'
+                    type: 'AGENTFLOW',
+                    ...(templateChatbotConfig ? { chatbotConfig: templateChatbotConfig } : {})
                 }
                 createNewChatflowApi.request(newChatflowBody)
             } else {
@@ -647,6 +651,7 @@ const AgentflowCanvas = () => {
         if (getSpecificChatflowApi.data) {
             const chatflow = getSpecificChatflowApi.data
             const initialFlow = chatflow.flowData ? JSON.parse(chatflow.flowData) : []
+            setTemplateChatbotConfig('')
             setNodes(initialFlow.nodes || [])
             setEdges(initialFlow.edges || [])
             dispatch({ type: SET_CHATFLOW, chatflow })
@@ -747,8 +752,8 @@ const AgentflowCanvas = () => {
     }, [])
 
     useEffect(() => {
-        if (templateFlowData && templateFlowData.includes('"nodes":[') && templateFlowData.includes('],"edges":[')) {
-            handleLoadFlow(templateFlowData)
+        if (templateFlowData) {
+            handleLoadFlow(templateFlowData, { isTemplate: true })
         }
 
         // eslint-disable-next-line react-hooks/exhaustive-deps

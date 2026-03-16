@@ -33,7 +33,12 @@ import {
     replaceInlineDataWithFileReferences,
     updateFlowState
 } from '../utils'
-import { convertMultiOptionsToStringArray, processTemplateVariables, configureStructuredOutput } from '../../../src/utils'
+import {
+    convertMultiOptionsToStringArray,
+    processTemplateVariables,
+    configureStructuredOutput,
+    ensureStructuredOutputJsonHint
+} from '../../../src/utils'
 
 interface ITool {
     agentSelectedTool: string
@@ -1423,7 +1428,9 @@ class Agent_Agentflow implements INode {
             // If is structured output, then invoke LLM again with structured output at the very end after all tool calls
             if (isStructuredOutput) {
                 llmNodeInstance = configureStructuredOutput(llmNodeInstance, _agentStructuredOutput)
-                const prompt = 'Convert the following response to the structured output format: ' + finalResponse
+                const prompt = ensureStructuredOutputJsonHint(
+                    'Convert the following response to the structured output format: ' + finalResponse
+                )
                 response = await llmNodeInstance.invoke(prompt, { signal: abortController?.signal })
 
                 if (typeof response === 'object') {

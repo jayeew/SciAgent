@@ -14,7 +14,7 @@ import {
     replaceInlineDataWithFileReferences,
     updateFlowState
 } from '../utils'
-import { processTemplateVariables, configureStructuredOutput } from '../../../src/utils'
+import { processTemplateVariables, configureStructuredOutput, ensureStructuredOutputJsonHint } from '../../../src/utils'
 import { flatten } from 'lodash'
 
 class LLM_Agentflow implements INode {
@@ -461,6 +461,7 @@ class LLM_Agentflow implements INode {
             if (isStructuredOutput) {
                 llmNodeInstance = configureStructuredOutput(llmNodeInstance, _llmStructuredOutput)
             }
+            const llmInvokeInput = isStructuredOutput ? (ensureStructuredOutputJsonHint(messages) as BaseMessageLike[]) : messages
 
             // Initialize response and determine if streaming is possible
             let response: AIMessageChunk = new AIMessageChunk('')
@@ -470,7 +471,7 @@ class LLM_Agentflow implements INode {
             // Start analytics
             if (analyticHandlers && options.parentTraceIds) {
                 const llmLabel = options?.componentNodes?.[model]?.label || model
-                llmIds = await analyticHandlers.onLLMStart(llmLabel, messages, options.parentTraceIds)
+                llmIds = await analyticHandlers.onLLMStart(llmLabel, llmInvokeInput, options.parentTraceIds)
             }
 
             // Track execution time
@@ -481,9 +482,9 @@ class LLM_Agentflow implements INode {
              * Invoke LLM
              */
             if (isStreamable) {
-                response = await this.handleStreamingResponse(sseStreamer, llmNodeInstance, messages, chatId, abortController)
+                response = await this.handleStreamingResponse(sseStreamer, llmNodeInstance, llmInvokeInput, chatId, abortController)
             } else {
-                response = await llmNodeInstance.invoke(messages, { signal: abortController?.signal })
+                response = await llmNodeInstance.invoke(llmInvokeInput, { signal: abortController?.signal })
 
                 // Stream whole response back to UI if this is the last node
                 if (isLastNode && options.sseStreamer) {

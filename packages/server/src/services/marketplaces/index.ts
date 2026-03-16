@@ -17,6 +17,7 @@ type ITemplate = {
     description: string
     framework: string[]
     usecases: string[]
+    chatbotConfig?: string | Record<string, unknown>
     nodes: IReactFlowNode[]
     edges: IReactFlowEdge[]
 }
@@ -214,7 +215,23 @@ const saveCustomTemplate = async (body: any): Promise<any> => {
             const chatflow = await chatflowsService.getChatflowById(body.chatflowId, body.workspaceId)
             const flowData = JSON.parse(chatflow.flowData)
             const { framework, exportJson } = _generateExportFlowData(flowData)
-            flowDataStr = JSON.stringify(exportJson)
+            let templateFlowData: Record<string, any> = exportJson
+
+            if (chatflow.chatbotConfig) {
+                try {
+                    templateFlowData = {
+                        ...exportJson,
+                        chatbotConfig: JSON.parse(chatflow.chatbotConfig)
+                    }
+                } catch {
+                    templateFlowData = {
+                        ...exportJson,
+                        chatbotConfig: chatflow.chatbotConfig
+                    }
+                }
+            }
+
+            flowDataStr = JSON.stringify(templateFlowData)
             customTemplate.framework = framework
         } else if (body.tool) {
             const flowData = {

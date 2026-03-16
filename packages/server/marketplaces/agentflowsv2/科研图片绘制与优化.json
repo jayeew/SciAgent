@@ -1,13 +1,23 @@
 {
-    "description": "一个固定六阶段的 Agentflow V2 模板：理解素材、生成严格请求、输出首稿、视觉评审、构造图生图精修请求，并生成最终整合图像",
-    "usecases": ["图片生成", "多模态", "设计优化"],
+    "description": "一个固定九阶段的 Agentflow V2 模板：读取论文、生成 VISUAL SCHEMA、绘制首稿、视觉审稿、人工修订一次，并结合参考图完成最终科研插图润色。",
+    "usecases": ["科研插图", "图片生成", "多模型协同", "论文配图"],
+    "chatbotConfig": {
+        "fullFileUpload": {
+            "status": true,
+            "allowedUploadFileTypes": "application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/plain",
+            "pdfFile": {
+                "usage": "perFile",
+                "legacyBuild": false
+            }
+        }
+    },
     "nodes": [
         {
             "id": "startAgentflow_0",
             "type": "agentFlow",
             "position": {
                 "x": 60,
-                "y": 220
+                "y": 280
             },
             "data": {
                 "id": "startAgentflow_0",
@@ -19,7 +29,7 @@
                 "hideInput": true,
                 "baseClasses": ["Start"],
                 "category": "Agent Flows",
-                "description": "复合素材图片构建与整合优化流程的起始节点",
+                "description": "科研论文插图绘制与优化流程的起始节点",
                 "inputParams": [
                     {
                         "label": "输入类型",
@@ -51,7 +61,7 @@
                     "startInputType": "chatInput",
                     "startState": [
                         {
-                            "key": "assetAnalysis",
+                            "key": "visualSchema",
                             "value": ""
                         },
                         {
@@ -63,11 +73,23 @@
                             "value": ""
                         },
                         {
-                            "key": "reviewReport",
+                            "key": "draftReview",
+                            "value": ""
+                        },
+                        {
+                            "key": "humanRevisionBrief",
+                            "value": ""
+                        },
+                        {
+                            "key": "refineImageRequestDraft",
                             "value": ""
                         },
                         {
                             "key": "refineImageRequests",
+                            "value": ""
+                        },
+                        {
+                            "key": "finalGenerationResult",
                             "value": ""
                         }
                     ],
@@ -87,19 +109,19 @@
             "id": "llmAgentflow_0",
             "type": "agentFlow",
             "position": {
-                "x": 260,
-                "y": 60
+                "x": 320,
+                "y": 280
             },
             "data": {
                 "id": "llmAgentflow_0",
-                "label": "素材理解",
+                "label": "论文视觉架构师",
                 "version": 1.1,
                 "name": "llmAgentflow",
                 "type": "LLM",
                 "color": "#64B5F6",
                 "baseClasses": ["LLM"],
                 "category": "Agent Flows",
-                "description": "多模态理解素材图与文本需求，抽取主体、保留点、风格线索与禁止项",
+                "description": "读取论文与需求，输出可直接送入绘图模型的 VISUAL SCHEMA",
                 "inputParams": [
                     {
                         "label": "Model",
@@ -361,71 +383,27 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是复合素材图片构建流程中的素材理解专家。</p><p>请综合用户本轮上传的图片素材与文字需求，抽取后续生成必须遵守的视觉约束。</p><p>你必须只返回合法 JSON（json）对象，不要输出额外说明，不要输出 Markdown 代码块。</p><p>输出要求：</p><ul><li><p>只输出结构化结果，不要输出额外说明。</p></li><li><p>如果没有上传图片，也要仅根据文字需求完成分析。</p></li><li><p><code>subjects</code> 提炼核心主体与场景对象。</p></li><li><p><code>mustKeep</code> 写必须保留的关键元素、关系、氛围或业务诉求。</p></li><li><p><code>styleHints</code> 写风格、镜头语言、材质、色彩、品牌调性等。</p></li><li><p><code>compositionHints</code> 写构图、视角、前中后景、主体位置、留白等。</p></li><li><p><code>forbidden</code> 必须包含这些默认限制：不要文字排版、不要 logo、不要水印、不要海报大标题、不要低清晰度伪影。</p></li><li><p><code>riskNotes</code> 写容易跑偏或需要特别规避的问题。</p></li></ul>"
+                            "content": "# Role\n你是一位 CVPR/NeurIPS 顶刊的视觉架构师。你的核心能力是将抽象的论文逻辑转化为具体的、结构化的、几何级的视觉指令。\n\n# Objective\n阅读我提供的论文内容与当前用户需求，输出一份 [VISUAL SCHEMA]。这份 Schema 将被直接发送给 AI 绘图模型，因此必须使用强硬的物理描述。\n\n# Figure Selection Rule\n如果论文内容里可能对应多种候选插图：\n1. 优先服从用户当前明确指定的目标图或目标模块。\n2. 如果用户没有明确指定，则默认选择最适合展示论文主方法的 overall method figure，而不是实验结果拼图或消融表格。\n3. 如果论文内容不足以支撑完整构图，也要输出 best-effort 草案，不要拒答。\n\n# Phase 1: Layout Strategy Selector\n在生成 Schema 之前，请先分析论文逻辑，从以下布局原型中选择最合适的一个或组合：\n1. Linear Pipeline: 左→右流向。\n2. Cyclic/Iterative: 中心包含循环箭头。\n3. Hierarchical Stack: 上→下或下→上堆叠。\n4. Parallel/Dual-Stream: 上下平行双流。\n5. Central Hub: 核心模块连接四周组件。\n\n# Phase 2: Schema Generation Rules\n1. Dynamic Zoning: 根据布局定义 2-5 个物理区域。\n2. Internal Visualization: 必须定义每个区域内部的物体（icons, grids, trees 等），禁止只写抽象概念。\n3. Explicit Connections: 如果存在循环或反馈，必须明确写出 curved arrow / dotted arrow / wide flow arrow 等连接方式。\n\n# Output Format (The Golden Schema)\n请严格遵守以下 Markdown 结构输出，不要添加任何解释文字：\n\n---BEGIN PROMPT---\n\n[Style & Meta-Instructions]\nHigh-fidelity scientific schematic, technical vector illustration, clean white background, distinct boundaries, academic textbook style. High resolution 4k, strictly 2D flat design with subtle isometric elements.\n\n[LAYOUT CONFIGURATION]\n* **Selected Layout**: [Fill with chosen layout]\n* **Composition Logic**: [Fill with composition logic]\n* **Color Palette**: Professional Pastel (Azure Blue, Slate Grey, Coral Orange, Mint Green).\n\n[ZONE 1: LOCATION - LABEL]\n* **Container**: [Describe the physical container]\n* **Visual Structure**: [Describe concrete objects and arrangement]\n* **Key Text Labels**: \"[Text 1]\"\n\n[ZONE 2: LOCATION - LABEL]\n* **Container**: [Describe the physical container]\n* **Visual Structure**: [Describe concrete objects and arrangement]\n* **Key Text Labels**: \"[Text 2]\", \"[Text 3]\"\n\n[ZONE 3: LOCATION - LABEL]\n* **Container**: [Describe the physical container]\n* **Visual Structure**: [Describe concrete objects and arrangement]\n* **Key Text Labels**: \"[Text 4]\"\n\n[CONNECTIONS]\n1. [Describe connection lines and arrows]\n2. [Describe connection lines and arrows]\n\n---END PROMPT---"
                         },
                         {
                             "role": "user",
-                            "content": "<p>用户需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>请基于当前上传素材与需求完成素材理解。</p>"
+                            "content": "用户需求：\n{{ question }}\n\n请基于当前上传的论文全文、参考图片（如果有）与文字目标，输出唯一一份可执行的 [VISUAL SCHEMA]。"
                         }
                     ],
                     "llmEnableMemory": false,
                     "llmMemoryType": "allMessages",
                     "llmUserMessage": "",
                     "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "subjects",
-                            "type": "stringArray",
-                            "enumValues": "",
-                            "jsonSchema": "",
-                            "description": "Core subjects and scene objects"
-                        },
-                        {
-                            "key": "mustKeep",
-                            "type": "stringArray",
-                            "enumValues": "",
-                            "jsonSchema": "",
-                            "description": "Must-preserve elements and constraints"
-                        },
-                        {
-                            "key": "styleHints",
-                            "type": "stringArray",
-                            "enumValues": "",
-                            "jsonSchema": "",
-                            "description": "Style, material, tone and aesthetic hints"
-                        },
-                        {
-                            "key": "compositionHints",
-                            "type": "stringArray",
-                            "enumValues": "",
-                            "jsonSchema": "",
-                            "description": "Composition, perspective and layout hints"
-                        },
-                        {
-                            "key": "forbidden",
-                            "type": "stringArray",
-                            "enumValues": "",
-                            "jsonSchema": "",
-                            "description": "Things that must not appear"
-                        },
-                        {
-                            "key": "riskNotes",
-                            "type": "stringArray",
-                            "enumValues": "",
-                            "jsonSchema": "",
-                            "description": "Failure modes and drift risks"
-                        }
-                    ],
                     "llmUpdateState": [
                         {
-                            "key": "assetAnalysis",
+                            "key": "visualSchema",
                             "value": "{{ output }}"
                         }
                     ],
                     "llmModelConfig": {
                         "credential": "",
                         "modelName": "qwen-plus",
-                        "temperature": 0.2,
+                        "temperature": 0.1,
                         "streaming": true,
                         "allowImageUploads": true,
                         "imageResolution": "high",
@@ -447,19 +425,19 @@
             "id": "llmAgentflow_1",
             "type": "agentFlow",
             "position": {
-                "x": 560,
-                "y": 60
+                "x": 580,
+                "y": 280
             },
             "data": {
                 "id": "llmAgentflow_1",
-                "label": "严格构图指令",
+                "label": "首稿渲染指令",
                 "version": 1.1,
                 "name": "llmAgentflow",
                 "type": "LLM",
                 "color": "#64B5F6",
                 "baseClasses": ["LLM"],
                 "category": "Agent Flows",
-                "description": "把素材分析转成严格、可执行的 Doubao 单图生成请求",
+                "description": "把 VISUAL SCHEMA 转成单次 Doubao 渲染请求",
                 "inputParams": [
                     {
                         "label": "Model",
@@ -721,11 +699,11 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是图片生成提示词架构师，需要把素材理解结果转成 <code>doubaoImageTool</code> 可直接执行的单图请求。</p><p>你必须只返回合法 JSON（json）对象，只生成 1 个请求，输出对象必须是 <code>{\"requests\":[...]}</code>。</p><p>规则：</p><ul><li><p>请求字段只允许使用：<code>prompt</code>、<code>size</code>、<code>outputFormat</code>、<code>watermark</code>。</p></li><li><p><code>prompt</code> 必须分成六段，且按这个顺序写：<strong>目标</strong>、<strong>必保留</strong>、<strong>构图</strong>、<strong>光线材质</strong>、<strong>质量要求</strong>、<strong>严禁项</strong>。</p></li><li><p><strong>严禁项</strong> 必须覆盖：不要文字排版、不要 logo、不要水印、不要海报大标题、不要低清晰度伪影。</p></li><li><p>默认生成 1 张最终图，不要输出多候选策略。</p></li><li><p><code>size</code> 默认用 <code>2048x2048</code>；明确横版时优先 <code>2848x1600</code>；明确竖版时优先 <code>1600x2848</code>。</p></li><li><p><code>outputFormat</code> 固定为 <code>png</code>，<code>watermark</code> 固定为 <code>false</code>。</p></li></ul><p>不要输出 Markdown，不要输出额外解释。</p>"
+                            "content": "You are an academic diagram rendering prompt architect. Convert the provided VISUAL SCHEMA into exactly one Doubao image request.\n\nStyle Reference & Execution Instructions:\n1. Art Style (Visio/Illustrator Aesthetic): Generate a professional academic architecture diagram suitable for a top-tier computer science paper (CVPR/NeurIPS). Visuals must use flat vector graphics, distinct geometric shapes, clean thin outlines, soft pastel fills, clean white background, and no shadows/shading.\n2. CRITICAL TEXT CONSTRAINTS: DO NOT render meta-labels such as ZONE 1, LAYOUT CONFIGURATION, Input, Output, or Container. ONLY render the exact text inside double quotes under Key Text Labels. Use a clean bold Sans-Serif font.\n3. Spatial Rule: Strictly follow the provided schema and keep the composition suitable for a single scientific figure.\n\nReturn only a JSON object with shape {\"requests\":[...]} and exactly one request. Allowed fields inside each request are prompt, size, outputFormat, watermark. Prefer size 2848x1600 unless the schema clearly implies portrait or square. outputFormat must be png. watermark must be false."
                         },
                         {
                             "role": "user",
-                            "content": "<p>用户需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>素材分析结果：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.assetAnalysis\" data-label=\"$flow.state.assetAnalysis\">{{ $flow.state.assetAnalysis }}</span></p>"
+                            "content": "用户需求：\n{{ question }}\n\n请把下面这份 VISUAL SCHEMA 转成最终渲染请求：\n{{ $flow.state.visualSchema }}"
                         }
                     ],
                     "llmEnableMemory": false,
@@ -737,8 +715,8 @@
                             "key": "requests",
                             "type": "jsonArray",
                             "enumValues": "",
-                            "jsonSchema": "{\n    \"prompt\": {\n        \"type\": \"string\",\n        \"description\": \"Strict production-ready Doubao prompt with six required sections\"\n    },\n    \"size\": {\n        \"type\": \"string\",\n        \"description\": \"Doubao-supported canvas size\"\n    },\n    \"outputFormat\": {\n        \"type\": \"string\",\n        \"description\": \"Use png\"\n    },\n    \"watermark\": {\n        \"type\": \"boolean\",\n        \"description\": \"Use false\"\n    }\n}",
-                            "description": "Single image request for doubaoImageTool"
+                            "jsonSchema": "{\n    \"prompt\": {\n        \"type\": \"string\",\n        \"description\": \"Execution-ready illustration prompt derived from the visual schema\"\n    },\n    \"size\": {\n        \"type\": \"string\",\n        \"description\": \"Doubao-supported canvas size\"\n    },\n    \"outputFormat\": {\n        \"type\": \"string\",\n        \"description\": \"Use png\"\n    },\n    \"watermark\": {\n        \"type\": \"boolean\",\n        \"description\": \"Use false\"\n    }\n}",
+                            "description": "Single academic diagram request for doubaoImageTool"
                         }
                     ],
                     "llmUpdateState": [
@@ -769,377 +747,138 @@
             }
         },
         {
-            "id": "agentAgentflow_0",
+            "id": "toolAgentflow_0",
             "type": "agentFlow",
             "position": {
-                "x": 860,
-                "y": 60
+                "x": 840,
+                "y": 280
             },
             "data": {
-                "id": "agentAgentflow_0",
+                "id": "toolAgentflow_0",
                 "label": "首稿生成",
-                "version": 3.2,
-                "name": "agentAgentflow",
-                "type": "Agent",
-                "color": "#4DD0E1",
-                "baseClasses": ["Agent"],
+                "version": 1.2,
+                "name": "toolAgentflow",
+                "type": "Tool",
+                "color": "#d4a373",
+                "baseClasses": ["Tool"],
                 "category": "Agent Flows",
-                "description": "调用 Doubao Image Tool 生成首稿，并把图片作为 artifact 带入后续评审",
+                "description": "调用 DoubaoImageTool 生成科研插图首稿",
                 "inputParams": [
                     {
-                        "label": "Model",
-                        "name": "agentModel",
+                        "label": "工具",
+                        "name": "toolAgentflowSelectedTool",
                         "type": "asyncOptions",
-                        "loadMethod": "listModels",
+                        "loadMethod": "listTools",
                         "loadConfig": true,
-                        "id": "agentAgentflow_0-input-agentModel-asyncOptions",
+                        "id": "toolAgentflow_0-input-toolAgentflowSelectedTool-asyncOptions",
                         "display": true
                     },
                     {
-                        "label": "Messages",
-                        "name": "agentMessages",
+                        "label": "工具输入参数",
+                        "name": "toolInputArgs",
                         "type": "array",
-                        "optional": true,
                         "acceptVariable": true,
+                        "refresh": true,
                         "array": [
                             {
-                                "label": "Role",
-                                "name": "role",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "System",
-                                        "name": "system"
-                                    },
-                                    {
-                                        "label": "Assistant",
-                                        "name": "assistant"
-                                    },
-                                    {
-                                        "label": "Developer",
-                                        "name": "developer"
-                                    },
-                                    {
-                                        "label": "User",
-                                        "name": "user"
-                                    }
-                                ]
-                            },
-                            {
-                                "label": "Content",
-                                "name": "content",
-                                "type": "string",
-                                "acceptVariable": true,
-                                "generateInstruction": true,
-                                "rows": 4
-                            }
-                        ],
-                        "id": "agentAgentflow_0-input-agentMessages-array",
-                        "display": true
-                    },
-                    {
-                        "label": "Tools",
-                        "name": "agentTools",
-                        "type": "array",
-                        "optional": true,
-                        "array": [
-                            {
-                                "label": "Tool",
-                                "name": "agentSelectedTool",
+                                "label": "输入参数名",
+                                "name": "inputArgName",
                                 "type": "asyncOptions",
-                                "loadMethod": "listTools",
-                                "loadConfig": true
+                                "loadMethod": "listToolInputArgs",
+                                "refresh": true
                             },
                             {
-                                "label": "Require Human Input",
-                                "name": "agentSelectedToolRequiresHumanInput",
-                                "type": "boolean",
-                                "optional": true
-                            }
-                        ],
-                        "id": "agentAgentflow_0-input-agentTools-array",
-                        "display": true
-                    },
-                    {
-                        "label": "Knowledge (Document Stores)",
-                        "name": "agentKnowledgeDocumentStores",
-                        "type": "array",
-                        "description": "Give your agent context about different document sources. Document stores must be upserted in advance.",
-                        "array": [
-                            {
-                                "label": "Document Store",
-                                "name": "documentStore",
-                                "type": "asyncOptions",
-                                "loadMethod": "listStores"
-                            },
-                            {
-                                "label": "Describe Knowledge",
-                                "name": "docStoreDescription",
+                                "label": "输入参数值",
+                                "name": "inputArgValue",
                                 "type": "string",
-                                "generateDocStoreDescription": true,
-                                "placeholder": "Describe what the knowledge base is about, this is useful for the AI to know when and how to search for correct information",
-                                "rows": 4
-                            },
-                            {
-                                "label": "Return Source Documents",
-                                "name": "returnSourceDocuments",
-                                "type": "boolean",
-                                "optional": true
+                                "acceptVariable": true
                             }
                         ],
-                        "optional": true,
-                        "id": "agentAgentflow_0-input-agentKnowledgeDocumentStores-array",
+                        "id": "toolAgentflow_0-input-toolInputArgs-array",
                         "display": true
                     },
                     {
-                        "label": "Knowledge (Vector Embeddings)",
-                        "name": "agentKnowledgeVSEmbeddings",
-                        "type": "array",
-                        "description": "Give your agent context about different document sources from existing vector stores and embeddings",
-                        "array": [
-                            {
-                                "label": "Vector Store",
-                                "name": "vectorStore",
-                                "type": "asyncOptions",
-                                "loadMethod": "listVectorStores",
-                                "loadConfig": true
-                            },
-                            {
-                                "label": "Embedding Model",
-                                "name": "embeddingModel",
-                                "type": "asyncOptions",
-                                "loadMethod": "listEmbeddings",
-                                "loadConfig": true
-                            },
-                            {
-                                "label": "Knowledge Name",
-                                "name": "knowledgeName",
-                                "type": "string",
-                                "placeholder": "A short name for the knowledge base, this is useful for the AI to know when and how to search for correct information"
-                            },
-                            {
-                                "label": "Describe Knowledge",
-                                "name": "knowledgeDescription",
-                                "type": "string",
-                                "placeholder": "Describe what the knowledge base is about, this is useful for the AI to know when and how to search for correct information",
-                                "rows": 4
-                            },
-                            {
-                                "label": "Return Source Documents",
-                                "name": "returnSourceDocuments",
-                                "type": "boolean",
-                                "optional": true
-                            }
-                        ],
-                        "optional": true,
-                        "id": "agentAgentflow_0-input-agentKnowledgeVSEmbeddings-array",
-                        "display": true
-                    },
-                    {
-                        "label": "Enable Memory",
-                        "name": "agentEnableMemory",
-                        "type": "boolean",
-                        "description": "Enable memory for the conversation thread",
-                        "default": true,
-                        "optional": true,
-                        "id": "agentAgentflow_0-input-agentEnableMemory-boolean",
-                        "display": true
-                    },
-                    {
-                        "label": "Memory Type",
-                        "name": "agentMemoryType",
-                        "type": "options",
-                        "options": [
-                            {
-                                "label": "All Messages",
-                                "name": "allMessages",
-                                "description": "Retrieve all messages from the conversation"
-                            },
-                            {
-                                "label": "Window Size",
-                                "name": "windowSize",
-                                "description": "Uses a fixed window size to surface the last N messages"
-                            },
-                            {
-                                "label": "Conversation Summary",
-                                "name": "conversationSummary",
-                                "description": "Summarizes the whole conversation"
-                            },
-                            {
-                                "label": "Conversation Summary Buffer",
-                                "name": "conversationSummaryBuffer",
-                                "description": "Summarize conversations once token limit is reached. Default to 2000"
-                            }
-                        ],
-                        "optional": true,
-                        "default": "allMessages",
-                        "show": {
-                            "agentEnableMemory": true
-                        },
-                        "id": "agentAgentflow_0-input-agentMemoryType-options",
-                        "display": true
-                    },
-                    {
-                        "label": "Window Size",
-                        "name": "agentMemoryWindowSize",
-                        "type": "number",
-                        "default": "20",
-                        "description": "Uses a fixed window size to surface the last N messages",
-                        "show": {
-                            "agentMemoryType": "windowSize"
-                        },
-                        "id": "agentAgentflow_0-input-agentMemoryWindowSize-number",
-                        "display": false
-                    },
-                    {
-                        "label": "Max Token Limit",
-                        "name": "agentMemoryMaxTokenLimit",
-                        "type": "number",
-                        "default": "2000",
-                        "description": "Summarize conversations once token limit is reached. Default to 2000",
-                        "show": {
-                            "agentMemoryType": "conversationSummaryBuffer"
-                        },
-                        "id": "agentAgentflow_0-input-agentMemoryMaxTokenLimit-number",
-                        "display": false
-                    },
-                    {
-                        "label": "Input Message",
-                        "name": "agentUserMessage",
-                        "type": "string",
-                        "description": "Add an input message as user message at the end of the conversation",
-                        "rows": 4,
-                        "optional": true,
-                        "acceptVariable": true,
-                        "show": {
-                            "agentEnableMemory": true
-                        },
-                        "id": "agentAgentflow_0-input-agentUserMessage-string",
-                        "display": true
-                    },
-                    {
-                        "label": "Return Response As",
-                        "name": "agentReturnResponseAs",
-                        "type": "options",
-                        "options": [
-                            {
-                                "label": "User Message",
-                                "name": "userMessage"
-                            },
-                            {
-                                "label": "Assistant Message",
-                                "name": "assistantMessage"
-                            }
-                        ],
-                        "default": "userMessage",
-                        "id": "agentAgentflow_0-input-agentReturnResponseAs-options",
-                        "display": true
-                    },
-                    {
-                        "label": "Update Flow State",
-                        "name": "agentUpdateState",
+                        "label": "更新流程状态",
+                        "name": "toolUpdateState",
                         "description": "Update runtime state during the execution of the workflow",
                         "type": "array",
                         "optional": true,
                         "acceptVariable": true,
                         "array": [
                             {
-                                "label": "Key",
+                                "label": "键",
                                 "name": "key",
                                 "type": "asyncOptions",
-                                "loadMethod": "listRuntimeStateKeys",
-                                "freeSolo": true
+                                "loadMethod": "listRuntimeStateKeys"
                             },
                             {
-                                "label": "Value",
+                                "label": "值",
                                 "name": "value",
                                 "type": "string",
                                 "acceptVariable": true,
                                 "acceptNodeOutputAsVariable": true
                             }
                         ],
-                        "id": "agentAgentflow_0-input-agentUpdateState-array",
+                        "id": "toolAgentflow_0-input-toolUpdateState-array",
                         "display": true
                     }
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "agentModel": "chatAlibabaTongyi",
-                    "agentMessages": [
+                    "toolAgentflowSelectedTool": "doubaoImageTool",
+                    "toolInputArgs": [
                         {
-                            "role": "system",
-                            "content": "<p>你是图片生成执行代理。</p><p>你只有一个可用工具：<code>doubaoImageTool</code>。</p><p>必须遵守以下规则：</p><ul><li><p>只调用一次工具。</p></li><li><p>调用时直接使用用户提供的 <code>draftImageRequests</code> 作为 <code>imageRequests</code> 参数，不要改写字段名。</p></li><li><p>不要自行补充多候选策略，不要改成组图。</p></li><li><p>工具完成后，你的最终回复必须只返回工具输出的 JSON 内容，不要加解释、不要加 Markdown。</p></li></ul>"
+                            "inputArgName": "imageRequests",
+                            "inputArgValue": "{{ $flow.state.draftImageRequests }}"
                         },
                         {
-                            "role": "user",
-                            "content": "<p>请立即调用图片生成工具生成首稿。</p><p>用户需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>素材分析：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.assetAnalysis\" data-label=\"$flow.state.assetAnalysis\">{{ $flow.state.assetAnalysis }}</span></p><p>draftImageRequests：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.draftImageRequests\" data-label=\"$flow.state.draftImageRequests\">{{ $flow.state.draftImageRequests }}</span></p>"
+                            "inputArgName": "continueOnGenerationFailure",
+                            "inputArgValue": "false"
                         }
                     ],
-                    "agentTools": [
-                        {
-                            "agentSelectedTool": "doubaoImageTool",
-                            "agentSelectedToolRequiresHumanInput": "",
-                            "agentSelectedToolConfig": {
-                                "credential": "",
-                                "model": "doubao-seedream-5-0-260128",
-                                "size": "2048x2048",
-                                "outputFormat": "png",
-                                "watermark": false,
-                                "sequentialImageGeneration": "disabled",
-                                "agentSelectedTool": "doubaoImageTool"
-                            }
-                        }
-                    ],
-                    "agentKnowledgeDocumentStores": [],
-                    "agentKnowledgeVSEmbeddings": "",
-                    "agentEnableMemory": false,
-                    "agentMemoryType": "allMessages",
-                    "agentUserMessage": "",
-                    "agentReturnResponseAs": "assistantMessage",
-                    "agentUpdateState": [
+                    "toolUpdateState": [
                         {
                             "key": "draftGenerationResult",
                             "value": "{{ output }}"
                         }
                     ],
-                    "agentModelConfig": {
+                    "toolAgentflowSelectedToolConfig": {
                         "credential": "",
-                        "modelName": "qwen-plus",
-                        "temperature": 0,
-                        "streaming": true,
-                        "allowImageUploads": false,
-                        "imageResolution": "low",
-                        "agentModel": "chatAlibabaTongyi"
+                        "model": "doubao-seedream-5-0-260128",
+                        "size": "2848x1600",
+                        "outputFormat": "png",
+                        "watermark": false,
+                        "sequentialImageGeneration": "disabled",
+                        "toolAgentflowSelectedTool": "doubaoImageTool"
                     }
                 },
                 "outputAnchors": [
                     {
-                        "id": "agentAgentflow_0-output-agentAgentflow",
-                        "label": "Agent",
-                        "name": "agentAgentflow"
+                        "id": "toolAgentflow_0-output-toolAgentflow",
+                        "label": "工具",
+                        "name": "toolAgentflow"
                     }
                 ],
-                "outputs": {},
-                "selected": false
+                "outputs": {}
             }
         },
         {
             "id": "llmAgentflow_2",
             "type": "agentFlow",
             "position": {
-                "x": 1180,
-                "y": 60
+                "x": 1100,
+                "y": 280
             },
             "data": {
                 "id": "llmAgentflow_2",
-                "label": "视觉审稿与精修指令",
+                "label": "视觉审稿",
                 "version": 1.1,
                 "name": "llmAgentflow",
                 "type": "LLM",
                 "color": "#64B5F6",
                 "baseClasses": ["LLM"],
                 "category": "Agent Flows",
-                "description": "基于首稿图片完成结构化审稿，并直接生成二轮精修请求",
+                "description": "检查首稿与视觉蓝图的一致性并产出精修建议",
                 "inputParams": [
                     {
                         "label": "Model",
@@ -1401,11 +1140,11 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是复合素材图片精修审稿专家。</p><p>请结合当前对话里最新可见的首稿图片、首稿渲染请求与用户需求，先完成结构化视觉评审，再直接产出 <code>doubaoImageTool</code> 可执行的单图二轮精修请求。</p><p>你必须只返回合法 JSON（json）对象，不要输出 Markdown 代码块，不要输出额外解释。</p><p>你只能返回这些顶层字段，字段名必须完全一致，禁止输出任何其他字段：<code>passed</code>、<code>score</code>、<code>issues</code>、<code>preserve</code>、<code>refinePromptAddendum</code>、<code>requests</code>。</p><p>所有字段都必须始终出现：<code>passed</code> 必须是 boolean；<code>score</code> 必须是 0-100 的 number；<code>issues</code> 必须是 string array，可为空；<code>preserve</code> 必须是 string array，可为空；<code>refinePromptAddendum</code> 必须是 string，无需补充时返回空字符串。</p><p><code>requests</code> 只允许 1 个元素，且元素字段只允许：<code>prompt</code>、<code>size</code>、<code>outputFormat</code>、<code>watermark</code>。</p><p><code>prompt</code> 必须在首稿提示词基础上吸收评审结论，明确保留项与需要修正的构图/主体/层次/材质/光影问题。</p><p>不要输出 <code>referenceImageFileNames</code>；参考图由工具自动读取首稿结果。</p><p><code>outputFormat</code> 固定为 <code>png</code>，<code>watermark</code> 固定为 <code>false</code>。</p><p>输出示例：<code>{\"passed\":true,\"score\":90,\"issues\":[],\"preserve\":[\"Keep the subject silhouette\"],\"refinePromptAddendum\":\"\",\"requests\":[{\"prompt\":\"...\",\"size\":\"2048x2048\",\"outputFormat\":\"png\",\"watermark\":false}]}</code></p>"
+                            "content": "你是顶会论文插图审稿专家。你的目标是审查当前最新可见的科研图首稿是否严格遵守 VISUAL SCHEMA。若图像可见，请优先基于图像本身审稿；若图像不可见，则退化为基于渲染请求一致性的保守审稿。 你必须只返回合法 JSON（json）对象，不要输出 Markdown，不要输出额外说明。 你只能返回以下 5 个顶层字段，字段名必须完全一致，禁止输出任何其他字段：passed、score、issues、preserve、refinePromptAddendum。 所有字段都必须始终出现：passed 必须是 boolean；score 必须是 0-100 的 number；issues 必须是 string array，可为空数组；preserve 必须是 string array，可为空数组；refinePromptAddendum 必须是 string，无需修改时返回空字符串。 如果当前图片不可见，请基于渲染请求与 VISUAL SCHEMA 做保守审稿，但仍然只能使用上述 5 个字段。 输出示例：{\"passed\":true,\"score\":92,\"issues\":[],\"preserve\":[\"Keep the left-to-right pipeline structure\"],\"refinePromptAddendum\":\"\"}"
                         },
                         {
                             "role": "user",
-                            "content": "<p>用户需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>素材分析：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.assetAnalysis\" data-label=\"$flow.state.assetAnalysis\">{{ $flow.state.assetAnalysis }}</span></p><p>首稿请求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.draftImageRequests\" data-label=\"$flow.state.draftImageRequests\">{{ $flow.state.draftImageRequests }}</span></p><p>请结合当前对话里最新可见的首稿图片完成视觉评审；如果图片不可见，则退化为基于请求一致性给出保守评审。</p>"
+                            "content": "用户需求：\n{{ question }}\n\nVISUAL SCHEMA：\n{{ $flow.state.visualSchema }}\n\n首稿渲染请求：\n{{ $flow.state.draftImageRequests }}\n\n请结合当前对话中最新可见的首稿图片输出审稿结果。"
                         }
                     ],
                     "llmEnableMemory": true,
@@ -1418,7 +1157,7 @@
                             "type": "boolean",
                             "enumValues": "",
                             "jsonSchema": "",
-                            "description": "Required boolean. true if the image can proceed, false otherwise."
+                            "description": "Required boolean. true if the draft can proceed, false otherwise."
                         },
                         {
                             "key": "score",
@@ -1447,18 +1186,11 @@
                             "enumValues": "",
                             "jsonSchema": "",
                             "description": "Required string. Use an empty string when no extra refinement guidance is needed."
-                        },
-                        {
-                            "key": "requests",
-                            "type": "jsonArray",
-                            "enumValues": "",
-                            "jsonSchema": "{\n    \"prompt\": {\n        \"type\": \"string\",\n        \"description\": \"Execution-ready refinement prompt\"\n    },\n    \"size\": {\n        \"type\": \"string\",\n        \"description\": \"Doubao-supported canvas size\"\n    },\n    \"outputFormat\": {\n        \"type\": \"string\",\n        \"description\": \"Use png\"\n    },\n    \"watermark\": {\n        \"type\": \"boolean\",\n        \"description\": \"Use false\"\n    }\n}",
-                            "description": "Required single-item json array for doubaoImageTool."
                         }
                     ],
                     "llmUpdateState": [
                         {
-                            "key": "refineImageRequestDraft",
+                            "key": "draftReview",
                             "value": "{{ output }}"
                         }
                     ],
@@ -1484,22 +1216,774 @@
             }
         },
         {
-            "id": "toolAgentflow_0",
+            "id": "humanInputAgentflow_0",
             "type": "agentFlow",
             "position": {
-                "x": 1780,
-                "y": 60
+                "x": 1360,
+                "y": 280
             },
             "data": {
-                "id": "toolAgentflow_0",
-                "label": "二轮润色",
+                "id": "humanInputAgentflow_0",
+                "label": "人工确认",
+                "version": 1,
+                "name": "humanInputAgentflow",
+                "type": "HumanInput",
+                "color": "#6E6EFD",
+                "baseClasses": ["HumanInput"],
+                "category": "Agent Flows",
+                "description": "Request human input, approval or rejection during execution",
+                "inputParams": [
+                    {
+                        "label": "Description Type",
+                        "name": "humanInputDescriptionType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "Fixed",
+                                "name": "fixed",
+                                "description": "Specify a fixed description"
+                            },
+                            {
+                                "label": "Dynamic",
+                                "name": "dynamic",
+                                "description": "Use LLM to generate a description"
+                            }
+                        ]
+                    },
+                    {
+                        "label": "Description",
+                        "name": "humanInputDescription",
+                        "type": "string",
+                        "placeholder": "Are you sure you want to proceed?",
+                        "acceptVariable": true,
+                        "rows": 4,
+                        "show": {
+                            "humanInputDescriptionType": "fixed"
+                        }
+                    },
+                    {
+                        "label": "Model",
+                        "name": "humanInputModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "show": {
+                            "humanInputDescriptionType": "dynamic"
+                        },
+                        "display": false
+                    },
+                    {
+                        "label": "Prompt",
+                        "name": "humanInputModelPrompt",
+                        "type": "string",
+                        "acceptVariable": true,
+                        "generateInstruction": true,
+                        "rows": 4,
+                        "show": {
+                            "humanInputDescriptionType": "dynamic"
+                        },
+                        "display": false
+                    },
+                    {
+                        "label": "Enable Feedback",
+                        "name": "humanInputEnableFeedback",
+                        "type": "boolean",
+                        "default": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "humanInputDescriptionType": "fixed",
+                    "humanInputDescription": "认可则继续精修；不认可请具体说明要保留、删除、新增或修改的结构、箭头、标签、颜色或 panel 布局。",
+                    "humanInputEnableFeedback": true,
+                    "humanInputFeedbackMode": "reject",
+                    "approveButtonText": "认可",
+                    "rejectButtonText": "修改"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "humanInputAgentflow_0-output-0",
+                        "label": "Human Input",
+                        "name": "humanInputAgentflow"
+                    },
+                    {
+                        "id": "humanInputAgentflow_0-output-1",
+                        "label": "Human Input",
+                        "name": "humanInputAgentflow"
+                    }
+                ],
+                "outputs": {
+                    "humanInputAgentflow": ""
+                },
+                "selected": false
+            },
+            "width": 168,
+            "height": 80,
+            "positionAbsolute": {
+                "x": 2420,
+                "y": 320
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "llmAgentflow_3",
+            "type": "agentFlow",
+            "position": {
+                "x": 1360,
+                "y": 520
+            },
+            "data": {
+                "id": "llmAgentflow_3",
+                "label": "人工意见提炼",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "把用户的人工修改意见压缩成可执行的绘图修订摘要",
+                "inputParams": [
+                    {
+                        "label": "Model",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_3-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Messages",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Role",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "System",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "Assistant",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "Developer",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "User",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Content",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_3-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Enable Memory",
+                        "name": "llmEnableMemory",
+                        "type": "boolean",
+                        "description": "Enable memory for the conversation thread",
+                        "default": true,
+                        "optional": true,
+                        "id": "llmAgentflow_3-input-llmEnableMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Type",
+                        "name": "llmMemoryType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Messages",
+                                "name": "allMessages",
+                                "description": "Retrieve all messages from the conversation"
+                            },
+                            {
+                                "label": "Window Size",
+                                "name": "windowSize",
+                                "description": "Uses a fixed window size to surface the last N messages"
+                            },
+                            {
+                                "label": "Conversation Summary",
+                                "name": "conversationSummary",
+                                "description": "Summarizes the whole conversation"
+                            },
+                            {
+                                "label": "Conversation Summary Buffer",
+                                "name": "conversationSummaryBuffer",
+                                "description": "Summarize conversations once token limit is reached. Default to 2000"
+                            }
+                        ],
+                        "optional": true,
+                        "default": "allMessages",
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_3-input-llmMemoryType-options",
+                        "display": false
+                    },
+                    {
+                        "label": "Window Size",
+                        "name": "llmMemoryWindowSize",
+                        "type": "number",
+                        "default": "20",
+                        "description": "Uses a fixed window size to surface the last N messages",
+                        "show": {
+                            "llmMemoryType": "windowSize"
+                        },
+                        "id": "llmAgentflow_3-input-llmMemoryWindowSize-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Max Token Limit",
+                        "name": "llmMemoryMaxTokenLimit",
+                        "type": "number",
+                        "default": "2000",
+                        "description": "Summarize conversations once token limit is reached. Default to 2000",
+                        "show": {
+                            "llmMemoryType": "conversationSummaryBuffer"
+                        },
+                        "id": "llmAgentflow_3-input-llmMemoryMaxTokenLimit-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Input Message",
+                        "name": "llmUserMessage",
+                        "type": "string",
+                        "description": "Add an input message as user message at the end of the conversation",
+                        "rows": 4,
+                        "optional": true,
+                        "acceptVariable": true,
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_3-input-llmUserMessage-string",
+                        "display": false
+                    },
+                    {
+                        "label": "Return Response As",
+                        "name": "llmReturnResponseAs",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "User Message",
+                                "name": "userMessage"
+                            },
+                            {
+                                "label": "Assistant Message",
+                                "name": "assistantMessage"
+                            }
+                        ],
+                        "default": "userMessage",
+                        "id": "llmAgentflow_3-input-llmReturnResponseAs-options",
+                        "display": true
+                    },
+                    {
+                        "label": "JSON Structured Output",
+                        "name": "llmStructuredOutput",
+                        "description": "Instruct the LLM to give output in a JSON structured schema",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "string"
+                            },
+                            {
+                                "label": "Type",
+                                "name": "type",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "String",
+                                        "name": "string"
+                                    },
+                                    {
+                                        "label": "String Array",
+                                        "name": "stringArray"
+                                    },
+                                    {
+                                        "label": "Number",
+                                        "name": "number"
+                                    },
+                                    {
+                                        "label": "Boolean",
+                                        "name": "boolean"
+                                    },
+                                    {
+                                        "label": "Enum",
+                                        "name": "enum"
+                                    },
+                                    {
+                                        "label": "JSON Array",
+                                        "name": "jsonArray"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Enum Values",
+                                "name": "enumValues",
+                                "type": "string",
+                                "placeholder": "value1, value2, value3",
+                                "description": "Enum values. Separated by comma",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "enum"
+                                }
+                            },
+                            {
+                                "label": "JSON Schema",
+                                "name": "jsonSchema",
+                                "type": "code",
+                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
+                                "description": "JSON schema for the structured output",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "jsonArray"
+                                }
+                            },
+                            {
+                                "label": "Description",
+                                "name": "description",
+                                "type": "string",
+                                "placeholder": "Description of the key"
+                            }
+                        ],
+                        "id": "llmAgentflow_3-input-llmStructuredOutput-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "llmUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_3-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatAlibabaTongyi",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "你是科研插图修订编辑。请读取用户刚刚在对话中给出的人工修改意见，把它压缩成一份仅包含可执行视觉改动的 revision brief。要求：1) 保留用户明确要求保留的元素；2) 删除不可执行的情绪化表述；3) 输出简洁中文要点，适合后续直接拼接到图片精修请求；4) 不要输出 Markdown 标题。"
+                        },
+                        {
+                            "role": "user",
+                            "content": "原始 VISUAL SCHEMA：\n{{ $flow.state.visualSchema }}\n\n首稿审稿意见：\n{{ $flow.state.draftReview }}\n\n请结合对话中最新的人类反馈，输出 revision brief。"
+                        }
+                    ],
+                    "llmEnableMemory": true,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmUpdateState": [
+                        {
+                            "key": "humanRevisionBrief",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "qwen-plus",
+                        "temperature": 0.1,
+                        "streaming": true,
+                        "allowImageUploads": false,
+                        "imageResolution": "low",
+                        "llmModel": "chatAlibabaTongyi"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_3-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            }
+        },
+        {
+            "id": "llmAgentflow_4",
+            "type": "agentFlow",
+            "position": {
+                "x": 1620,
+                "y": 280
+            },
+            "data": {
+                "id": "llmAgentflow_4",
+                "label": "精修指令编排",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "综合蓝图、审稿意见和人工反馈，构造最终精修请求",
+                "inputParams": [
+                    {
+                        "label": "Model",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_4-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Messages",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Role",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "System",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "Assistant",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "Developer",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "User",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Content",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_4-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Enable Memory",
+                        "name": "llmEnableMemory",
+                        "type": "boolean",
+                        "description": "Enable memory for the conversation thread",
+                        "default": true,
+                        "optional": true,
+                        "id": "llmAgentflow_4-input-llmEnableMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Type",
+                        "name": "llmMemoryType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Messages",
+                                "name": "allMessages",
+                                "description": "Retrieve all messages from the conversation"
+                            },
+                            {
+                                "label": "Window Size",
+                                "name": "windowSize",
+                                "description": "Uses a fixed window size to surface the last N messages"
+                            },
+                            {
+                                "label": "Conversation Summary",
+                                "name": "conversationSummary",
+                                "description": "Summarizes the whole conversation"
+                            },
+                            {
+                                "label": "Conversation Summary Buffer",
+                                "name": "conversationSummaryBuffer",
+                                "description": "Summarize conversations once token limit is reached. Default to 2000"
+                            }
+                        ],
+                        "optional": true,
+                        "default": "allMessages",
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_4-input-llmMemoryType-options",
+                        "display": false
+                    },
+                    {
+                        "label": "Window Size",
+                        "name": "llmMemoryWindowSize",
+                        "type": "number",
+                        "default": "20",
+                        "description": "Uses a fixed window size to surface the last N messages",
+                        "show": {
+                            "llmMemoryType": "windowSize"
+                        },
+                        "id": "llmAgentflow_4-input-llmMemoryWindowSize-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Max Token Limit",
+                        "name": "llmMemoryMaxTokenLimit",
+                        "type": "number",
+                        "default": "2000",
+                        "description": "Summarize conversations once token limit is reached. Default to 2000",
+                        "show": {
+                            "llmMemoryType": "conversationSummaryBuffer"
+                        },
+                        "id": "llmAgentflow_4-input-llmMemoryMaxTokenLimit-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Input Message",
+                        "name": "llmUserMessage",
+                        "type": "string",
+                        "description": "Add an input message as user message at the end of the conversation",
+                        "rows": 4,
+                        "optional": true,
+                        "acceptVariable": true,
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_4-input-llmUserMessage-string",
+                        "display": false
+                    },
+                    {
+                        "label": "Return Response As",
+                        "name": "llmReturnResponseAs",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "User Message",
+                                "name": "userMessage"
+                            },
+                            {
+                                "label": "Assistant Message",
+                                "name": "assistantMessage"
+                            }
+                        ],
+                        "default": "userMessage",
+                        "id": "llmAgentflow_4-input-llmReturnResponseAs-options",
+                        "display": true
+                    },
+                    {
+                        "label": "JSON Structured Output",
+                        "name": "llmStructuredOutput",
+                        "description": "Instruct the LLM to give output in a JSON structured schema",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "string"
+                            },
+                            {
+                                "label": "Type",
+                                "name": "type",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "String",
+                                        "name": "string"
+                                    },
+                                    {
+                                        "label": "String Array",
+                                        "name": "stringArray"
+                                    },
+                                    {
+                                        "label": "Number",
+                                        "name": "number"
+                                    },
+                                    {
+                                        "label": "Boolean",
+                                        "name": "boolean"
+                                    },
+                                    {
+                                        "label": "Enum",
+                                        "name": "enum"
+                                    },
+                                    {
+                                        "label": "JSON Array",
+                                        "name": "jsonArray"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Enum Values",
+                                "name": "enumValues",
+                                "type": "string",
+                                "placeholder": "value1, value2, value3",
+                                "description": "Enum values. Separated by comma",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "enum"
+                                }
+                            },
+                            {
+                                "label": "JSON Schema",
+                                "name": "jsonSchema",
+                                "type": "code",
+                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
+                                "description": "JSON schema for the structured output",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "jsonArray"
+                                }
+                            },
+                            {
+                                "label": "Description",
+                                "name": "description",
+                                "type": "string",
+                                "placeholder": "Description of the key"
+                            }
+                        ],
+                        "id": "llmAgentflow_4-input-llmStructuredOutput-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "llmUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_4-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatAlibabaTongyi",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "You are the refinement prompt architect for academic diagrams. Produce exactly one Doubao image request as {\"requests\":[...]}. Preserve the original VISUAL SCHEMA as the primary contract. Apply review feedback and optional human revision notes without breaking the diagram topology. Keep these hard constraints: only render Key Text Labels, academic vector diagram, flat 2D, clean white background, no shadows, no 3D render, no decorative poster typography. Allowed fields are prompt, size, outputFormat, watermark. Use png and watermark false. Return only valid json in the final answer."
+                        },
+                        {
+                            "role": "user",
+                            "content": "用户需求：\n{{ question }}\n\nVISUAL SCHEMA：\n{{ $flow.state.visualSchema }}\n\n首稿审稿：\n{{ $flow.state.draftReview }}\n\n人工修订摘要（可能为空）：\n{{ $flow.state.humanRevisionBrief }}\n\n请生成最终精修请求。"
+                        }
+                    ],
+                    "llmEnableMemory": false,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": [
+                        {
+                            "key": "requests",
+                            "type": "jsonArray",
+                            "enumValues": "",
+                            "jsonSchema": "{\n    \"prompt\": {\n        \"type\": \"string\",\n        \"description\": \"Execution-ready illustration prompt derived from the visual schema\"\n    },\n    \"size\": {\n        \"type\": \"string\",\n        \"description\": \"Doubao-supported canvas size\"\n    },\n    \"outputFormat\": {\n        \"type\": \"string\",\n        \"description\": \"Use png\"\n    },\n    \"watermark\": {\n        \"type\": \"boolean\",\n        \"description\": \"Use false\"\n    }\n}",
+                            "description": "Single refined academic diagram request for doubaoImageTool"
+                        }
+                    ],
+                    "llmUpdateState": [
+                        {
+                            "key": "refineImageRequestDraft",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "qwen-plus",
+                        "temperature": 0.1,
+                        "streaming": true,
+                        "allowImageUploads": false,
+                        "imageResolution": "low",
+                        "llmModel": "chatAlibabaTongyi"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_4-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            }
+        },
+        {
+            "id": "toolAgentflow_1",
+            "type": "agentFlow",
+            "position": {
+                "x": 2140,
+                "y": 280
+            },
+            "data": {
+                "id": "toolAgentflow_1",
+                "label": "最终润色",
                 "version": 1.2,
                 "name": "toolAgentflow",
                 "type": "Tool",
                 "color": "#d4a373",
                 "baseClasses": ["Tool"],
                 "category": "Agent Flows",
-                "description": "使用 DoubaoImageTool 自动读取首稿参考图执行二轮精修",
+                "description": "调用 DoubaoImageTool 自动读取首稿参考图完成最终精修并返回图片产物",
                 "inputParams": [
                     {
                         "label": "工具",
@@ -1507,7 +1991,7 @@
                         "type": "asyncOptions",
                         "loadMethod": "listTools",
                         "loadConfig": true,
-                        "id": "toolAgentflow_0-input-toolAgentflowSelectedTool-asyncOptions",
+                        "id": "toolAgentflow_1-input-toolAgentflowSelectedTool-asyncOptions",
                         "display": true
                     },
                     {
@@ -1531,7 +2015,7 @@
                                 "acceptVariable": true
                             }
                         ],
-                        "id": "toolAgentflow_0-input-toolInputArgs-array",
+                        "id": "toolAgentflow_1-input-toolInputArgs-array",
                         "display": true
                     },
                     {
@@ -1556,7 +2040,7 @@
                                 "acceptNodeOutputAsVariable": true
                             }
                         ],
-                        "id": "toolAgentflow_0-input-toolUpdateState-array",
+                        "id": "toolAgentflow_1-input-toolUpdateState-array",
                         "display": true
                     }
                 ],
@@ -1567,13 +2051,22 @@
                         {
                             "inputArgName": "imageRequests",
                             "inputArgValue": "{{ $flow.state.refineImageRequestDraft }}"
+                        },
+                        {
+                            "inputArgName": "continueOnGenerationFailure",
+                            "inputArgValue": "false"
                         }
                     ],
-                    "toolUpdateState": "",
+                    "toolUpdateState": [
+                        {
+                            "key": "finalGenerationResult",
+                            "value": "{{ output }}"
+                        }
+                    ],
                     "toolAgentflowSelectedToolConfig": {
                         "credential": "",
                         "model": "doubao-seedream-5-0-260128",
-                        "size": "2048x2048",
+                        "size": "2848x1600",
                         "outputFormat": "png",
                         "watermark": false,
                         "sequentialImageGeneration": "disabled",
@@ -1585,7 +2078,7 @@
                 },
                 "outputAnchors": [
                     {
-                        "id": "toolAgentflow_0-output-toolAgentflow",
+                        "id": "toolAgentflow_1-output-toolAgentflow",
                         "label": "工具",
                         "name": "toolAgentflow"
                     }
@@ -1596,8 +2089,8 @@
         {
             "id": "stickyNoteAgentflow_note_startAgentflow_0",
             "position": {
-                "x": 40,
-                "y": 50
+                "x": 20,
+                "y": 60
             },
             "data": {
                 "id": "stickyNoteAgentflow_note_startAgentflow_0",
@@ -1623,7 +2116,7 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "note": "在这里输入图片需求并上传参考素材，作为整条语义构图生成链路的起点。"
+                    "note": "在这里输入绘图需求，并上传论文 PDF / DOC / DOCX / TXT。若你知道想画哪张图，请直接说明“目标图”。"
                 },
                 "outputAnchors": [
                     {
@@ -1639,8 +2132,8 @@
             "width": 220,
             "height": 170,
             "positionAbsolute": {
-                "x": 40,
-                "y": 50
+                "x": 20,
+                "y": 60
             },
             "selected": false,
             "dragging": false
@@ -1648,8 +2141,8 @@
         {
             "id": "stickyNoteAgentflow_note_llmAgentflow_0",
             "position": {
-                "x": 240,
-                "y": -110
+                "x": 280,
+                "y": 60
             },
             "data": {
                 "id": "stickyNoteAgentflow_note_llmAgentflow_0",
@@ -1675,7 +2168,7 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "note": "综合文字需求和上传图片，抽取主体、必保留元素、风格、构图和风险约束。"
+                    "note": "先把论文内容转成可执行的 VISUAL SCHEMA，默认优先论文主方法总览图。"
                 },
                 "outputAnchors": [
                     {
@@ -1691,8 +2184,8 @@
             "width": 220,
             "height": 170,
             "positionAbsolute": {
-                "x": 240,
-                "y": -110
+                "x": 280,
+                "y": 60
             },
             "selected": false,
             "dragging": false
@@ -1701,7 +2194,7 @@
             "id": "stickyNoteAgentflow_note_llmAgentflow_1",
             "position": {
                 "x": 540,
-                "y": -110
+                "y": 60
             },
             "data": {
                 "id": "stickyNoteAgentflow_note_llmAgentflow_1",
@@ -1727,7 +2220,7 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "note": "把素材分析结果压缩成可直接执行的单图请求，明确六段式提示词结构。"
+                    "note": "把 VISUAL SCHEMA 编排成单次 Doubao 渲染请求，重点约束布局、标签和学术矢量风格。"
                 },
                 "outputAnchors": [
                     {
@@ -1744,111 +2237,7 @@
             "height": 170,
             "positionAbsolute": {
                 "x": 540,
-                "y": -110
-            },
-            "selected": false,
-            "dragging": false
-        },
-        {
-            "id": "stickyNoteAgentflow_note_agentAgentflow_0",
-            "position": {
-                "x": 840,
-                "y": -110
-            },
-            "data": {
-                "id": "stickyNoteAgentflow_note_agentAgentflow_0",
-                "label": "Sticky Note",
-                "version": 1,
-                "name": "stickyNoteAgentflow",
-                "type": "StickyNote",
-                "color": "#fee440",
-                "baseClasses": ["StickyNote"],
-                "category": "Agent Flows",
-                "description": "Add notes to the agent flow",
-                "inputParams": [
-                    {
-                        "label": "",
-                        "name": "note",
-                        "type": "string",
-                        "rows": 1,
-                        "placeholder": "Type something here",
-                        "optional": true,
-                        "display": true,
-                        "id": "stickyNoteAgentflow_note_agentAgentflow_0-input-note-string"
-                    }
-                ],
-                "inputAnchors": [],
-                "inputs": {
-                    "note": "先调用图像生成能力产出第一版样张，给后续评审和二轮精修使用。"
-                },
-                "outputAnchors": [
-                    {
-                        "id": "stickyNoteAgentflow_note_agentAgentflow_0-output-stickyNoteAgentflow",
-                        "label": "Sticky Note",
-                        "name": "stickyNoteAgentflow"
-                    }
-                ],
-                "outputs": {},
-                "selected": false
-            },
-            "type": "stickyNote",
-            "width": 220,
-            "height": 170,
-            "positionAbsolute": {
-                "x": 840,
-                "y": -110
-            },
-            "selected": false,
-            "dragging": false
-        },
-        {
-            "id": "stickyNoteAgentflow_note_llmAgentflow_2",
-            "position": {
-                "x": 1160,
-                "y": -110
-            },
-            "data": {
-                "id": "stickyNoteAgentflow_note_llmAgentflow_2",
-                "label": "Sticky Note",
-                "version": 1,
-                "name": "stickyNoteAgentflow",
-                "type": "StickyNote",
-                "color": "#fee440",
-                "baseClasses": ["StickyNote"],
-                "category": "Agent Flows",
-                "description": "Add notes to the agent flow",
-                "inputParams": [
-                    {
-                        "label": "",
-                        "name": "note",
-                        "type": "string",
-                        "rows": 1,
-                        "placeholder": "Type something here",
-                        "optional": true,
-                        "display": true,
-                        "id": "stickyNoteAgentflow_note_llmAgentflow_2-input-note-string"
-                    }
-                ],
-                "inputAnchors": [],
-                "inputs": {
-                    "note": "结合首稿图片完成结构化审稿，并直接生成二轮精修请求。"
-                },
-                "outputAnchors": [
-                    {
-                        "id": "stickyNoteAgentflow_note_llmAgentflow_2-output-stickyNoteAgentflow",
-                        "label": "Sticky Note",
-                        "name": "stickyNoteAgentflow"
-                    }
-                ],
-                "outputs": {},
-                "selected": false
-            },
-            "type": "stickyNote",
-            "width": 220,
-            "height": 170,
-            "positionAbsolute": {
-                "x": 1160,
-                "y": -110
+                "y": 60
             },
             "selected": false,
             "dragging": false
@@ -1856,8 +2245,8 @@
         {
             "id": "stickyNoteAgentflow_note_toolAgentflow_0",
             "position": {
-                "x": 1760,
-                "y": -110
+                "x": 800,
+                "y": 60
             },
             "data": {
                 "id": "stickyNoteAgentflow_note_toolAgentflow_0",
@@ -1883,7 +2272,7 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "note": "调用 DoubaoImageTool 自动复用首稿作为参考图执行二轮精修。"
+                    "note": "生成科研插图首稿，便于后续审稿和人类反馈。"
                 },
                 "outputAnchors": [
                     {
@@ -1899,8 +2288,268 @@
             "width": 220,
             "height": 170,
             "positionAbsolute": {
-                "x": 1760,
-                "y": -110
+                "x": 800,
+                "y": 60
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_llmAgentflow_2",
+            "position": {
+                "x": 1060,
+                "y": 60
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_llmAgentflow_2",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_2-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "基于首稿图片与蓝图做结构一致性审稿，输出问题、保留点和精修附加指令。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_2-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1060,
+                "y": 60
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_humanInputAgentflow_0",
+            "position": {
+                "x": 1320,
+                "y": 60
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_humanInputAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_humanInputAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "给人一次明确的审阅入口：认可就继续，不认可就把结构改动说清楚。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_humanInputAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1320,
+                "y": 60
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_llmAgentflow_3",
+            "position": {
+                "x": 1320,
+                "y": 660
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_llmAgentflow_3",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_3-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "把用户修改意见压缩成机器可执行的修订 brief。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_3-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1320,
+                "y": 660
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_llmAgentflow_4",
+            "position": {
+                "x": 1580,
+                "y": 60
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_llmAgentflow_4",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_4-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "综合蓝图、审稿意见和人工修订，产出最终精修请求。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_4-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1580,
+                "y": 60
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_toolAgentflow_1",
+            "position": {
+                "x": 2100,
+                "y": 60
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_toolAgentflow_1",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_toolAgentflow_1-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "调用 DoubaoImageTool 自动复用首稿作为参考图执行最终精修，输出最终科研图片。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_toolAgentflow_1-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 220,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 2100,
+                "y": 60
             },
             "selected": false,
             "dragging": false
@@ -1912,11 +2561,6 @@
             "sourceHandle": "startAgentflow_0-output-startAgentflow",
             "target": "llmAgentflow_0",
             "targetHandle": "llmAgentflow_0",
-            "data": {
-                "sourceColor": "#7EE787",
-                "targetColor": "#64B5F6",
-                "isHumanInput": false
-            },
             "type": "agentFlow",
             "id": "startAgentflow_0-startAgentflow_0-output-startAgentflow-llmAgentflow_0-llmAgentflow_0"
         },
@@ -1925,52 +2569,81 @@
             "sourceHandle": "llmAgentflow_0-output-llmAgentflow",
             "target": "llmAgentflow_1",
             "targetHandle": "llmAgentflow_1",
-            "data": {
-                "sourceColor": "#64B5F6",
-                "targetColor": "#64B5F6",
-                "isHumanInput": false
-            },
             "type": "agentFlow",
             "id": "llmAgentflow_0-llmAgentflow_0-output-llmAgentflow-llmAgentflow_1-llmAgentflow_1"
         },
         {
             "source": "llmAgentflow_1",
             "sourceHandle": "llmAgentflow_1-output-llmAgentflow",
-            "target": "agentAgentflow_0",
-            "targetHandle": "agentAgentflow_0",
-            "data": {
-                "sourceColor": "#64B5F6",
-                "targetColor": "#4DD0E1",
-                "isHumanInput": false
-            },
+            "target": "toolAgentflow_0",
+            "targetHandle": "toolAgentflow_0",
             "type": "agentFlow",
-            "id": "llmAgentflow_1-llmAgentflow_1-output-llmAgentflow-agentAgentflow_0-agentAgentflow_0"
+            "id": "llmAgentflow_1-llmAgentflow_1-output-llmAgentflow-toolAgentflow_0-toolAgentflow_0"
         },
         {
-            "source": "agentAgentflow_0",
-            "sourceHandle": "agentAgentflow_0-output-agentAgentflow",
+            "source": "toolAgentflow_0",
+            "sourceHandle": "toolAgentflow_0-output-toolAgentflow",
             "target": "llmAgentflow_2",
             "targetHandle": "llmAgentflow_2",
-            "data": {
-                "sourceColor": "#4DD0E1",
-                "targetColor": "#64B5F6",
-                "isHumanInput": false
-            },
             "type": "agentFlow",
-            "id": "agentAgentflow_0-agentAgentflow_0-output-agentAgentflow-llmAgentflow_2-llmAgentflow_2"
+            "id": "toolAgentflow_0-toolAgentflow_0-output-toolAgentflow-llmAgentflow_2-llmAgentflow_2"
         },
         {
             "source": "llmAgentflow_2",
             "sourceHandle": "llmAgentflow_2-output-llmAgentflow",
-            "target": "toolAgentflow_0",
-            "targetHandle": "toolAgentflow_0",
+            "target": "humanInputAgentflow_0",
+            "targetHandle": "humanInputAgentflow_0",
+            "type": "agentFlow",
+            "id": "llmAgentflow_2-llmAgentflow_2-output-llmAgentflow-humanInputAgentflow_0-humanInputAgentflow_0"
+        },
+        {
+            "source": "humanInputAgentflow_0",
+            "sourceHandle": "humanInputAgentflow_0-output-0",
+            "target": "llmAgentflow_4",
+            "targetHandle": "llmAgentflow_4",
+            "type": "agentFlow",
+            "id": "humanInputAgentflow_0-humanInputAgentflow_0-output-0-llmAgentflow_4-llmAgentflow_4",
+            "data": {
+                "sourceColor": "#6E6EFD",
+                "targetColor": "#64B5F6",
+                "edgeLabel": "proceed",
+                "isHumanInput": true
+            }
+        },
+        {
+            "source": "humanInputAgentflow_0",
+            "sourceHandle": "humanInputAgentflow_0-output-1",
+            "target": "llmAgentflow_3",
+            "targetHandle": "llmAgentflow_3",
+            "type": "agentFlow",
+            "id": "humanInputAgentflow_0-humanInputAgentflow_0-output-1-llmAgentflow_3-llmAgentflow_3",
+            "data": {
+                "sourceColor": "#6E6EFD",
+                "targetColor": "#64B5F6",
+                "edgeLabel": "reject",
+                "isHumanInput": true
+            }
+        },
+        {
+            "source": "llmAgentflow_3",
+            "sourceHandle": "llmAgentflow_3-output-llmAgentflow",
+            "target": "llmAgentflow_4",
+            "targetHandle": "llmAgentflow_4",
+            "type": "agentFlow",
+            "id": "llmAgentflow_3-llmAgentflow_3-output-llmAgentflow-llmAgentflow_4-llmAgentflow_4"
+        },
+        {
+            "source": "llmAgentflow_4",
+            "sourceHandle": "llmAgentflow_4-output-llmAgentflow",
+            "target": "toolAgentflow_1",
+            "targetHandle": "toolAgentflow_1",
             "data": {
                 "sourceColor": "#64B5F6",
                 "targetColor": "#d4a373",
                 "isHumanInput": false
             },
             "type": "agentFlow",
-            "id": "llmAgentflow_2-llmAgentflow_2-output-llmAgentflow-toolAgentflow_0-toolAgentflow_0"
+            "id": "llmAgentflow_4-llmAgentflow_4-output-llmAgentflow-toolAgentflow_1-toolAgentflow_1"
         }
     ]
 }
