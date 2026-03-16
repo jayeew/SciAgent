@@ -137,6 +137,50 @@ describe('PPTXPresentation core', () => {
         expect(spec.slides[0].bullets).toEqual(['Revenue up 12%', 'Margin stable'])
     })
 
+    it('should normalize layout aliases emitted by the PPT template', () => {
+        const spec = normalizePresentationSpec({
+            title: 'Quarterly Review',
+            slides: [
+                {
+                    layout: 'title-body',
+                    title: 'Overview',
+                    body: 'Executive summary'
+                },
+                {
+                    layout: 'section-header',
+                    title: 'Virtual Instruments',
+                    leftTitle: 'Manipulator',
+                    leftBullets: ['Simulate perturbations'],
+                    rightTitle: 'Decoder',
+                    rightBullets: ['Project back to observables']
+                }
+            ]
+        })
+
+        expect(spec.slides[0].layout).toBe('title-bullets')
+        expect(spec.slides[1].layout).toBe('two-column')
+    })
+
+    it('should normalize structured speaker notes into plain text', () => {
+        const spec = normalizePresentationSpec({
+            title: 'Quarterly Review',
+            slides: [
+                {
+                    layout: 'title-bullets',
+                    title: 'Overview',
+                    bullets: ['Revenue up 12%'],
+                    speakerNotes: {
+                        讲解提示: '先讲业务背景。',
+                        依据: '基于季度财报。',
+                        待核实项: '客户名称待确认。'
+                    }
+                }
+            ]
+        })
+
+        expect(spec.slides[0].speakerNotes).toBe('讲解提示\n先讲业务背景。\n\n依据\n基于季度财报。\n\n待核实项\n客户名称待确认。')
+    })
+
     it('should build a non-empty pptx buffer', async () => {
         const spec = normalizePresentationSpec({
             title: 'Quarterly Review',

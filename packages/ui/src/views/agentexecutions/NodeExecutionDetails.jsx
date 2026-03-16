@@ -143,7 +143,9 @@ export const NodeExecutionDetails = ({ data, label, status, metadata, isPublic, 
     }
 
     const handleProceed = () => {
-        if (data.input && data.input.humanInputEnableFeedback) {
+        const feedbackMode = data.input?.humanInputFeedbackMode || 'all'
+
+        if (data.input && data.input.humanInputEnableFeedback && feedbackMode === 'all') {
             setFeedbackType('proceed')
             setOpenFeedbackDialog(true)
         } else {
@@ -168,6 +170,9 @@ export const NodeExecutionDetails = ({ data, label, status, metadata, isPublic, 
             navigator.clipboard.writeText(src)
         }
     }
+
+    const approveButtonText = data?.output?.humanInputAction?.mapping?.approve || 'Yes'
+    const rejectButtonText = data?.output?.humanInputAction?.mapping?.reject || 'No'
 
     const onUsedToolClick = (data, title) => {
         setSourceDialogProps({ data, title })
@@ -1235,7 +1240,7 @@ export const NodeExecutionDetails = ({ data, label, status, metadata, isPublic, 
                         }}
                     >
                         <Button variant='outlined' color='error' sx={{ borderRadius: '25px' }} onClick={handleReject} disabled={isLoading}>
-                            Reject
+                            {rejectButtonText}
                         </Button>
                         <Button
                             variant='contained'
@@ -1244,7 +1249,7 @@ export const NodeExecutionDetails = ({ data, label, status, metadata, isPublic, 
                             onClick={handleProceed}
                             disabled={isLoading}
                         >
-                            Proceed
+                            {approveButtonText}
                         </Button>
                     </Box>
 

@@ -93,6 +93,39 @@ class HumanInput_Agentflow implements INode {
                 name: 'humanInputEnableFeedback',
                 type: 'boolean',
                 default: true
+            },
+            {
+                label: 'Feedback Mode',
+                name: 'humanInputFeedbackMode',
+                type: 'options',
+                options: [
+                    {
+                        label: 'All Actions',
+                        name: 'all',
+                        description: 'Collect feedback for both approve and reject'
+                    },
+                    {
+                        label: 'Reject Only',
+                        name: 'reject',
+                        description: 'Collect feedback only when rejecting'
+                    }
+                ],
+                default: 'all',
+                show: {
+                    humanInputEnableFeedback: true
+                }
+            },
+            {
+                label: 'Approve Button Text',
+                name: 'approveButtonText',
+                type: 'string',
+                default: 'Yes'
+            },
+            {
+                label: 'Reject Button Text',
+                name: 'rejectButtonText',
+                type: 'string',
+                default: 'No'
             }
         ]
         this.outputs = [
@@ -137,6 +170,7 @@ class HumanInput_Agentflow implements INode {
         const humanInput: IHumanInput = typeof _humanInput === 'string' ? JSON.parse(_humanInput) : _humanInput
 
         const humanInputEnableFeedback = nodeData.inputs?.humanInputEnableFeedback as boolean
+        const humanInputFeedbackMode = ((nodeData.inputs?.humanInputFeedbackMode as string) || 'all') as 'all' | 'reject'
         let humanInputDescriptionType = nodeData.inputs?.humanInputDescriptionType as string
         const model = nodeData.inputs?.humanInputModel as string
         const modelConfig = nodeData.inputs?.humanInputModelConfig as ICommonObject
@@ -257,7 +291,11 @@ class HumanInput_Agentflow implements INode {
                 }
             }
 
-            const input = { messages: [...pastChatHistory, ...runtimeChatHistory], humanInputEnableFeedback }
+            const input = {
+                messages: [...pastChatHistory, ...runtimeChatHistory],
+                humanInputEnableFeedback,
+                humanInputFeedbackMode
+            }
             const output = {
                 content: humanInputDescription,
                 ...(llmResponse?.usage_metadata && {

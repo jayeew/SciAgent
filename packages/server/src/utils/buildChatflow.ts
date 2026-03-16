@@ -1283,6 +1283,8 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
     }
 
     let organizationId = ''
+    let workspaceId = ''
+    let tokenAuditContext: ICommonObject | undefined
 
     try {
         // Validate API Key if its external API request
@@ -1301,7 +1303,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
         if (!workspace) {
             throw new InternalFlowiseError(StatusCodes.NOT_FOUND, `Workspace ${chatflowWorkspaceId} not found`)
         }
-        const workspaceId = workspace.id
+        workspaceId = workspace.id
 
         const org = await appServer.AppDataSource.getRepository(Organization).findOneBy({
             id: workspace.organizationId
@@ -1323,6 +1325,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
 
         await checkPredictions(orgId, subscriptionId, appServer.usageCacheManager)
 
+        tokenAuditContext = { credentialAccesses: [], tokenUsagePayloads: [] }
         const executeData: IExecuteFlowParams = {
             incomingInput, // Use the defensively created incomingInput variable
             chatflow,
@@ -1344,7 +1347,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
             workspaceId,
             subscriptionId,
             productId,
-            tokenAuditContext: { credentialAccesses: [], tokenUsagePayloads: [] }
+            tokenAuditContext
         }
 
         if (process.env.MODE === MODE.QUEUE) {
@@ -1378,6 +1381,18 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
         logger.error(`[server]:${organizationId}/${chatflow.id}/${chatId} Error:`, e)
         appServer.abortControllerPool.remove(`${chatflow.id}_${chatId}`)
         incrementFailedMetricCounter(appServer.metricsProvider, isInternal, isAgentFlow)
+        if (workspaceId && organizationId && tokenAuditContext) {
+            await recordTokenUsage({
+                workspaceId,
+                organizationId,
+                userId,
+                flowType: chatflow.type === 'ASSISTANT' ? 'ASSISTANT' : isAgentFlow ? 'MULTIAGENT' : 'CHATFLOW',
+                flowId: chatflowid,
+                chatId,
+                tokenAuditContext,
+                usagePayloads: []
+            })
+        }
         if (e instanceof InternalFlowiseError) {
             throw e
         } else {

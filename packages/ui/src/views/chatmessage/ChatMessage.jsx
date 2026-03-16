@@ -881,6 +881,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
 
     const handleSubmitFeedback = () => {
         if (pendingActionData) {
+            clearLastMessageAction()
             onSubmitResponse(pendingActionData, feedback)
             setOpenFeedbackDialog(false)
             setFeedback('')
@@ -889,25 +890,40 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         }
     }
 
-    const handleActionClick = async (elem, action) => {
-        setUserInput(elem.label)
+    const clearLastMessageAction = () => {
         setMessages((prevMessages) => {
             let allMessages = [...cloneDeep(prevMessages)]
             if (allMessages[allMessages.length - 1].type === 'userMessage') return allMessages
             allMessages[allMessages.length - 1].action = null
             return allMessages
         })
+    }
+
+    const handleActionClick = async (elem, action) => {
+        if (!elem.type.includes('agentflowv2')) {
+            setUserInput(elem.label)
+        } else {
+            setUserInput('')
+        }
         if (elem.type.includes('agentflowv2')) {
             const type = elem.type.includes('approve') ? 'proceed' : 'reject'
-            setFeedbackType(type)
+            const feedbackMode = action.data?.input?.humanInputFeedbackMode || 'all'
+            const shouldCollectFeedback =
+                action.data &&
+                action.data.input &&
+                action.data.input.humanInputEnableFeedback &&
+                (feedbackMode === 'all' || (feedbackMode === 'reject' && type === 'reject'))
 
-            if (action.data && action.data.input && action.data.input.humanInputEnableFeedback) {
+            if (shouldCollectFeedback) {
+                setFeedbackType(type)
                 setPendingActionData(action.data)
                 setOpenFeedbackDialog(true)
             } else {
+                clearLastMessageAction()
                 onSubmitResponse(action.data, '', type)
             }
         } else {
+            clearLastMessageAction()
             handleSubmit(undefined, elem.label, action)
         }
     }
@@ -2240,6 +2256,25 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         )
     }
 
+    const getInputPlaceholder = () => {
+        const pendingAction = messages[messages.length - 1]?.action
+        const hasPendingAgentflowHumanInput =
+            pendingAction &&
+            Array.isArray(pendingAction.elements) &&
+            pendingAction.elements.some((elem) => elem.type?.includes('agentflowv2')) &&
+            pendingAction.data?.input?.humanInputEnableFeedback
+
+        if (hasPendingAgentflowHumanInput) {
+            return 'Choose an option above to continue or add details...'
+        }
+
+        if (loading) {
+            return 'Waiting for response...'
+        }
+
+        return 'Type your question...'
+    }
+
     const previewDisplay = (item) => {
         if (item.mime.startsWith('image/')) {
             return (
@@ -3126,7 +3161,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                             onKeyDown={handleEnter}
                             id='userInput'
                             name='userInput'
-                            placeholder={loading ? 'Waiting for response...' : 'Type your question...'}
+                            placeholder={getInputPlaceholder()}
                             value={userInput}
                             onChange={onChange}
                             multiline={true}
@@ -3308,15 +3343,16 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                     setOpenFeedbackDialog(false)
                     setPendingActionData(null)
                     setFeedback('')
+                    setFeedbackType('')
                 }}
             >
-                <DialogTitle variant='h5'>Provide Feedback</DialogTitle>
+                <DialogTitle variant='h5'>Add Details</DialogTitle>
                 <DialogContent>
                     <TextField
                         // eslint-disable-next-line
                         autoFocus
                         margin='dense'
-                        label='Feedback'
+                        label='Additional details'
                         fullWidth
                         multiline
                         rows={4}
@@ -3325,7 +3361,16 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                     />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={handleSubmitFeedback}>Cancel</Button>
+                    <Button
+                        onClick={() => {
+                            setOpenFeedbackDialog(false)
+                            setPendingActionData(null)
+                            setFeedback('')
+                            setFeedbackType('')
+                        }}
+                    >
+                        Cancel
+                    </Button>
                     <Button onClick={handleSubmitFeedback} variant='contained'>
                         Submit
                     </Button>

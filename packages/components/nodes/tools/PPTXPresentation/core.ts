@@ -142,6 +142,39 @@ const normalizeSlideTitle = (title?: string): string | undefined => {
     return trimmedTitle.length > 80 ? `${trimmedTitle.slice(0, 77).trimEnd()}...` : trimmedTitle
 }
 
+const normalizeTextLikeValue = (value: unknown): string | undefined => {
+    if (typeof value === 'string') {
+        const trimmedValue = value.trim()
+        return trimmedValue || undefined
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+        return String(value)
+    }
+
+    if (Array.isArray(value)) {
+        const normalizedItems = value.map((item) => normalizeTextLikeValue(item)).filter((item): item is string => Boolean(item))
+        return normalizedItems.length ? normalizedItems.join('\n') : undefined
+    }
+
+    if (value && typeof value === 'object') {
+        const normalizedEntries = Object.entries(value)
+            .map(([key, childValue]) => {
+                const normalizedChildValue = normalizeTextLikeValue(childValue)
+                if (!normalizedChildValue) {
+                    return undefined
+                }
+
+                return `${key}\n${normalizedChildValue}`
+            })
+            .filter((entry): entry is string => Boolean(entry))
+
+        return normalizedEntries.length ? normalizedEntries.join('\n\n') : undefined
+    }
+
+    return undefined
+}
+
 const normalizeNullableValue = (value: unknown): unknown => {
     if (value === null) {
         return undefined
@@ -195,6 +228,39 @@ const inferSlideTitle = (slide: Record<string, any>, index: number): string => {
     return `Slide ${index + 1}`
 }
 
+const hasTwoColumnContent = (slide: Record<string, any>): boolean => {
+    return Boolean(
+        normalizeTextLikeValue(slide.leftTitle) ||
+            normalizeTextLikeValue(slide.leftBody) ||
+            (Array.isArray(slide.leftBullets) && slide.leftBullets.length > 0) ||
+            normalizeTextLikeValue(slide.rightTitle) ||
+            normalizeTextLikeValue(slide.rightBody) ||
+            (Array.isArray(slide.rightBullets) && slide.rightBullets.length > 0)
+    )
+}
+
+const normalizeSlideLayout = (slide: Record<string, any>): (typeof SLIDE_LAYOUTS)[number] => {
+    const rawLayout = typeof slide.layout === 'string' ? slide.layout.trim() : ''
+
+    if (rawLayout && SLIDE_LAYOUTS.includes(rawLayout as (typeof SLIDE_LAYOUTS)[number])) {
+        return rawLayout as (typeof SLIDE_LAYOUTS)[number]
+    }
+
+    if (rawLayout === 'title-body') {
+        return 'title-bullets'
+    }
+
+    if (rawLayout === 'section-header') {
+        return hasTwoColumnContent(slide) ? 'two-column' : 'section'
+    }
+
+    if (hasTwoColumnContent(slide)) {
+        return 'two-column'
+    }
+
+    return 'title-bullets'
+}
+
 const normalizeRawPresentationSpec = (rawSpec: unknown): unknown => {
     if (!rawSpec || typeof rawSpec !== 'object' || Array.isArray(rawSpec)) {
         return rawSpec
@@ -209,6 +275,8 @@ const normalizeRawPresentationSpec = (rawSpec: unknown): unknown => {
             }
 
             const normalizedSlide = { ...(slide as Record<string, any>) }
+            normalizedSlide.layout = normalizeSlideLayout(normalizedSlide)
+            normalizedSlide.speakerNotes = normalizeTextLikeValue(normalizedSlide.speakerNotes)
             normalizedSlide.title = inferSlideTitle(normalizedSlide, index)
             return normalizedSlide
         })

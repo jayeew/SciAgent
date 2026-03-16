@@ -225,6 +225,52 @@ const mergeAndDedupeTokenPayloads = (payloads: any[], tokenAuditContext?: ICommo
     return deduped
 }
 
+const recordAgentflowTokenUsage = async ({
+    workspaceId,
+    orgId,
+    userId,
+    flowId,
+    executionId,
+    chatId,
+    sessionId,
+    usagePayloadSeeds,
+    tokenAuditContext
+}: {
+    workspaceId: string
+    orgId: string
+    userId?: string
+    flowId: string
+    executionId: string
+    chatId: string
+    sessionId: string
+    usagePayloadSeeds: any[]
+    tokenAuditContext?: ICommonObject
+}) => {
+    try {
+        const usagePayloads = mergeAndDedupeTokenPayloads(usagePayloadSeeds, tokenAuditContext)
+        const credentialAccesses = (tokenAuditContext?.credentialAccesses as any[]) || []
+        logger.info(
+            `[agentflow-token] record start flowId=${flowId} executionId=${executionId} chatId=${chatId} payloads=${usagePayloads.length} credentialAccesses=${credentialAccesses.length}`
+        )
+        const tokenUsageService = new TokenUsageService()
+        await tokenUsageService.recordTokenUsage({
+            workspaceId,
+            organizationId: orgId,
+            userId,
+            flowType: 'AGENTFLOW',
+            flowId,
+            executionId,
+            chatId,
+            sessionId,
+            usagePayloads,
+            credentialAccesses
+        })
+        logger.info(`[agentflow-token] record done flowId=${flowId} executionId=${executionId} chatId=${chatId}`)
+    } catch (error) {
+        logger.warn(`[server]: Failed to record agentflow token usage: ${getErrorMessage(error)}`)
+    }
+}
+
 /**
  * Add execution to database
  * @param {DataSource} appDataSource
@@ -1423,15 +1469,17 @@ const executeNode = async ({
 
         // Stop going through the current route if the node is a human task
         if (!humanInput && reactFlowNode.data.name === 'humanInputAgentflow') {
+            const approveButtonText = (reactFlowNode.data.inputs?.approveButtonText as string) || 'Yes'
+            const rejectButtonText = (reactFlowNode.data.inputs?.rejectButtonText as string) || 'No'
             const humanInputAction = {
                 id: uuidv4(),
                 mapping: {
-                    approve: 'Proceed',
-                    reject: 'Reject'
+                    approve: approveButtonText,
+                    reject: rejectButtonText
                 },
                 elements: [
-                    { type: 'agentflowv2-approve-button', label: 'Proceed' },
-                    { type: 'agentflowv2-reject-button', label: 'Reject' }
+                    { type: 'agentflowv2-approve-button', label: approveButtonText },
+                    { type: 'agentflowv2-reject-button', label: rejectButtonText }
                 ],
                 data: {
                     nodeId,
@@ -1470,15 +1518,17 @@ const executeNode = async ({
 
         // Stop going through the current route if the node is a agent node waiting for human input before using the tool
         if (reactFlowNode.data.name === 'agentAgentflow' && results?.output?.isWaitingForHumanInput) {
+            const approveButtonText = (reactFlowNode.data.inputs?.approveButtonText as string) || 'Yes'
+            const rejectButtonText = (reactFlowNode.data.inputs?.rejectButtonText as string) || 'No'
             const humanInputAction = {
                 id: uuidv4(),
                 mapping: {
-                    approve: 'Proceed',
-                    reject: 'Reject'
+                    approve: approveButtonText,
+                    reject: rejectButtonText
                 },
                 elements: [
-                    { type: 'agentflowv2-approve-button', label: 'Proceed' },
-                    { type: 'agentflowv2-reject-button', label: 'Reject' }
+                    { type: 'agentflowv2-approve-button', label: approveButtonText },
+                    { type: 'agentflowv2-reject-button', label: rejectButtonText }
                 ],
                 data: {
                     nodeId,
@@ -1968,6 +2018,7 @@ export const executeAgentFlow = async ({
 
     let analyticHandlers: AnalyticHandler | undefined
     let parentTraceIds: ICommonObject | undefined
+    let hasRecordedTokenUsage = false
 
     try {
         if (chatflow.analytic) {
@@ -2220,6 +2271,21 @@ export const executeAgentFlow = async ({
                 })
 
                 sseStreamer?.streamAgentFlowEvent(chatId, errorStatus)
+
+                if (!hasRecordedTokenUsage) {
+                    hasRecordedTokenUsage = true
+                    await recordAgentflowTokenUsage({
+                        workspaceId,
+                        orgId,
+                        userId,
+                        flowId: chatflow.id,
+                        executionId: newExecution.id,
+                        chatId,
+                        sessionId,
+                        usagePayloadSeeds: agentFlowExecutedData.length ? [agentFlowExecutedData] : [],
+                        tokenAuditContext
+                    })
+                }
             }
 
             if (parentTraceIds && analyticHandlers) {
@@ -2323,29 +2389,19 @@ export const executeAgentFlow = async ({
     }
 
     if (!isRecursive) {
-        try {
-            const usagePayloadSeeds = agentFlowExecutedData.length ? [agentFlowExecutedData] : [lastNodeOutput || {}]
-            const usagePayloads = mergeAndDedupeTokenPayloads(usagePayloadSeeds, tokenAuditContext)
-            const credentialAccesses = (tokenAuditContext?.credentialAccesses as any[]) || []
-            logger.info(
-                `[agentflow-token] record start flowId=${chatflow.id} executionId=${newExecution.id} chatId=${chatId} payloads=${usagePayloads.length} credentialAccesses=${credentialAccesses.length}`
-            )
-            const tokenUsageService = new TokenUsageService()
-            await tokenUsageService.recordTokenUsage({
+        if (!hasRecordedTokenUsage) {
+            hasRecordedTokenUsage = true
+            await recordAgentflowTokenUsage({
                 workspaceId,
-                organizationId: orgId,
+                orgId,
                 userId,
-                flowType: 'AGENTFLOW',
                 flowId: chatflow.id,
                 executionId: newExecution.id,
                 chatId,
                 sessionId,
-                usagePayloads,
-                credentialAccesses
+                usagePayloadSeeds: agentFlowExecutedData.length ? [agentFlowExecutedData] : [lastNodeOutput || {}],
+                tokenAuditContext
             })
-            logger.info(`[agentflow-token] record done flowId=${chatflow.id} executionId=${newExecution.id} chatId=${chatId}`)
-        } catch (error) {
-            logger.warn(`[server]: Failed to record agentflow token usage: ${getErrorMessage(error)}`)
         }
     }
 
