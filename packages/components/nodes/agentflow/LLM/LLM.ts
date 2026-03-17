@@ -414,6 +414,7 @@ class LLM_Agentflow implements INode {
                 await this.handleMemory({
                     messages,
                     memoryType,
+                    model,
                     pastChatHistory,
                     runtimeChatHistory,
                     llmNodeInstance,
@@ -433,7 +434,7 @@ class LLM_Agentflow implements INode {
                  * - Add user message if it does not exist in the llmMessages array
                  */
                 if (options.uploads) {
-                    const imageContents = await getUniqueImageMessages(options, messages, modelConfig)
+                    const imageContents = await getUniqueImageMessages(options, messages, modelConfig, model)
                     if (imageContents) {
                         const { imageMessageWithBase64, imageMessageWithFileRef } = imageContents
                         messages.push(imageMessageWithBase64)
@@ -680,6 +681,7 @@ class LLM_Agentflow implements INode {
     private async handleMemory({
         messages,
         memoryType,
+        model,
         pastChatHistory,
         runtimeChatHistory,
         llmNodeInstance,
@@ -694,6 +696,7 @@ class LLM_Agentflow implements INode {
     }: {
         messages: BaseMessageLike[]
         memoryType: string
+        model: string
         pastChatHistory: BaseMessageLike[]
         runtimeChatHistory: BaseMessageLike[]
         llmNodeInstance: BaseChatModel
@@ -718,7 +721,7 @@ class LLM_Agentflow implements INode {
              * - Add user message
              */
             if (options.uploads) {
-                const imageContents = await getUniqueImageMessages(options, messages, modelConfig)
+                const imageContents = await getUniqueImageMessages(options, messages, modelConfig, model)
                 if (imageContents) {
                     const { imageMessageWithBase64, imageMessageWithFileRef } = imageContents
                     pastMessages.push(imageMessageWithBase64)

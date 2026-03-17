@@ -1,5 +1,5 @@
 import { BaseMessage, MessageContentImageUrl, AIMessageChunk } from '@langchain/core/messages'
-import { getImageUploads } from '../../src/multiModalUtils'
+import { buildImageUrlMessage, getImageUploads, validateImageUpload } from '../../src/multiModalUtils'
 import { addSingleFileToStorage, getFileFromStorage } from '../../src/storageUtils'
 import { ICommonObject, IFileUpload, INodeData } from '../../src/Interface'
 import { BaseMessageLike } from '@langchain/core/messages'
@@ -10,7 +10,9 @@ import fetch from 'node-fetch'
 export const addImagesToMessages = async (
     options: ICommonObject,
     allowImageUploads: boolean,
-    imageResolution?: 'auto' | 'low' | 'high'
+    imageResolution?: 'auto' | 'low' | 'high',
+    provider?: string,
+    modelName?: string
 ): Promise<MessageContentImageUrl[]> => {
     const imageContent: MessageContentImageUrl[] = []
 
@@ -24,21 +26,10 @@ export const addImagesToMessages = async (
                 // as the image is stored in the server, read the file and convert it to base64
                 bf = 'data:' + upload.mime + ';base64,' + contents.toString('base64')
 
-                imageContent.push({
-                    type: 'image_url',
-                    image_url: {
-                        url: bf,
-                        detail: imageResolution ?? 'low'
-                    }
-                })
+                imageContent.push(buildImageUrlMessage(bf, imageResolution, provider, modelName))
             } else if (upload.type == 'url' && bf) {
-                imageContent.push({
-                    type: 'image_url',
-                    image_url: {
-                        url: bf,
-                        detail: imageResolution ?? 'low'
-                    }
-                })
+                validateImageUpload(upload, provider, modelName)
+                imageContent.push(buildImageUrlMessage(bf, imageResolution, provider, modelName))
             }
         }
     }
@@ -99,13 +90,7 @@ export const processMessagesWithImages = async (
                         const base64Data = 'data:' + item.mime + ';base64,' + contents.toString('base64')
 
                         // Add to image content array
-                        imageContents.push({
-                            type: 'image_url',
-                            image_url: {
-                                url: base64Data,
-                                detail: item.imageResolution ?? 'low'
-                            }
-                        })
+                        imageContents.push(buildImageUrlMessage(base64Data, item.imageResolution, item.provider, item.modelName))
                     } catch (error) {
                         console.error(`Failed to load image ${item.name}:`, error)
                     }
@@ -246,12 +231,19 @@ export const replaceBase64ImagesWithFileReferences = (
 export const getUniqueImageMessages = async (
     options: ICommonObject,
     messages: BaseMessageLike[],
-    modelConfig?: ICommonObject
+    modelConfig?: ICommonObject,
+    modelNodeName?: string
 ): Promise<{ imageMessageWithFileRef: BaseMessageLike; imageMessageWithBase64: BaseMessageLike } | undefined> => {
     if (!options.uploads) return undefined
 
     // Get images from uploads
-    const images = await addImagesToMessages(options, modelConfig?.allowImageUploads, modelConfig?.imageResolution)
+    const images = await addImagesToMessages(
+        options,
+        modelConfig?.allowImageUploads,
+        modelConfig?.imageResolution,
+        modelNodeName,
+        modelConfig?.modelName
+    )
 
     // Filter out images that are already in previous messages
     const uniqueImages = images.filter((image) => {
@@ -281,7 +273,9 @@ export const getUniqueImageMessages = async (
             type: upload.type,
             name: upload.name,
             mime: upload.mime,
-            imageResolution: modelConfig?.imageResolution
+            imageResolution: modelConfig?.imageResolution,
+            provider: modelNodeName,
+            modelName: modelConfig?.modelName
         }))
     }
 

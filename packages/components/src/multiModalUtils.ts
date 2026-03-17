@@ -1,5 +1,43 @@
-import { IVisionChatModal, ICommonObject, IFileUpload, IMultiModalOption, INodeData, MessageContentImageUrl } from './Interface'
+import {
+    ImageDetail,
+    IVisionChatModal,
+    ICommonObject,
+    IFileUpload,
+    IMultiModalOption,
+    INodeData,
+    MessageContentImageUrl
+} from './Interface'
 import { getFileFromStorage } from './storageUtils'
+
+export const KIMI_CHAT_PROVIDER = 'chatKimi'
+
+const KIMI_VISION_MODEL_REGEX = /^(kimi-k2\.5|moonshot-v1-(8k|32k|128k)-vision-preview)$/
+
+export const isKimiVisionModel = (provider?: string, modelName?: string) =>
+    provider === KIMI_CHAT_PROVIDER && !!modelName && KIMI_VISION_MODEL_REGEX.test(modelName)
+
+export const buildImageUrlMessage = (
+    url: string,
+    imageResolution?: ImageDetail,
+    provider?: string,
+    modelName?: string
+): MessageContentImageUrl => ({
+    type: 'image_url',
+    image_url: isKimiVisionModel(provider, modelName)
+        ? {
+              url
+          }
+        : {
+              url,
+              detail: imageResolution ?? 'low'
+          }
+})
+
+export const validateImageUpload = (upload: IFileUpload, provider?: string, modelName?: string) => {
+    if (upload.type === 'url' && isKimiVisionModel(provider, modelName)) {
+        throw new Error('ChatKimi vision models do not support remote image URLs. Please upload a local image file instead.')
+    }
+}
 
 export const addImagesToMessages = async (
     nodeData: INodeData,
@@ -8,6 +46,9 @@ export const addImagesToMessages = async (
 ): Promise<MessageContentImageUrl[]> => {
     const imageContent: MessageContentImageUrl[] = []
     let model = nodeData.inputs?.model
+    const imageOptions = multiModalOption?.image ?? {}
+    const provider = imageOptions.provider as string | undefined
+    const modelName = (imageOptions.modelName as string | undefined) ?? model?.configuredModel
 
     if (llmSupportsVision(model) && multiModalOption) {
         // Image Uploaded
@@ -20,21 +61,10 @@ export const addImagesToMessages = async (
                     // as the image is stored in the server, read the file and convert it to base64
                     bf = 'data:' + upload.mime + ';base64,' + contents.toString('base64')
 
-                    imageContent.push({
-                        type: 'image_url',
-                        image_url: {
-                            url: bf,
-                            detail: multiModalOption.image.imageResolution ?? 'low'
-                        }
-                    })
+                    imageContent.push(buildImageUrlMessage(bf, imageOptions.imageResolution, provider, modelName))
                 } else if (upload.type == 'url' && bf) {
-                    imageContent.push({
-                        type: 'image_url',
-                        image_url: {
-                            url: bf,
-                            detail: multiModalOption.image.imageResolution ?? 'low'
-                        }
-                    })
+                    validateImageUpload(upload, provider, modelName)
+                    imageContent.push(buildImageUrlMessage(bf, imageOptions.imageResolution, provider, modelName))
                 }
             }
         }
