@@ -135,6 +135,112 @@ const parseJsonLikeValue = (value: unknown): unknown => {
     return parseJsonBody(sanitizeJsonLikeString(value))
 }
 
+const isLikelyPromptClosingQuote = (value: string, quoteIndex: number): boolean => {
+    let cursor = quoteIndex + 1
+
+    while (cursor < value.length && /\s/.test(value[cursor])) {
+        cursor += 1
+    }
+
+    if (cursor >= value.length) {
+        return true
+    }
+
+    if (value[cursor] === '}' || value[cursor] === ']') {
+        return true
+    }
+
+    if (value[cursor] !== ',') {
+        return false
+    }
+
+    cursor += 1
+
+    while (cursor < value.length && /\s/.test(value[cursor])) {
+        cursor += 1
+    }
+
+    return /^"[^"\\]+"\s*:/.test(value.slice(cursor))
+}
+
+const repairPromptQuotesInJsonLikeString = (value: string): string | null => {
+    if (!value.includes('"prompt"')) {
+        return null
+    }
+
+    const promptPattern = /"prompt"\s*:\s*"/g
+    let repaired = ''
+    let lastIndex = 0
+    let hasChanges = false
+
+    while (promptPattern.exec(value) !== null) {
+        const promptValueStart = promptPattern.lastIndex
+        repaired += value.slice(lastIndex, promptValueStart)
+
+        let cursor = promptValueStart
+
+        while (cursor < value.length) {
+            const currentChar = value[cursor]
+
+            if (currentChar === '\\') {
+                repaired += currentChar
+                cursor += 1
+
+                if (cursor < value.length) {
+                    repaired += value[cursor]
+                    cursor += 1
+                }
+
+                continue
+            }
+
+            if (currentChar === '"') {
+                if (isLikelyPromptClosingQuote(value, cursor)) {
+                    repaired += currentChar
+                    cursor += 1
+                    break
+                }
+
+                repaired += '\\"'
+                hasChanges = true
+                cursor += 1
+                continue
+            }
+
+            repaired += currentChar
+            cursor += 1
+        }
+
+        lastIndex = cursor
+        promptPattern.lastIndex = cursor
+    }
+
+    if (!hasChanges) {
+        return null
+    }
+
+    repaired += value.slice(lastIndex)
+    return repaired
+}
+
+const parseImageRequestsValue = (value: unknown): unknown => {
+    if (typeof value !== 'string') {
+        return value
+    }
+
+    try {
+        return parseJsonLikeValue(value)
+    } catch (error) {
+        const repairedValue = repairPromptQuotesInJsonLikeString(sanitizeJsonLikeString(value))
+
+        if (repairedValue) {
+            return parseJsonLikeValue(repairedValue)
+        }
+
+        throw error
+    }
+}
+
 const parseJsonLikeValueOrRaw = (value: unknown): unknown => {
     if (typeof value !== 'string') {
         return value
@@ -161,7 +267,7 @@ const normalizeImageRequests = (params: IGenerateDoubaoImagesInput): IDoubaoImag
             : []
     }
 
-    const parsedImageRequests = parseJsonLikeValue(params.imageRequests)
+    const parsedImageRequests = parseImageRequestsValue(params.imageRequests)
 
     if (Array.isArray(parsedImageRequests)) {
         return z.array(DoubaoImageRequestSchema).parse(parsedImageRequests)

@@ -636,7 +636,7 @@
                     "agentMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是“文档增强 PPT 创作”的需求收集 Agent。</p><p>你的任务是先把做 PPT 所需信息收集完整，再交给后续节点正式生成。</p><p>请重点确认这些信息：汇报主题与目标、应用场景、受众与风格、期望页数、希望重点突出什么、已上传资料与缺口、是否允许补充外部检索。</p><p>如果用户上传了文件，先结合文件快速归纳，再指出仍缺什么。</p><p>每一轮最多问 3 个具体问题，优先给明确选项，不要泛泛追问。</p><p>如果信息仍不足，不要开始生成 PPT；要明确列出缺失项，并请用户继续补充。</p><p>如果信息已足够，请输出“已确认、默认采用、待产出结果”三部分执行确认。</p><p>当你认为已经可以进入正式生成阶段时，最后一句必须写：若无修改，请点击 Yes 继续生成；如需补充，请点击 No 并填写修改意见。</p><p>默认使用简体中文，除非用户明确要求其他语言。不要调用任何生成工具，也不要提前产出 PPT JSON。</p>"
+                            "content": "<p>你是“文档增强 PPT 创作”的需求收集代理。</p><p>你的任务是先把做 PPT 所需信息收集完整，再交给后续节点正式生成。</p><p>请重点确认这些信息：汇报主题与目标、应用场景、受众与风格、期望页数、希望重点突出什么、已上传资料与缺口、是否允许补充外部检索。</p><p>如果用户上传了文件，先结合文件快速归纳，再指出仍缺什么。</p><p>每一轮最多问 3 个具体问题，优先给明确选项，不要泛泛追问。</p><p>如果信息仍不足，不要开始生成 PPT；要明确列出缺失项，并请用户继续补充。</p><p>如果信息已足够，请输出“已确认、默认采用、待产出结果”三部分执行确认。</p><p>当你认为已经可以进入正式生成阶段时，最后一句必须写：若无修改，请点击 Yes 继续生成；如需补充，请点击 No 并填写修改意见。</p><p>默认使用简体中文，除非用户明确要求其他语言。不要调用任何生成工具，也不要提前产出 PPT JSON。</p>"
                         }
                     ],
                     "agentTools": [],
@@ -2673,7 +2673,7 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是文档增强 PPT 工作流中的 Slide Writer。</p><p>请只返回合法 JSON，结构需与 PPTXPresentation 兼容，顶层应包含 title、fileName、themePreset、slideSize、includeSpeakerNotes、slides。</p><p>slides 中每页至少要有 layout 与 title，可按需要补充 subtitle、body、bullets、speakerNotes、imageFileNames、leftTitle、leftBody、leftBullets、rightTitle、rightBody、rightBullets。</p><p>默认 themePreset=business-neutral，slideSize=wide，includeSpeakerNotes=true。</p><p>请按 deckOutline 生成接近建议页数的完整幻灯片；每页必须有非空 title；正文面向汇报表达，优先短句和要点化，不要把引用塞进 body 或 bullets。</p><p>speakerNotes 必须严格包含三段：讲解提示、依据、待核实项。</p><p>依据优先引用上传文件名加章节、页码或图表名；若来自补充检索，则写标题加链接或 Arxiv ID；无法定位时写“依据不足”。</p><p>只有在用户已上传真实图片且适合插入时，才能填写 imageFileNames，绝不能编造文件名。涉及封面、概念图、系统框架、流程图等可优先用 image-right 或 title-bullets；涉及实验结果、统计图、论文原图时不得凭空生成图表。</p><p>默认跟随用户语言，未指定时使用简体中文。不要输出 Markdown 代码块或额外说明。</p>"
+                            "content": "<p>你是文档增强 PPT 工作流中的幻灯片撰写器。</p><p>请只返回合法 JSON，结构需与 PPTXPresentation 兼容，顶层应包含 title、fileName、themePreset、slideSize、includeSpeakerNotes、slides。</p><p>slides 中每页至少要有 layout 与 title，可按需要补充 subtitle、body、bullets、speakerNotes、imageFileNames、leftTitle、leftBody、leftBullets、rightTitle、rightBody、rightBullets。</p><p>默认 themePreset=business-neutral，slideSize=wide，includeSpeakerNotes=true。</p><p>请按 deckOutline 生成接近建议页数的完整幻灯片；每页必须有非空 title；正文面向汇报表达，优先短句和要点化，不要把引用塞进 body 或 bullets。</p><p>speakerNotes 必须严格包含三段：讲解提示、依据、待核实项。</p><p>依据优先引用上传文件名加章节、页码或图表名；若来自补充检索，则写标题加链接或 Arxiv ID；无法定位时写“依据不足”。</p><p>只有在用户已上传真实图片且适合插入时，才能填写 imageFileNames，绝不能编造文件名。涉及封面、概念图、系统框架、流程图等可优先用 image-right 或 title-bullets；涉及实验结果、统计图、论文原图时不得凭空生成图表。</p><p>默认跟随用户语言，未指定时使用简体中文。不要输出 Markdown 代码块或额外说明。</p>"
                         },
                         {
                             "role": "user",
@@ -3319,7 +3319,7 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是文档增强 PPT 工作流中的插图规划角色。请阅读最终版 presentationSpec，判断哪些页面适合自动生成辅助插图。</p><p>只返回合法 JSON，结构为 requests 数组；每个请求包含 slideIndex、prompt，以及可选的 size。</p><p>slideIndex 使用 0-based 索引，最多返回 3 个请求。</p><p>只给封面、概念图、方法流程、系统框架、章节过渡等页面规划插图。</p><p>涉及实验结果、统计图、论文原图、真实业务数据图时禁止生成；如果某页已有 imageFileNames，也不要再生成请求。</p><p>prompt 要具体、视觉化、适合汇报，不要包含文字排版、Logo、水印或海报式标题。</p><p>如果没有合适页面，请返回空数组形式的 requests。不要输出 Markdown 代码块或额外说明。</p>"
+                            "content": "<p>你是文档增强 PPT 工作流中的插图规划角色。请阅读最终版 presentationSpec，判断哪些页面适合自动生成辅助插图。</p><p>只返回合法 JSON，结构为 requests 数组；每个请求包含 slideIndex、prompt，以及可选的 size。</p><p>slideIndex 使用 0-based 索引，最多返回 3 个请求。</p><p>只给封面、概念图、方法流程、系统框架、章节过渡等页面规划插图。</p><p>涉及实验结果、统计图、论文原图、真实业务数据图时禁止生成；如果某页已有 imageFileNames，也不要再生成请求。</p><p>prompt 要具体、视觉化、适合汇报，不要包含文字排版、Logo、水印或海报式标题。</p><p>为保证 JSON 可解析，prompt 文本中不要使用裸双引号；如需强调标签名，请直接写文本、不加引号，或改用单引号。</p><p>如果没有合适页面，请返回空数组形式的 requests。不要输出 Markdown 代码块或额外说明。</p>"
                         },
                         {
                             "role": "user",

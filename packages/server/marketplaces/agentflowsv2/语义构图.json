@@ -378,42 +378,42 @@
                             "type": "stringArray",
                             "enumValues": "",
                             "jsonSchema": "",
-                            "description": "Core subjects and scene objects"
+                            "description": "核心主体与场景对象"
                         },
                         {
                             "key": "mustKeep",
                             "type": "stringArray",
                             "enumValues": "",
                             "jsonSchema": "",
-                            "description": "Must-preserve elements and constraints"
+                            "description": "必须保留的元素与约束"
                         },
                         {
                             "key": "styleHints",
                             "type": "stringArray",
                             "enumValues": "",
                             "jsonSchema": "",
-                            "description": "Style, material, tone and aesthetic hints"
+                            "description": "风格、材质、调性与审美提示"
                         },
                         {
                             "key": "compositionHints",
                             "type": "stringArray",
                             "enumValues": "",
                             "jsonSchema": "",
-                            "description": "Composition, perspective and layout hints"
+                            "description": "构图、视角与布局提示"
                         },
                         {
                             "key": "forbidden",
                             "type": "stringArray",
                             "enumValues": "",
                             "jsonSchema": "",
-                            "description": "Things that must not appear"
+                            "description": "绝对不能出现的内容"
                         },
                         {
                             "key": "riskNotes",
                             "type": "stringArray",
                             "enumValues": "",
                             "jsonSchema": "",
-                            "description": "Failure modes and drift risks"
+                            "description": "常见失败模式与跑偏风险"
                         }
                     ],
                     "llmUpdateState": [
@@ -721,7 +721,7 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是图片生成提示词架构师，需要把素材理解结果转成 <code>doubaoImageTool</code> 可直接执行的单图请求。</p><p>你必须只返回合法 JSON（json）对象，只生成 1 个请求，输出对象必须是 <code>{\"requests\":[...]}</code>。</p><p>规则：</p><ul><li><p>请求字段只允许使用：<code>prompt</code>、<code>size</code>、<code>outputFormat</code>、<code>watermark</code>。</p></li><li><p><code>prompt</code> 必须分成六段，且按这个顺序写：<strong>目标</strong>、<strong>必保留</strong>、<strong>构图</strong>、<strong>光线材质</strong>、<strong>质量要求</strong>、<strong>严禁项</strong>。</p></li><li><p><strong>严禁项</strong> 必须覆盖：不要文字排版、不要 logo、不要水印、不要海报大标题、不要低清晰度伪影。</p></li><li><p>默认生成 1 张最终图，不要输出多候选策略。</p></li><li><p><code>size</code> 默认用 <code>2048x2048</code>；明确横版时优先 <code>2848x1600</code>；明确竖版时优先 <code>1600x2848</code>。</p></li><li><p><code>outputFormat</code> 固定为 <code>png</code>，<code>watermark</code> 固定为 <code>false</code>。</p></li></ul><p>不要输出 Markdown，不要输出额外解释。</p>"
+                            "content": "<p>你是图片生成提示词架构师，需要把素材理解结果转成 <code>doubaoImageTool</code> 可直接执行的单图请求。</p><p>你必须只返回合法 JSON（json）对象，只生成 1 个请求，输出对象必须是 <code>{\"requests\":[...]}</code>。</p><p>规则：</p><ul><li><p>请求字段只允许使用：<code>prompt</code>、<code>size</code>、<code>outputFormat</code>、<code>watermark</code>。</p></li><li><p><code>prompt</code> 必须分成六段，且按这个顺序写：<strong>目标</strong>、<strong>必保留</strong>、<strong>构图</strong>、<strong>光线材质</strong>、<strong>质量要求</strong>、<strong>严禁项</strong>。</p></li><li><p><strong>严禁项</strong> 必须覆盖：不要文字排版、不要 logo、不要水印、不要海报大标题、不要低清晰度伪影。</p></li><li><p>默认生成 1 张最终图，不要输出多候选策略。</p></li><li><p><code>size</code> 只允许使用不小于 3686400 像素的 Doubao 合法尺寸；默认用 <code>2048x2048</code>；明确横版时优先 <code>2848x1600</code>；明确竖版时优先 <code>1600x2848</code>；不要输出 <code>1024x1024</code> 或其他更小尺寸。</p></li><li><p><code>outputFormat</code> 固定为 <code>png</code>，<code>watermark</code> 固定为 <code>false</code>。</p></li></ul><p>不要输出 Markdown，不要输出额外解释。</p>"
                         },
                         {
                             "role": "user",
@@ -737,8 +737,8 @@
                             "key": "requests",
                             "type": "jsonArray",
                             "enumValues": "",
-                            "jsonSchema": "{\n    \"prompt\": {\n        \"type\": \"string\",\n        \"description\": \"Strict production-ready Doubao prompt with six required sections\"\n    },\n    \"size\": {\n        \"type\": \"string\",\n        \"description\": \"Doubao-supported canvas size\"\n    },\n    \"outputFormat\": {\n        \"type\": \"string\",\n        \"description\": \"Use png\"\n    },\n    \"watermark\": {\n        \"type\": \"boolean\",\n        \"description\": \"Use false\"\n    }\n}",
-                            "description": "Single image request for doubaoImageTool"
+                            "jsonSchema": "{\n    \"prompt\": {\n        \"type\": \"string\",\n        \"description\": \"可直接执行的 Doubao 提示词，必须包含六个必填段落\"\n    },\n    \"size\": {\n        \"type\": \"string\",\n        \"description\": \"Doubao 支持的画布尺寸\"\n    },\n    \"outputFormat\": {\n        \"type\": \"string\",\n        \"description\": \"固定为 png\"\n    },\n    \"watermark\": {\n        \"type\": \"boolean\",\n        \"description\": \"固定为 false\"\n    }\n}",
+                            "description": "供 doubaoImageTool 使用的单图请求"
                         }
                     ],
                     "llmUpdateState": [
@@ -1401,7 +1401,7 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是复合素材图片精修审稿专家。</p><p>请结合当前对话里最新可见的首稿图片、首稿渲染请求与用户需求，先完成结构化视觉评审，再直接产出 <code>doubaoImageTool</code> 可执行的单图二轮精修请求。</p><p>你必须只返回合法 JSON（json）对象，不要输出 Markdown 代码块，不要输出额外解释。</p><p>你只能返回这些顶层字段，字段名必须完全一致，禁止输出任何其他字段：<code>passed</code>、<code>score</code>、<code>issues</code>、<code>preserve</code>、<code>refinePromptAddendum</code>、<code>requests</code>。</p><p>所有字段都必须始终出现：<code>passed</code> 必须是 boolean；<code>score</code> 必须是 0-100 的 number；<code>issues</code> 必须是 string array，可为空；<code>preserve</code> 必须是 string array，可为空；<code>refinePromptAddendum</code> 必须是 string，无需补充时返回空字符串。</p><p><code>requests</code> 只允许 1 个元素，且元素字段只允许：<code>prompt</code>、<code>size</code>、<code>outputFormat</code>、<code>watermark</code>。</p><p><code>prompt</code> 必须在首稿提示词基础上吸收评审结论，明确保留项与需要修正的构图/主体/层次/材质/光影问题。</p><p>不要输出 <code>referenceImageFileNames</code>；参考图由工具自动读取首稿结果。</p><p><code>outputFormat</code> 固定为 <code>png</code>，<code>watermark</code> 固定为 <code>false</code>。</p><p>输出示例：<code>{\"passed\":true,\"score\":90,\"issues\":[],\"preserve\":[\"Keep the subject silhouette\"],\"refinePromptAddendum\":\"\",\"requests\":[{\"prompt\":\"...\",\"size\":\"2048x2048\",\"outputFormat\":\"png\",\"watermark\":false}]}</code></p>"
+                            "content": "<p>你是复合素材图片精修审稿专家。</p><p>请结合当前对话里最新可见的首稿图片、首稿渲染请求与用户需求，先完成结构化视觉评审，再直接产出 <code>doubaoImageTool</code> 可执行的单图二轮精修请求。</p><p>你必须只返回合法 JSON（json）对象，不要输出 Markdown 代码块，不要输出额外解释。</p><p>你只能返回这些顶层字段，字段名必须完全一致，禁止输出任何其他字段：<code>passed</code>、<code>score</code>、<code>issues</code>、<code>preserve</code>、<code>refinePromptAddendum</code>、<code>requests</code>。</p><p>所有字段都必须始终出现：<code>passed</code> 必须是 boolean；<code>score</code> 必须是 0-100 的 number；<code>issues</code> 必须是 string array，可为空；<code>preserve</code> 必须是 string array，可为空；<code>refinePromptAddendum</code> 必须是 string，无需补充时返回空字符串。</p><p><code>requests</code> 只允许 1 个元素，且元素字段只允许：<code>prompt</code>、<code>size</code>、<code>outputFormat</code>、<code>watermark</code>。</p><p><code>prompt</code> 必须在首稿提示词基础上吸收评审结论，明确保留项与需要修正的构图/主体/层次/材质/光影问题。</p><p><code>size</code> 只允许返回不小于 3686400 像素的尺寸；保留首稿横竖版倾向，优先使用 <code>2048x2048</code>、<code>2848x1600</code>、<code>1600x2848</code>；禁止输出 <code>1024x1024</code> 或其他更小尺寸。</p><p>不要输出 <code>referenceImageFileNames</code>；参考图由工具自动读取首稿结果。</p><p><code>outputFormat</code> 固定为 <code>png</code>，<code>watermark</code> 固定为 <code>false</code>。</p><p>输出示例：<code>{\"passed\":true,\"score\":90,\"issues\":[],\"preserve\":[\"保留主体轮廓与主视觉关系\"],\"refinePromptAddendum\":\"\",\"requests\":[{\"prompt\":\"...\",\"size\":\"2048x2048\",\"outputFormat\":\"png\",\"watermark\":false}]}</code></p>"
                         },
                         {
                             "role": "user",
@@ -1418,42 +1418,42 @@
                             "type": "boolean",
                             "enumValues": "",
                             "jsonSchema": "",
-                            "description": "Required boolean. true if the image can proceed, false otherwise."
+                            "description": "必填布尔值。图片可以继续使用时为 true，否则为 false。"
                         },
                         {
                             "key": "score",
                             "type": "number",
                             "enumValues": "",
                             "jsonSchema": "",
-                            "description": "Required number from 0 to 100."
+                            "description": "必填数字，范围 0 到 100。"
                         },
                         {
                             "key": "issues",
                             "type": "stringArray",
                             "enumValues": "",
                             "jsonSchema": "",
-                            "description": "Required string array. Use [] when no issues are found."
+                            "description": "必填字符串数组。没有问题时返回 []。"
                         },
                         {
                             "key": "preserve",
                             "type": "stringArray",
                             "enumValues": "",
                             "jsonSchema": "",
-                            "description": "Required string array. List strengths that must be preserved; use [] if none."
+                            "description": "必填字符串数组。列出必须保留的优点；如无则返回 []。"
                         },
                         {
                             "key": "refinePromptAddendum",
                             "type": "string",
                             "enumValues": "",
                             "jsonSchema": "",
-                            "description": "Required string. Use an empty string when no extra refinement guidance is needed."
+                            "description": "必填字符串。若无需额外精修指导则返回空字符串。"
                         },
                         {
                             "key": "requests",
                             "type": "jsonArray",
                             "enumValues": "",
-                            "jsonSchema": "{\n    \"prompt\": {\n        \"type\": \"string\",\n        \"description\": \"Execution-ready refinement prompt\"\n    },\n    \"size\": {\n        \"type\": \"string\",\n        \"description\": \"Doubao-supported canvas size\"\n    },\n    \"outputFormat\": {\n        \"type\": \"string\",\n        \"description\": \"Use png\"\n    },\n    \"watermark\": {\n        \"type\": \"boolean\",\n        \"description\": \"Use false\"\n    }\n}",
-                            "description": "Required single-item json array for doubaoImageTool."
+                            "jsonSchema": "{\n    \"prompt\": {\n        \"type\": \"string\",\n        \"description\": \"可直接执行的二轮精修提示词\"\n    },\n    \"size\": {\n        \"type\": \"string\",\n        \"description\": \"Doubao 支持的画布尺寸\"\n    },\n    \"outputFormat\": {\n        \"type\": \"string\",\n        \"description\": \"固定为 png\"\n    },\n    \"watermark\": {\n        \"type\": \"boolean\",\n        \"description\": \"固定为 false\"\n    }\n}",
+                            "description": "供 doubaoImageTool 使用的单项 JSON 数组。"
                         }
                     ],
                     "llmUpdateState": [

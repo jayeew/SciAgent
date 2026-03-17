@@ -19,6 +19,7 @@ export const DEFAULT_DOUBAO_IMAGE_OUTPUT_FORMAT = 'png'
 export const DEFAULT_DOUBAO_IMAGE_WATERMARK = false
 export const DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION = 'disabled'
 export const DEFAULT_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES = 15
+export const MIN_DOUBAO_IMAGE_PIXEL_COUNT = 3686400
 export const MIN_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES = 1
 export const MAX_DOUBAO_IMAGE_SEQUENTIAL_IMAGE_GENERATION_MAX_IMAGES = 15
 export const DOUBAO_IMAGE_PROVIDER = 'doubao-ark'
@@ -273,6 +274,78 @@ export const normalizeDoubaoImageSize = (size?: string): string | undefined => {
     return trimmedSize
 }
 
+const parseDoubaoImageSizeDimensions = (size?: string): { width: number; height: number } | undefined => {
+    if (!size) return undefined
+
+    const match = size.match(/^(\d+)x(\d+)$/i)
+    if (!match) return undefined
+
+    const width = Number(match[1])
+    const height = Number(match[2])
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        return undefined
+    }
+
+    return { width, height }
+}
+
+const resolveClosestSupportedDoubaoImageSize = (width: number, height: number): string => {
+    const targetAspectRatio = width / height
+    const candidateOptions = DOUBAO_IMAGE_SIZE_OPTIONS.filter((option) => option.label.startsWith('2K'))
+
+    return (candidateOptions.length ? candidateOptions : DOUBAO_IMAGE_SIZE_OPTIONS).reduce((bestOption, currentOption) => {
+        const bestDimensions = parseDoubaoImageSizeDimensions(bestOption.name)
+        const currentDimensions = parseDoubaoImageSizeDimensions(currentOption.name)
+        if (!bestDimensions || !currentDimensions) {
+            return bestOption
+        }
+
+        const bestAspectRatio = bestDimensions.width / bestDimensions.height
+        const currentAspectRatio = currentDimensions.width / currentDimensions.height
+        const bestAspectDelta = Math.abs(bestAspectRatio - targetAspectRatio)
+        const currentAspectDelta = Math.abs(currentAspectRatio - targetAspectRatio)
+
+        if (currentAspectDelta < bestAspectDelta) {
+            return currentOption
+        }
+
+        if (currentAspectDelta > bestAspectDelta) {
+            return bestOption
+        }
+
+        const bestPixels = bestDimensions.width * bestDimensions.height
+        const currentPixels = currentDimensions.width * currentDimensions.height
+
+        if (currentPixels < bestPixels) {
+            return currentOption
+        }
+
+        if (currentPixels > bestPixels) {
+            return bestOption
+        }
+
+        const bestDimensionDelta = Math.abs(bestDimensions.width - width) + Math.abs(bestDimensions.height - height)
+        const currentDimensionDelta = Math.abs(currentDimensions.width - width) + Math.abs(currentDimensions.height - height)
+
+        return currentDimensionDelta < bestDimensionDelta ? currentOption : bestOption
+    }, (candidateOptions.length ? candidateOptions : DOUBAO_IMAGE_SIZE_OPTIONS)[0]).name
+}
+
+export const ensureMinimumDoubaoImageSize = (size?: string): string | undefined => {
+    const normalizedSize = normalizeDoubaoImageSize(size)
+    const dimensions = parseDoubaoImageSizeDimensions(normalizedSize)
+
+    if (!normalizedSize || !dimensions) {
+        return normalizedSize
+    }
+
+    if (dimensions.width * dimensions.height >= MIN_DOUBAO_IMAGE_PIXEL_COUNT) {
+        return normalizedSize
+    }
+
+    return resolveClosestSupportedDoubaoImageSize(dimensions.width, dimensions.height)
+}
+
 export const resolveDoubaoImageGenerationArgs = (
     input: IDoubaoImageGenerationSchema,
     config: Partial<IDoubaoImageGenerationConfig>
@@ -319,7 +392,7 @@ export const resolveDoubaoImageGenerationArgs = (
     return {
         prompt,
         model: config.model?.trim() || DEFAULT_DOUBAO_IMAGE_MODEL,
-        size: normalizeDoubaoImageSize(input.size) || normalizeDoubaoImageSize(config.size) || DEFAULT_DOUBAO_IMAGE_SIZE,
+        size: ensureMinimumDoubaoImageSize(input.size) || ensureMinimumDoubaoImageSize(config.size) || DEFAULT_DOUBAO_IMAGE_SIZE,
         outputFormat: normalizeDoubaoOutputFormat(input.outputFormat || config.outputFormat),
         watermark: typeof input.watermark === 'boolean' ? input.watermark : config.watermark ?? DEFAULT_DOUBAO_IMAGE_WATERMARK,
         sequentialImageGeneration,

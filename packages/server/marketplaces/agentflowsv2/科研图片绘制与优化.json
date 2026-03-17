@@ -379,15 +379,15 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "llmModel": "chatAlibabaTongyi",
+                    "llmModel": "chatDeepseek",
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "# Role\n你是一位 CVPR/NeurIPS 顶刊的视觉架构师。你的核心能力是将抽象的论文逻辑转化为具体的、结构化的、几何级的视觉指令。\n\n# Objective\n阅读我提供的论文内容与当前用户需求，输出一份 [VISUAL SCHEMA]。这份 Schema 将被直接发送给 AI 绘图模型，因此必须使用强硬的物理描述。\n\n# Figure Selection Rule\n如果论文内容里可能对应多种候选插图：\n1. 优先服从用户当前明确指定的目标图或目标模块。\n2. 如果用户没有明确指定，则默认选择最适合展示论文主方法的 overall method figure，而不是实验结果拼图或消融表格。\n3. 如果论文内容不足以支撑完整构图，也要输出 best-effort 草案，不要拒答。\n\n# Phase 1: Layout Strategy Selector\n在生成 Schema 之前，请先分析论文逻辑，从以下布局原型中选择最合适的一个或组合：\n1. Linear Pipeline: 左→右流向。\n2. Cyclic/Iterative: 中心包含循环箭头。\n3. Hierarchical Stack: 上→下或下→上堆叠。\n4. Parallel/Dual-Stream: 上下平行双流。\n5. Central Hub: 核心模块连接四周组件。\n\n# Phase 2: Schema Generation Rules\n1. Dynamic Zoning: 根据布局定义 2-5 个物理区域。\n2. Internal Visualization: 必须定义每个区域内部的物体（icons, grids, trees 等），禁止只写抽象概念。\n3. Explicit Connections: 如果存在循环或反馈，必须明确写出 curved arrow / dotted arrow / wide flow arrow 等连接方式。\n\n# Output Format (The Golden Schema)\n请严格遵守以下 Markdown 结构输出，不要添加任何解释文字：\n\n---BEGIN PROMPT---\n\n[Style & Meta-Instructions]\nHigh-fidelity scientific schematic, technical vector illustration, clean white background, distinct boundaries, academic textbook style. High resolution 4k, strictly 2D flat design with subtle isometric elements.\n\n[LAYOUT CONFIGURATION]\n* **Selected Layout**: [Fill with chosen layout]\n* **Composition Logic**: [Fill with composition logic]\n* **Color Palette**: Professional Pastel (Azure Blue, Slate Grey, Coral Orange, Mint Green).\n\n[ZONE 1: LOCATION - LABEL]\n* **Container**: [Describe the physical container]\n* **Visual Structure**: [Describe concrete objects and arrangement]\n* **Key Text Labels**: \"[Text 1]\"\n\n[ZONE 2: LOCATION - LABEL]\n* **Container**: [Describe the physical container]\n* **Visual Structure**: [Describe concrete objects and arrangement]\n* **Key Text Labels**: \"[Text 2]\", \"[Text 3]\"\n\n[ZONE 3: LOCATION - LABEL]\n* **Container**: [Describe the physical container]\n* **Visual Structure**: [Describe concrete objects and arrangement]\n* **Key Text Labels**: \"[Text 4]\"\n\n[CONNECTIONS]\n1. [Describe connection lines and arrows]\n2. [Describe connection lines and arrows]\n\n---END PROMPT---"
+                            "content": "# 角色\n你是一位顶会级科研插图视觉架构师。你的核心能力是把抽象的论文逻辑转化为具体、结构化、具有几何感的视觉指令。\n\n# 目标\n阅读我提供的论文内容与当前用户需求，输出一份唯一可执行的可视蓝图。该蓝图会被直接发送给 AI 绘图模型，所以必须尽量使用强约束、可落地的物理描述。\n\n# 图示选择规则\n如果论文内容可能对应多种候选插图：\n1. 优先服从用户当前明确指定的目标图或目标模块。\n2. 如果用户没有明确指定，则默认选择最适合展示论文主方法的整体方法图，而不是实验结果拼图或消融表格。\n3. 如果论文内容不足以支撑完整构图，也要输出尽力而为的草案，不要拒答。\n\n# 第一阶段：布局策略选择\n在生成蓝图前，请先分析论文逻辑，从以下布局原型中选择最合适的一种或组合：\n1. 线性流水线：左到右流向。\n2. 循环迭代：中心包含反馈或循环箭头。\n3. 分层堆叠：由上到下或由下到上组织。\n4. 并行双流：上下或左右平行双通道。\n5. 中央枢纽：核心模块连接周围组件。\n\n# 第二阶段：蓝图生成规则\n1. 动态分区：根据布局定义 2 到 5 个物理区域。\n2. 内部可视化：必须定义每个区域内部的具体物体，例如图标、网格、树结构、芯片、文档、箭头等，禁止只写抽象概念。\n3. 显式连接：如果存在循环、反馈或跨区依赖，必须明确写出曲线箭头、虚线箭头、宽流向箭头等连接方式。\n\n# 输出格式\n请严格按照以下 Markdown 结构输出，不要添加任何解释文字：\n\n---BEGIN PROMPT---\n\n[风格与元指令]\n高保真科研示意图，技术型矢量插画，纯白背景，模块边界清晰，学术教材风格。高分辨率 4k，严格 2D 扁平设计，可带轻微等距视角。\n\n[布局配置]\n* **选定布局**: [填写所选布局]\n* **构图逻辑**: [填写构图逻辑]\n* **色彩方案**: 专业柔和配色（天蓝、石板灰、珊瑚橙、薄荷绿）。\n\n[区域 1：位置 - 名称]\n* **容器**: [描述物理容器]\n* **内部结构**: [描述具体物体与排列方式]\n* **关键文字标签**: \"[文本 1]\"\n\n[区域 2：位置 - 名称]\n* **容器**: [描述物理容器]\n* **内部结构**: [描述具体物体与排列方式]\n* **关键文字标签**: \"[文本 2]\", \"[文本 3]\"\n\n[区域 3：位置 - 名称]\n* **容器**: [描述物理容器]\n* **内部结构**: [描述具体物体与排列方式]\n* **关键文字标签**: \"[文本 4]\"\n\n[连接关系]\n1. [描述连接线和箭头]\n2. [描述连接线和箭头]\n\n---END PROMPT---"
                         },
                         {
                             "role": "user",
-                            "content": "用户需求：\n{{ question }}\n\n请基于当前上传的论文全文、参考图片（如果有）与文字目标，输出唯一一份可执行的 [VISUAL SCHEMA]。"
+                            "content": "用户需求：\n{{ question }}\n\n请基于当前上传的论文全文、参考图片（如果有）与文字目标，输出唯一一份可执行的可视蓝图。"
                         }
                     ],
                     "llmEnableMemory": false,
@@ -402,12 +402,12 @@
                     ],
                     "llmModelConfig": {
                         "credential": "",
-                        "modelName": "qwen-plus",
+                        "modelName": "deepseek-chat",
                         "temperature": 0.1,
                         "streaming": true,
                         "allowImageUploads": true,
                         "imageResolution": "high",
-                        "llmModel": "chatAlibabaTongyi"
+                        "llmModel": "chatDeepseek"
                     }
                 },
                 "outputAnchors": [
@@ -695,30 +695,22 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "llmModel": "chatAlibabaTongyi",
+                    "llmModel": "chatDeepseek",
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "You are an academic diagram rendering prompt architect. Convert the provided VISUAL SCHEMA into exactly one Doubao image request.\n\nStyle Reference & Execution Instructions:\n1. Art Style (Visio/Illustrator Aesthetic): Generate a professional academic architecture diagram suitable for a top-tier computer science paper (CVPR/NeurIPS). Visuals must use flat vector graphics, distinct geometric shapes, clean thin outlines, soft pastel fills, clean white background, and no shadows/shading.\n2. CRITICAL TEXT CONSTRAINTS: DO NOT render meta-labels such as ZONE 1, LAYOUT CONFIGURATION, Input, Output, or Container. ONLY render the exact text inside double quotes under Key Text Labels. Use a clean bold Sans-Serif font.\n3. Spatial Rule: Strictly follow the provided schema and keep the composition suitable for a single scientific figure.\n\nReturn only a JSON object with shape {\"requests\":[...]} and exactly one request. Allowed fields inside each request are prompt, size, outputFormat, watermark. Prefer size 2848x1600 unless the schema clearly implies portrait or square. outputFormat must be png. watermark must be false."
+                            "content": "你是科研插图渲染请求架构师。请把给定的可视蓝图转换成且只转换成 1 个可直接用于 doubaoImageTool 的图片请求。\n\n要求：\n1. 最终答案只能返回合法 JSON 对象，格式必须严格为 {\"requests\":[...]}。\n2. requests 中只能有 1 个元素。\n3. 单个请求只允许包含 4 个字段：prompt、size、outputFormat、watermark。\n4. prompt 必须是面向科研图绘制的最终执行提示词，完整吸收可视蓝图中的布局、模块、连接、文字标签和风格要求。\n5. 不要渲染区域编号、布局配置、容器、输入、输出等元标签；只允许渲染蓝图中明确要求保留的关键文字标签。\n6. 图像风格必须是科研论文插图风格：扁平 2D 矢量图、纯白背景、几何结构清晰、细线描边、柔和配色、不要阴影、不要 3D、不要海报式装饰字体。\n7. size 默认优先使用 2848x1600；如果蓝图明显是竖版，则使用 1600x2848；如果蓝图明显是方形，则使用 2048x2048。\n8. outputFormat 固定为 png，watermark 固定为 false。\n9. 不要输出 Markdown，不要输出解释文字。"
                         },
                         {
                             "role": "user",
-                            "content": "用户需求：\n{{ question }}\n\n请把下面这份 VISUAL SCHEMA 转成最终渲染请求：\n{{ $flow.state.visualSchema }}"
+                            "content": "用户需求：\n{{ question }}\n\n请把下面这份可视蓝图转成最终渲染请求：\n{{ $flow.state.visualSchema }}"
                         }
                     ],
                     "llmEnableMemory": false,
                     "llmMemoryType": "allMessages",
                     "llmUserMessage": "",
                     "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "requests",
-                            "type": "jsonArray",
-                            "enumValues": "",
-                            "jsonSchema": "{\n    \"prompt\": {\n        \"type\": \"string\",\n        \"description\": \"Execution-ready illustration prompt derived from the visual schema\"\n    },\n    \"size\": {\n        \"type\": \"string\",\n        \"description\": \"Doubao-supported canvas size\"\n    },\n    \"outputFormat\": {\n        \"type\": \"string\",\n        \"description\": \"Use png\"\n    },\n    \"watermark\": {\n        \"type\": \"boolean\",\n        \"description\": \"Use false\"\n    }\n}",
-                            "description": "Single academic diagram request for doubaoImageTool"
-                        }
-                    ],
+                    "llmStructuredOutput": [],
                     "llmUpdateState": [
                         {
                             "key": "draftImageRequests",
@@ -727,12 +719,12 @@
                     ],
                     "llmModelConfig": {
                         "credential": "",
-                        "modelName": "qwen-plus",
+                        "modelName": "deepseek-chat",
                         "temperature": 0.1,
                         "streaming": true,
                         "allowImageUploads": false,
                         "imageResolution": "low",
-                        "llmModel": "chatAlibabaTongyi"
+                        "llmModel": "chatDeepseek"
                     }
                 },
                 "outputAnchors": [
@@ -1136,58 +1128,22 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "llmModel": "chatAlibabaTongyi",
+                    "llmModel": "chatDeepseek",
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "你是顶会论文插图审稿专家。你的目标是审查当前最新可见的科研图首稿是否严格遵守 VISUAL SCHEMA。若图像可见，请优先基于图像本身审稿；若图像不可见，则退化为基于渲染请求一致性的保守审稿。 你必须只返回合法 JSON（json）对象，不要输出 Markdown，不要输出额外说明。 你只能返回以下 5 个顶层字段，字段名必须完全一致，禁止输出任何其他字段：passed、score、issues、preserve、refinePromptAddendum。 所有字段都必须始终出现：passed 必须是 boolean；score 必须是 0-100 的 number；issues 必须是 string array，可为空数组；preserve 必须是 string array，可为空数组；refinePromptAddendum 必须是 string，无需修改时返回空字符串。 如果当前图片不可见，请基于渲染请求与 VISUAL SCHEMA 做保守审稿，但仍然只能使用上述 5 个字段。 输出示例：{\"passed\":true,\"score\":92,\"issues\":[],\"preserve\":[\"Keep the left-to-right pipeline structure\"],\"refinePromptAddendum\":\"\"}"
+                            "content": "你是顶会论文科研插图审稿专家。你的任务是审查当前最新可见的科研图首稿是否严格遵守可视蓝图。若图像可见，请优先基于图像本身审稿；若图像不可见，则退化为基于渲染请求一致性的保守审稿。\n\n你必须只返回合法 JSON 对象，不要输出 Markdown，不要输出任何额外说明。\n你只能返回以下 5 个顶层字段，字段名必须完全一致，禁止输出其他字段：passed、score、issues、preserve、refinePromptAddendum。\n所有字段都必须始终出现：\n1. passed 必须是 boolean。\n2. score 必须是 0 到 100 的 number。\n3. issues 必须是 string array，可为空数组。\n4. preserve 必须是 string array，可为空数组。\n5. refinePromptAddendum 必须是 string，无需修改时返回空字符串。\n\n如果当前图片不可见，请基于渲染请求与可视蓝图做保守审稿，但仍然只能使用上述 5 个字段。\n输出示例：{\"passed\":true,\"score\":92,\"issues\":[],\"preserve\":[\"保留从左到右的主流程结构\"],\"refinePromptAddendum\":\"\"}"
                         },
                         {
                             "role": "user",
-                            "content": "用户需求：\n{{ question }}\n\nVISUAL SCHEMA：\n{{ $flow.state.visualSchema }}\n\n首稿渲染请求：\n{{ $flow.state.draftImageRequests }}\n\n请结合当前对话中最新可见的首稿图片输出审稿结果。"
+                            "content": "用户需求：\n{{ question }}\n\n可视蓝图：\n{{ $flow.state.visualSchema }}\n\n首稿渲染请求：\n{{ $flow.state.draftImageRequests }}\n\n请结合当前对话中最新可见的首稿图片输出审稿结果。"
                         }
                     ],
                     "llmEnableMemory": true,
                     "llmMemoryType": "allMessages",
                     "llmUserMessage": "",
                     "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "passed",
-                            "type": "boolean",
-                            "enumValues": "",
-                            "jsonSchema": "",
-                            "description": "Required boolean. true if the draft can proceed, false otherwise."
-                        },
-                        {
-                            "key": "score",
-                            "type": "number",
-                            "enumValues": "",
-                            "jsonSchema": "",
-                            "description": "Required number from 0 to 100."
-                        },
-                        {
-                            "key": "issues",
-                            "type": "stringArray",
-                            "enumValues": "",
-                            "jsonSchema": "",
-                            "description": "Required string array. Use [] when no issues are found."
-                        },
-                        {
-                            "key": "preserve",
-                            "type": "stringArray",
-                            "enumValues": "",
-                            "jsonSchema": "",
-                            "description": "Required string array. List strengths that must be preserved; use [] if none."
-                        },
-                        {
-                            "key": "refinePromptAddendum",
-                            "type": "string",
-                            "enumValues": "",
-                            "jsonSchema": "",
-                            "description": "Required string. Use an empty string when no extra refinement guidance is needed."
-                        }
-                    ],
+                    "llmStructuredOutput": [],
                     "llmUpdateState": [
                         {
                             "key": "draftReview",
@@ -1196,12 +1152,12 @@
                     ],
                     "llmModelConfig": {
                         "credential": "",
-                        "modelName": "qwen-plus",
+                        "modelName": "deepseek-chat",
                         "temperature": 0.1,
                         "streaming": true,
                         "allowImageUploads": true,
                         "imageResolution": "high",
-                        "llmModel": "chatAlibabaTongyi"
+                        "llmModel": "chatDeepseek"
                     }
                 },
                 "outputAnchors": [
@@ -1600,15 +1556,15 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "llmModel": "chatAlibabaTongyi",
+                    "llmModel": "chatDeepseek",
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "你是科研插图修订编辑。请读取用户刚刚在对话中给出的人工修改意见，把它压缩成一份仅包含可执行视觉改动的 revision brief。要求：1) 保留用户明确要求保留的元素；2) 删除不可执行的情绪化表述；3) 输出简洁中文要点，适合后续直接拼接到图片精修请求；4) 不要输出 Markdown 标题。"
+                            "content": "你是科研插图修订编辑。请读取用户刚刚在对话中给出的人工修改意见，把它压缩成一份仅包含可执行视觉改动的修订摘要。要求：1）保留用户明确要求保留的元素；2）删除不可执行的情绪化表述；3）输出简洁中文要点，适合后续直接拼接到图片精修请求；4）不要输出 Markdown 标题。"
                         },
                         {
                             "role": "user",
-                            "content": "原始 VISUAL SCHEMA：\n{{ $flow.state.visualSchema }}\n\n首稿审稿意见：\n{{ $flow.state.draftReview }}\n\n请结合对话中最新的人类反馈，输出 revision brief。"
+                            "content": "原始可视蓝图：\n{{ $flow.state.visualSchema }}\n\n首稿审稿意见：\n{{ $flow.state.draftReview }}\n\n请结合对话中最新的人类反馈，输出修订摘要。"
                         }
                     ],
                     "llmEnableMemory": true,
@@ -1623,12 +1579,12 @@
                     ],
                     "llmModelConfig": {
                         "credential": "",
-                        "modelName": "qwen-plus",
+                        "modelName": "deepseek-chat",
                         "temperature": 0.1,
                         "streaming": true,
                         "allowImageUploads": false,
                         "imageResolution": "low",
-                        "llmModel": "chatAlibabaTongyi"
+                        "llmModel": "chatDeepseek"
                     }
                 },
                 "outputAnchors": [
@@ -1916,30 +1872,22 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "llmModel": "chatAlibabaTongyi",
+                    "llmModel": "chatDeepseek",
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "You are the refinement prompt architect for academic diagrams. Produce exactly one Doubao image request as {\"requests\":[...]}. Preserve the original VISUAL SCHEMA as the primary contract. Apply review feedback and optional human revision notes without breaking the diagram topology. Keep these hard constraints: only render Key Text Labels, academic vector diagram, flat 2D, clean white background, no shadows, no 3D render, no decorative poster typography. Allowed fields are prompt, size, outputFormat, watermark. Use png and watermark false. Return only valid json in the final answer."
+                            "content": "你是科研插图精修请求架构师。请基于原始可视蓝图、首稿审稿结论以及可能存在的人类修订摘要，生成且只生成 1 个可直接用于 doubaoImageTool 的精修请求。\n\n要求：\n1. 最终答案只能返回合法 JSON 对象，格式必须严格为 {\"requests\":[...]}。\n2. requests 中只能有 1 个元素。\n3. 单个请求只允许包含 4 个字段：prompt、size、outputFormat、watermark。\n4. 必须把原始可视蓝图视为最高优先级约束，在吸收审稿意见和人工反馈的同时，不能破坏原有图拓扑、主流程、模块层级和关键关系。\n5. 硬性约束必须始终保留：只渲染关键文字标签、科研论文插图风格、2D 扁平矢量图、纯白背景、不要阴影、不要 3D、不要海报式装饰字体。\n6. size 默认优先沿用首稿的横竖版方向；常用合法尺寸优先为 2848x1600、1600x2848、2048x2048。\n7. outputFormat 固定为 png，watermark 固定为 false。\n8. 不要输出 Markdown，不要输出解释文字。"
                         },
                         {
                             "role": "user",
-                            "content": "用户需求：\n{{ question }}\n\nVISUAL SCHEMA：\n{{ $flow.state.visualSchema }}\n\n首稿审稿：\n{{ $flow.state.draftReview }}\n\n人工修订摘要（可能为空）：\n{{ $flow.state.humanRevisionBrief }}\n\n请生成最终精修请求。"
+                            "content": "用户需求：\n{{ question }}\n\n可视蓝图：\n{{ $flow.state.visualSchema }}\n\n首稿审稿：\n{{ $flow.state.draftReview }}\n\n人工修订摘要（可能为空）：\n{{ $flow.state.humanRevisionBrief }}\n\n请生成最终精修请求。"
                         }
                     ],
                     "llmEnableMemory": false,
                     "llmMemoryType": "allMessages",
                     "llmUserMessage": "",
                     "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "requests",
-                            "type": "jsonArray",
-                            "enumValues": "",
-                            "jsonSchema": "{\n    \"prompt\": {\n        \"type\": \"string\",\n        \"description\": \"Execution-ready illustration prompt derived from the visual schema\"\n    },\n    \"size\": {\n        \"type\": \"string\",\n        \"description\": \"Doubao-supported canvas size\"\n    },\n    \"outputFormat\": {\n        \"type\": \"string\",\n        \"description\": \"Use png\"\n    },\n    \"watermark\": {\n        \"type\": \"boolean\",\n        \"description\": \"Use false\"\n    }\n}",
-                            "description": "Single refined academic diagram request for doubaoImageTool"
-                        }
-                    ],
+                    "llmStructuredOutput": [],
                     "llmUpdateState": [
                         {
                             "key": "refineImageRequestDraft",
@@ -1948,12 +1896,12 @@
                     ],
                     "llmModelConfig": {
                         "credential": "",
-                        "modelName": "qwen-plus",
+                        "modelName": "deepseek-chat",
                         "temperature": 0.1,
                         "streaming": true,
                         "allowImageUploads": false,
                         "imageResolution": "low",
-                        "llmModel": "chatAlibabaTongyi"
+                        "llmModel": "chatDeepseek"
                     }
                 },
                 "outputAnchors": [

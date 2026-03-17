@@ -76,6 +76,59 @@ const storedFileReference = (fileName: string): IFileUpload[] => [
 ]
 
 describe('DoubaoImageTool core', () => {
+    it('should repair unescaped quotes inside prompt values when imageRequests is a malformed JSON string', async () => {
+        const mediaModel = createMediaModelMock()
+        const tool = createTool(mediaModel)
+        const malformedImageRequests = `{
+            "requests": [
+                {
+                    "slideIndex": 0,
+                    "prompt": "High-fidelity scientific schematic labeled "Data Augmentation" with feedback to "Diverse Testing Samples".",
+                    "size": "1920x1080",
+                    "outputFormat": "png",
+                    "watermark": false
+                }
+            ]
+        }`
+
+        const result = await tool.call(
+            {
+                presentationSpec: JSON.stringify({
+                    title: '科研汇报',
+                    slides: [
+                        {
+                            layout: 'image-right',
+                            title: '系统概览'
+                        }
+                    ]
+                }),
+                imageRequests: malformedImageRequests
+            },
+            undefined,
+            undefined,
+            {
+                orgId: 'org-1',
+                chatflowId: 'flow-1',
+                chatId: 'chat-1'
+            }
+        )
+
+        expect(mediaModel.invoke).toHaveBeenCalledWith(
+            expect.objectContaining({
+                prompt: 'High-fidelity scientific schematic labeled "Data Augmentation" with feedback to "Diverse Testing Samples".',
+                size: '1920x1080',
+                outputFormat: 'png',
+                watermark: false
+            }),
+            expect.any(Object)
+        )
+
+        const parsed = parseToolOutput(result)
+        const updatedSpec = JSON.parse(parsed.output)
+
+        expect(updatedSpec.slides[0].imageFileNames).toEqual(['doubao_generated_image_1.png'])
+    })
+
     it('should inject generated image file names back into presentationSpec', async () => {
         const mediaModel = createMediaModelMock()
         const tool = createTool(mediaModel)

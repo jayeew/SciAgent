@@ -3,6 +3,7 @@ import { addSingleFileToStorage, getFileFromStorage } from '../../../../src/stor
 import {
     DEFAULT_DOUBAO_IMAGE_MODEL,
     DoubaoImageModel,
+    ensureMinimumDoubaoImageSize,
     normalizeDoubaoImageSize,
     normalizeDoubaoOutputFormat,
     normalizeDoubaoSequentialImageGeneration,
@@ -61,6 +62,12 @@ describe('DoubaoImage helpers', () => {
         expect(normalizeDoubaoImageSize('2K')).toBe('2048x2048')
     })
 
+    it('upgrades undersized canvases to the closest supported Doubao size', () => {
+        expect(ensureMinimumDoubaoImageSize('1024x1024')).toBe('2048x2048')
+        expect(ensureMinimumDoubaoImageSize('1024x576')).toBe('2848x1600')
+        expect(ensureMinimumDoubaoImageSize('1200x800')).toBe('2496x1664')
+    })
+
     it('normalizes sequential image generation values', () => {
         expect(normalizeDoubaoSequentialImageGeneration()).toBe('disabled')
         expect(normalizeDoubaoSequentialImageGeneration('auto')).toBe('auto')
@@ -93,7 +100,7 @@ describe('DoubaoImage helpers', () => {
         expect(resolved).toEqual({
             prompt: 'future city poster',
             model: 'custom-model',
-            size: '1024x1024',
+            size: '2048x2048',
             outputFormat: 'jpeg',
             watermark: true,
             sequentialImageGeneration: 'disabled'
