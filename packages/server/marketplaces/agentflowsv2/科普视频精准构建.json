@@ -1,0 +1,2587 @@
+{
+    "description": "一个面向科普视频与宣传视频精准构建的 Agentflow V2 模板：支持文本 + 首帧/尾帧参考与资料上传，先补齐目标与效果，再规划视频蓝图，最终生成单条预期视频。",
+    "usecases": ["视频生成", "科普视频", "宣传视频", "文件分析", "多轮交互"],
+    "nodes": [
+        {
+            "id": "startAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 70,
+                "y": 220
+            },
+            "data": {
+                "id": "startAgentflow_0",
+                "label": "开始",
+                "version": 1.1,
+                "name": "startAgentflow",
+                "type": "Start",
+                "color": "#7EE787",
+                "hideInput": true,
+                "baseClasses": ["Start"],
+                "category": "Agent Flows",
+                "description": "科普视频精准构建流程的起始节点",
+                "inputParams": [
+                    {
+                        "label": "Input Type",
+                        "name": "startInputType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "Chat Input",
+                                "name": "chatInput",
+                                "description": "Start the conversation with chat input"
+                            },
+                            {
+                                "label": "Form Input",
+                                "name": "formInput",
+                                "description": "Start the workflow with form inputs"
+                            }
+                        ],
+                        "default": "chatInput",
+                        "id": "startAgentflow_0-input-startInputType-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Form Title",
+                        "name": "formTitle",
+                        "type": "string",
+                        "placeholder": "Please Fill Out The Form",
+                        "show": {
+                            "startInputType": "formInput"
+                        },
+                        "id": "startAgentflow_0-input-formTitle-string",
+                        "display": false
+                    },
+                    {
+                        "label": "Form Description",
+                        "name": "formDescription",
+                        "type": "string",
+                        "placeholder": "Complete all fields below to continue",
+                        "show": {
+                            "startInputType": "formInput"
+                        },
+                        "id": "startAgentflow_0-input-formDescription-string",
+                        "display": false
+                    },
+                    {
+                        "label": "Form Input Types",
+                        "name": "formInputTypes",
+                        "description": "Specify the type of form input",
+                        "type": "array",
+                        "show": {
+                            "startInputType": "formInput"
+                        },
+                        "array": [
+                            {
+                                "label": "Type",
+                                "name": "type",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "String",
+                                        "name": "string"
+                                    },
+                                    {
+                                        "label": "Number",
+                                        "name": "number"
+                                    },
+                                    {
+                                        "label": "Boolean",
+                                        "name": "boolean"
+                                    },
+                                    {
+                                        "label": "Options",
+                                        "name": "options"
+                                    }
+                                ],
+                                "default": "string"
+                            },
+                            {
+                                "label": "Label",
+                                "name": "label",
+                                "type": "string",
+                                "placeholder": "Label for the input"
+                            },
+                            {
+                                "label": "Variable Name",
+                                "name": "name",
+                                "type": "string",
+                                "placeholder": "Variable name for the input (must be camel case)",
+                                "description": "Variable name must be camel case. For example: firstName, lastName, etc."
+                            },
+                            {
+                                "label": "Add Options",
+                                "name": "addOptions",
+                                "type": "array",
+                                "show": {
+                                    "formInputTypes[$index].type": "options"
+                                },
+                                "array": [
+                                    {
+                                        "label": "Option",
+                                        "name": "option",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        ],
+                        "id": "startAgentflow_0-input-formInputTypes-array",
+                        "display": false
+                    },
+                    {
+                        "label": "Ephemeral Memory",
+                        "name": "startEphemeralMemory",
+                        "type": "boolean",
+                        "description": "Start fresh for every execution without past chat history",
+                        "optional": true,
+                        "id": "startAgentflow_0-input-startEphemeralMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Flow State",
+                        "name": "startState",
+                        "description": "Runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "string",
+                                "placeholder": "Foo"
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "placeholder": "Bar",
+                                "optional": true
+                            }
+                        ],
+                        "id": "startAgentflow_0-input-startState-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Persist State",
+                        "name": "startPersistState",
+                        "type": "boolean",
+                        "description": "Persist the state in the same session",
+                        "optional": true,
+                        "id": "startAgentflow_0-input-startPersistState-boolean",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "startInputType": "chatInput",
+                    "formTitle": "",
+                    "formDescription": "",
+                    "formInputTypes": [],
+                    "startEphemeralMemory": false,
+                    "startState": [
+                        {
+                            "key": "videoTaskProfile",
+                            "value": ""
+                        },
+                        {
+                            "key": "sourceDigest",
+                            "value": ""
+                        },
+                        {
+                            "key": "videoBlueprint",
+                            "value": ""
+                        },
+                        {
+                            "key": "finalVideoRequest",
+                            "value": ""
+                        }
+                    ],
+                    "startPersistState": true
+                },
+                "outputAnchors": [
+                    {
+                        "id": "startAgentflow_0-output-startAgentflow",
+                        "label": "开始",
+                        "name": "startAgentflow"
+                    }
+                ],
+                "outputs": {}
+            },
+            "width": 175,
+            "height": 65,
+            "selected": false,
+            "positionAbsolute": {
+                "x": 70,
+                "y": 220
+            },
+            "dragging": false
+        },
+        {
+            "id": "agentAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 360,
+                "y": 220
+            },
+            "data": {
+                "id": "agentAgentflow_0",
+                "label": "需求收集 Agent",
+                "version": 3.2,
+                "name": "agentAgentflow",
+                "type": "Agent",
+                "color": "#4DD0E1",
+                "baseClasses": ["Agent"],
+                "category": "Agent Flows",
+                "description": "通过多轮对话补齐科普/宣传视频的目标、受众、资料和首尾帧参考要求",
+                "inputParams": [
+                    {
+                        "label": "Model",
+                        "name": "agentModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "agentAgentflow_0-input-agentModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Messages",
+                        "name": "agentMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Role",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "System",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "Assistant",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "Developer",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "User",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Content",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "agentAgentflow_0-input-agentMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Tools",
+                        "name": "agentTools",
+                        "type": "array",
+                        "optional": true,
+                        "array": [
+                            {
+                                "label": "Tool",
+                                "name": "agentSelectedTool",
+                                "type": "asyncOptions",
+                                "loadMethod": "listTools",
+                                "loadConfig": true
+                            },
+                            {
+                                "label": "Require Human Input",
+                                "name": "agentSelectedToolRequiresHumanInput",
+                                "type": "boolean",
+                                "optional": true
+                            }
+                        ],
+                        "id": "agentAgentflow_0-input-agentTools-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Knowledge (Document Stores)",
+                        "name": "agentKnowledgeDocumentStores",
+                        "type": "array",
+                        "description": "Give your agent context about different document sources. Document stores must be upserted in advance.",
+                        "array": [
+                            {
+                                "label": "Document Store",
+                                "name": "documentStore",
+                                "type": "asyncOptions",
+                                "loadMethod": "listStores"
+                            },
+                            {
+                                "label": "Describe Knowledge",
+                                "name": "docStoreDescription",
+                                "type": "string",
+                                "generateDocStoreDescription": true,
+                                "placeholder": "Describe what the knowledge base is about, this is useful for the AI to know when and how to search for correct information",
+                                "rows": 4
+                            },
+                            {
+                                "label": "Return Source Documents",
+                                "name": "returnSourceDocuments",
+                                "type": "boolean",
+                                "optional": true
+                            }
+                        ],
+                        "optional": true,
+                        "id": "agentAgentflow_0-input-agentKnowledgeDocumentStores-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Knowledge (Vector Embeddings)",
+                        "name": "agentKnowledgeVSEmbeddings",
+                        "type": "array",
+                        "description": "Give your agent context about different document sources from existing vector stores and embeddings",
+                        "array": [
+                            {
+                                "label": "Vector Store",
+                                "name": "vectorStore",
+                                "type": "asyncOptions",
+                                "loadMethod": "listVectorStores",
+                                "loadConfig": true
+                            },
+                            {
+                                "label": "Embedding Model",
+                                "name": "embeddingModel",
+                                "type": "asyncOptions",
+                                "loadMethod": "listEmbeddings",
+                                "loadConfig": true
+                            },
+                            {
+                                "label": "Knowledge Name",
+                                "name": "knowledgeName",
+                                "type": "string",
+                                "placeholder": "A short name for the knowledge base, this is useful for the AI to know when and how to search for correct information"
+                            },
+                            {
+                                "label": "Describe Knowledge",
+                                "name": "knowledgeDescription",
+                                "type": "string",
+                                "placeholder": "Describe what the knowledge base is about, this is useful for the AI to know when and how to search for correct information",
+                                "rows": 4
+                            },
+                            {
+                                "label": "Return Source Documents",
+                                "name": "returnSourceDocuments",
+                                "type": "boolean",
+                                "optional": true
+                            }
+                        ],
+                        "optional": true,
+                        "id": "agentAgentflow_0-input-agentKnowledgeVSEmbeddings-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Enable Memory",
+                        "name": "agentEnableMemory",
+                        "type": "boolean",
+                        "description": "Enable memory for the conversation thread",
+                        "default": true,
+                        "optional": true,
+                        "id": "agentAgentflow_0-input-agentEnableMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Type",
+                        "name": "agentMemoryType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Messages",
+                                "name": "allMessages",
+                                "description": "Retrieve all messages from the conversation"
+                            },
+                            {
+                                "label": "Window Size",
+                                "name": "windowSize",
+                                "description": "Uses a fixed window size to surface the last N messages"
+                            },
+                            {
+                                "label": "Conversation Summary",
+                                "name": "conversationSummary",
+                                "description": "Summarizes the whole conversation"
+                            },
+                            {
+                                "label": "Conversation Summary Buffer",
+                                "name": "conversationSummaryBuffer",
+                                "description": "Summarize conversations once token limit is reached. Default to 2000"
+                            }
+                        ],
+                        "optional": true,
+                        "default": "allMessages",
+                        "show": {
+                            "agentEnableMemory": true
+                        },
+                        "id": "agentAgentflow_0-input-agentMemoryType-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Window Size",
+                        "name": "agentMemoryWindowSize",
+                        "type": "number",
+                        "default": "20",
+                        "description": "Uses a fixed window size to surface the last N messages",
+                        "show": {
+                            "agentMemoryType": "windowSize"
+                        },
+                        "id": "agentAgentflow_0-input-agentMemoryWindowSize-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Max Token Limit",
+                        "name": "agentMemoryMaxTokenLimit",
+                        "type": "number",
+                        "default": "2000",
+                        "description": "Summarize conversations once token limit is reached. Default to 2000",
+                        "show": {
+                            "agentMemoryType": "conversationSummaryBuffer"
+                        },
+                        "id": "agentAgentflow_0-input-agentMemoryMaxTokenLimit-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Input Message",
+                        "name": "agentUserMessage",
+                        "type": "string",
+                        "description": "Add an input message as user message at the end of the conversation",
+                        "rows": 4,
+                        "optional": true,
+                        "acceptVariable": true,
+                        "show": {
+                            "agentEnableMemory": true
+                        },
+                        "id": "agentAgentflow_0-input-agentUserMessage-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Return Response As",
+                        "name": "agentReturnResponseAs",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "User Message",
+                                "name": "userMessage"
+                            },
+                            {
+                                "label": "Assistant Message",
+                                "name": "assistantMessage"
+                            }
+                        ],
+                        "default": "userMessage",
+                        "id": "agentAgentflow_0-input-agentReturnResponseAs-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "agentUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "agentAgentflow_0-input-agentUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "agentModel": "chatAlibabaTongyi",
+                    "agentMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是“科普视频精准构建（目的及效果为导向的视频制作）”的需求收集代理。</p><p>你的任务是在正式生成视频前，把可直接用于生产的视频需求收集完整。</p><p>你必须优先确认这些信息：视频类型、核心目的、预期效果、目标受众、发布渠道、口播/字幕语言、时长、画面比例、视觉风格、必须包含的信息点、行动引导（CTA）、已上传资料是否足够、是否提供首帧/尾帧参考。</p><p>如果用户已经上传了文件资料，请先结合资料快速归纳用户当前目标，再指出还缺什么；如果没有检测到资料，也要允许用户仅凭文本继续。</p><p>如果用户上传了图片：1 张默认视为首帧/主参考，2 张默认按上传顺序视为首帧 + 尾帧参考；如果超过 2 张，你必须先要求用户删减到最多 2 张，再继续推进。</p><p>每一轮最多问 3 个具体问题，优先提供 2-3 个明确选项，不要泛泛追问。</p><p>信息不足时，禁止进入生成阶段，也不要调用任何工具。</p><p>当你认为信息已经足够时，请按固定结构输出三部分：已确认、默认采用、仍需补充。</p><p>只有当“仍需补充”为空时，你最后一句必须严格写成：若无修改，请点击继续生成；如需补充，请点击继续补充并填写修改意见。</p><p>默认跟随用户语言；未指定时使用简体中文。</p>"
+                        }
+                    ],
+                    "agentTools": [],
+                    "agentKnowledgeDocumentStores": [],
+                    "agentKnowledgeVSEmbeddings": [],
+                    "agentEnableMemory": true,
+                    "agentMemoryType": "allMessages",
+                    "agentUserMessage": "",
+                    "agentReturnResponseAs": "assistantMessage",
+                    "agentUpdateState": [],
+                    "agentModelConfig": {
+                        "credential": "",
+                        "modelName": "qwen-plus",
+                        "temperature": 0.1,
+                        "streaming": true,
+                        "allowImageUploads": true,
+                        "imageResolution": "low",
+                        "agentModel": "chatAlibabaTongyi"
+                    },
+                    "agentMemoryWindowSize": "20",
+                    "agentMemoryMaxTokenLimit": "2000"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "agentAgentflow_0-output-agentAgentflow",
+                        "label": "Agent",
+                        "name": "agentAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "width": 280,
+            "height": 72,
+            "selected": false,
+            "positionAbsolute": {
+                "x": 360,
+                "y": 220
+            },
+            "dragging": false
+        },
+        {
+            "id": "humanInputAgentflow_0",
+            "position": {
+                "x": 700,
+                "y": 220
+            },
+            "data": {
+                "id": "humanInputAgentflow_0",
+                "label": "信息确认",
+                "version": 1,
+                "name": "humanInputAgentflow",
+                "type": "HumanInput",
+                "color": "#6E6EFD",
+                "baseClasses": ["HumanInput"],
+                "category": "Agent Flows",
+                "description": "确认是否基于当前已收集需求进入视频生成阶段",
+                "inputParams": [
+                    {
+                        "label": "Description Type",
+                        "name": "humanInputDescriptionType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "Fixed",
+                                "name": "fixed",
+                                "description": "Specify a fixed description"
+                            },
+                            {
+                                "label": "Dynamic",
+                                "name": "dynamic",
+                                "description": "Use LLM to generate a description"
+                            }
+                        ],
+                        "id": "humanInputAgentflow_0-input-humanInputDescriptionType-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Description",
+                        "name": "humanInputDescription",
+                        "type": "string",
+                        "placeholder": "Are you sure you want to proceed?",
+                        "acceptVariable": true,
+                        "rows": 4,
+                        "show": {
+                            "humanInputDescriptionType": "fixed"
+                        },
+                        "id": "humanInputAgentflow_0-input-humanInputDescription-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Model",
+                        "name": "humanInputModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "show": {
+                            "humanInputDescriptionType": "dynamic"
+                        },
+                        "id": "humanInputAgentflow_0-input-humanInputModel-asyncOptions",
+                        "display": false
+                    },
+                    {
+                        "label": "Prompt",
+                        "name": "humanInputModelPrompt",
+                        "type": "string",
+                        "default": "<p>Summarize the conversation between the user and the assistant, reiterate the last message from the assistant, and ask if user would like to proceed or if they have any feedback. </p>\n<ul>\n<li>Begin by capturing the key points of the conversation, ensuring that you reflect the main ideas and themes discussed.</li>\n<li>Then, clearly reproduce the last message sent by the assistant to maintain continuity. Make sure the whole message is reproduced.</li>\n<li>Finally, ask the user if they would like to proceed, or provide any feedback on the last assistant message</li>\n</ul>\n<h2 id=\"output-format-the-output-should-be-structured-in-three-parts-\">Output Format The output should be structured in three parts in text:</h2>\n<ul>\n<li>A summary of the conversation (1-3 sentences).</li>\n<li>The last assistant message (exactly as it appeared).</li>\n<li>Ask the user if they would like to proceed, or provide any feedback on last assistant message. No other explanation and elaboration is needed.</li>\n</ul>\n",
+                        "acceptVariable": true,
+                        "generateInstruction": true,
+                        "rows": 4,
+                        "show": {
+                            "humanInputDescriptionType": "dynamic"
+                        },
+                        "id": "humanInputAgentflow_0-input-humanInputModelPrompt-string",
+                        "display": false
+                    },
+                    {
+                        "label": "Enable Feedback",
+                        "name": "humanInputEnableFeedback",
+                        "type": "boolean",
+                        "default": true,
+                        "id": "humanInputAgentflow_0-input-humanInputEnableFeedback-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Feedback Mode",
+                        "name": "humanInputFeedbackMode",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Actions",
+                                "name": "all",
+                                "description": "Collect feedback for both approve and reject"
+                            },
+                            {
+                                "label": "Reject Only",
+                                "name": "reject",
+                                "description": "Collect feedback only when rejecting"
+                            }
+                        ],
+                        "default": "all",
+                        "show": {
+                            "humanInputEnableFeedback": true
+                        },
+                        "id": "humanInputAgentflow_0-input-humanInputFeedbackMode-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Approve Button Text",
+                        "name": "approveButtonText",
+                        "type": "string",
+                        "default": "Yes",
+                        "id": "humanInputAgentflow_0-input-approveButtonText-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Reject Button Text",
+                        "name": "rejectButtonText",
+                        "type": "string",
+                        "default": "No",
+                        "id": "humanInputAgentflow_0-input-rejectButtonText-string",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "humanInputDescriptionType": "fixed",
+                    "humanInputEnableFeedback": true,
+                    "humanInputFeedbackMode": "reject",
+                    "approveButtonText": "继续生成",
+                    "rejectButtonText": "继续补充",
+                    "humanInputModelConfig": {
+                        "cache": "",
+                        "modelName": "qwen-plus",
+                        "temperature": 0.1,
+                        "streaming": true,
+                        "allowImageUploads": true,
+                        "imageResolution": "low",
+                        "humanInputModel": "chatAlibabaTongyi"
+                    },
+                    "humanInputDescription": "<p>如果上面的需求摘要已经完整并可以开始生成视频，请点击“继续生成”；如果还要补充需求、修改方向或继续上传资料/图片，请点击“继续补充”并填写补充内容。</p>",
+                    "humanInputModel": "",
+                    "humanInputModelPrompt": "<p>Summarize the conversation between the user and the assistant, reiterate the last message from the assistant, and ask if user would like to proceed or if they have any feedback. </p>\n<ul>\n<li>Begin by capturing the key points of the conversation, ensuring that you reflect the main ideas and themes discussed.</li>\n<li>Then, clearly reproduce the last message sent by the assistant to maintain continuity. Make sure the whole message is reproduced.</li>\n<li>Finally, ask the user if they would like to proceed, or provide any feedback on the last assistant message</li>\n</ul>\n<h2 id=\"output-format-the-output-should-be-structured-in-three-parts-\">Output Format The output should be structured in three parts in text:</h2>\n<ul>\n<li>A summary of the conversation (1-3 sentences).</li>\n<li>The last assistant message (exactly as it appeared).</li>\n<li>Ask the user if they would like to proceed, or provide any feedback on last assistant message. No other explanation and elaboration is needed.</li>\n</ul>\n"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "humanInputAgentflow_0-output-0",
+                        "label": "Human Input",
+                        "name": "humanInputAgentflow"
+                    },
+                    {
+                        "id": "humanInputAgentflow_0-output-1",
+                        "label": "Human Input",
+                        "name": "humanInputAgentflow"
+                    }
+                ],
+                "outputs": {
+                    "humanInputAgentflow": ""
+                },
+                "selected": false
+            },
+            "type": "agentFlow",
+            "width": 167,
+            "height": 80,
+            "selected": false,
+            "positionAbsolute": {
+                "x": 700,
+                "y": 220
+            },
+            "dragging": false
+        },
+        {
+            "id": "loopAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 700,
+                "y": 420
+            },
+            "data": {
+                "id": "loopAgentflow_0",
+                "label": "回到需求收集",
+                "version": 1.2,
+                "name": "loopAgentflow",
+                "type": "Loop",
+                "color": "#FFA07A",
+                "hideOutput": true,
+                "baseClasses": ["Loop"],
+                "category": "Agent Flows",
+                "description": "若用户继续补充，则返回需求收集阶段",
+                "inputParams": [
+                    {
+                        "label": "Loop Back To",
+                        "name": "loopBackToNode",
+                        "type": "asyncOptions",
+                        "loadMethod": "listPreviousNodes",
+                        "freeSolo": true,
+                        "id": "loopAgentflow_0-input-loopBackToNode-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Max Loop Count",
+                        "name": "maxLoopCount",
+                        "type": "number",
+                        "default": 5,
+                        "id": "loopAgentflow_0-input-maxLoopCount-number",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "loopBackToNode": "agentAgentflow_0-需求收集 Agent",
+                    "maxLoopCount": 6
+                },
+                "outputAnchors": [],
+                "outputs": {},
+                "selected": false
+            },
+            "width": 184,
+            "height": 66,
+            "positionAbsolute": {
+                "x": 700,
+                "y": 420
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "llmAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 1040,
+                "y": 60
+            },
+            "data": {
+                "id": "llmAgentflow_0",
+                "label": "任务画像",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "从完整对话历史中抽取视频任务画像 JSON",
+                "inputParams": [
+                    {
+                        "label": "Model",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_0-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Messages",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Role",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "System",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "Assistant",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "Developer",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "User",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Content",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_0-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Enable Memory",
+                        "name": "llmEnableMemory",
+                        "type": "boolean",
+                        "description": "Enable memory for the conversation thread",
+                        "default": true,
+                        "optional": true,
+                        "id": "llmAgentflow_0-input-llmEnableMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Type",
+                        "name": "llmMemoryType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Messages",
+                                "name": "allMessages",
+                                "description": "Retrieve all messages from the conversation"
+                            },
+                            {
+                                "label": "Window Size",
+                                "name": "windowSize",
+                                "description": "Uses a fixed window size to surface the last N messages"
+                            },
+                            {
+                                "label": "Conversation Summary",
+                                "name": "conversationSummary",
+                                "description": "Summarizes the whole conversation"
+                            },
+                            {
+                                "label": "Conversation Summary Buffer",
+                                "name": "conversationSummaryBuffer",
+                                "description": "Summarize conversations once token limit is reached. Default to 2000"
+                            }
+                        ],
+                        "optional": true,
+                        "default": "allMessages",
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_0-input-llmMemoryType-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Window Size",
+                        "name": "llmMemoryWindowSize",
+                        "type": "number",
+                        "default": "20",
+                        "description": "Uses a fixed window size to surface the last N messages",
+                        "show": {
+                            "llmMemoryType": "windowSize"
+                        },
+                        "id": "llmAgentflow_0-input-llmMemoryWindowSize-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Max Token Limit",
+                        "name": "llmMemoryMaxTokenLimit",
+                        "type": "number",
+                        "default": "2000",
+                        "description": "Summarize conversations once token limit is reached. Default to 2000",
+                        "show": {
+                            "llmMemoryType": "conversationSummaryBuffer"
+                        },
+                        "id": "llmAgentflow_0-input-llmMemoryMaxTokenLimit-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Input Message",
+                        "name": "llmUserMessage",
+                        "type": "string",
+                        "description": "Add an input message as user message at the end of the conversation",
+                        "rows": 4,
+                        "optional": true,
+                        "acceptVariable": true,
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_0-input-llmUserMessage-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Return Response As",
+                        "name": "llmReturnResponseAs",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "User Message",
+                                "name": "userMessage"
+                            },
+                            {
+                                "label": "Assistant Message",
+                                "name": "assistantMessage"
+                            }
+                        ],
+                        "default": "userMessage",
+                        "id": "llmAgentflow_0-input-llmReturnResponseAs-options",
+                        "display": true
+                    },
+                    {
+                        "label": "JSON Structured Output",
+                        "name": "llmStructuredOutput",
+                        "description": "Instruct the LLM to give output in a JSON structured schema",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "string"
+                            },
+                            {
+                                "label": "Type",
+                                "name": "type",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "String",
+                                        "name": "string"
+                                    },
+                                    {
+                                        "label": "String Array",
+                                        "name": "stringArray"
+                                    },
+                                    {
+                                        "label": "Number",
+                                        "name": "number"
+                                    },
+                                    {
+                                        "label": "Boolean",
+                                        "name": "boolean"
+                                    },
+                                    {
+                                        "label": "Enum",
+                                        "name": "enum"
+                                    },
+                                    {
+                                        "label": "JSON Array",
+                                        "name": "jsonArray"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Enum Values",
+                                "name": "enumValues",
+                                "type": "string",
+                                "placeholder": "value1, value2, value3",
+                                "description": "Enum values. Separated by comma",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "enum"
+                                }
+                            },
+                            {
+                                "label": "JSON Schema",
+                                "name": "jsonSchema",
+                                "type": "code",
+                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
+                                "description": "JSON schema for the structured output",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "jsonArray"
+                                }
+                            },
+                            {
+                                "label": "Description",
+                                "name": "description",
+                                "type": "string",
+                                "placeholder": "Description of the key"
+                            }
+                        ],
+                        "id": "llmAgentflow_0-input-llmStructuredOutput-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "llmUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_0-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatDeepseek",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是科普视频工作流中的任务画像分析师。请基于完整对话历史，输出后续生产链路可直接使用的严格 JSON。</p><p>要求：1）优先依据用户明确表达和上传资料，不要臆造事实；2）忽略仅用于流程控制的短词，如 proceed/reject/yes/no/继续生成/继续补充；3）默认跟随用户语言，未指定时使用简体中文；4）只能输出严格合法 JSON，不要输出 Markdown 代码块或额外说明。</p><p>输出键名固定为：videoType, coreGoal, desiredEffect, targetAudience, deliveryChannel, language, ratio, duration, toneStyle, mustIncludeFacts, callToAction, frameReferenceMode, missingInputs。</p><p>其中：mustIncludeFacts 与 missingInputs 必须是字符串数组；duration 用简洁字符串表示（如“8秒”）；frameReferenceMode 只能是 none、first-frame-only、first-and-last-frame、unclear 之一。</p>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>以下是完整对话历史，请输出任务画像 JSON：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"chat_history\" data-label=\"chat_history\">{{ chat_history }}</span></p>"
+                        }
+                    ],
+                    "llmEnableMemory": false,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": [
+                        {
+                            "key": "output",
+                            "type": "jsonArray",
+                            "enumValues": "",
+                            "jsonSchema": "{\n    \"videoType\": {\n        \"type\": \"string\",\n        \"description\": \"Video type such as science explainer or campaign video\"\n    },\n    \"coreGoal\": {\n        \"type\": \"string\",\n        \"description\": \"Core production goal\"\n    },\n    \"desiredEffect\": {\n        \"type\": \"string\",\n        \"description\": \"Expected audience impact or effect\"\n    },\n    \"targetAudience\": {\n        \"type\": \"string\",\n        \"description\": \"Primary audience\"\n    },\n    \"deliveryChannel\": {\n        \"type\": \"string\",\n        \"description\": \"Delivery channel or publishing scene\"\n    },\n    \"language\": {\n        \"type\": \"string\",\n        \"description\": \"Voiceover or subtitle language\"\n    },\n    \"ratio\": {\n        \"type\": \"string\",\n        \"description\": \"Aspect ratio such as 16:9 or 9:16\"\n    },\n    \"duration\": {\n        \"type\": \"string\",\n        \"description\": \"Desired duration text\"\n    },\n    \"toneStyle\": {\n        \"type\": \"string\",\n        \"description\": \"Tone and visual style\"\n    },\n    \"mustIncludeFacts\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"string\"\n        },\n        \"description\": \"Facts or points that must appear\"\n    },\n    \"callToAction\": {\n        \"type\": \"string\",\n        \"description\": \"Call to action or ending guidance\"\n    },\n    \"frameReferenceMode\": {\n        \"type\": \"string\",\n        \"description\": \"Frame reference mode\"\n    },\n    \"missingInputs\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"string\"\n        },\n        \"description\": \"Still missing inputs after confirmation\"\n    }\n}",
+                            "description": "视频任务画像 JSON"
+                        }
+                    ],
+                    "llmUpdateState": [
+                        {
+                            "key": "videoTaskProfile",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "deepseek-chat",
+                        "temperature": 0.2,
+                        "streaming": true,
+                        "maxTokens": "",
+                        "llmModel": "chatDeepseek"
+                    },
+                    "llmMemoryWindowSize": "20",
+                    "llmMemoryMaxTokenLimit": "2000"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_0-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {}
+            },
+            "positionAbsolute": {
+                "x": 1040,
+                "y": 60
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "llmAgentflow_1",
+            "type": "agentFlow",
+            "position": {
+                "x": 1380,
+                "y": 60
+            },
+            "data": {
+                "id": "llmAgentflow_1",
+                "label": "资料精读",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "提炼上传资料与用户补充信息，形成可直接用于视频创作的资料摘要",
+                "inputParams": [
+                    {
+                        "label": "Model",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_1-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Messages",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Role",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "System",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "Assistant",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "Developer",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "User",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Content",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_1-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Enable Memory",
+                        "name": "llmEnableMemory",
+                        "type": "boolean",
+                        "description": "Enable memory for the conversation thread",
+                        "default": true,
+                        "optional": true,
+                        "id": "llmAgentflow_1-input-llmEnableMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Type",
+                        "name": "llmMemoryType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Messages",
+                                "name": "allMessages",
+                                "description": "Retrieve all messages from the conversation"
+                            },
+                            {
+                                "label": "Window Size",
+                                "name": "windowSize",
+                                "description": "Uses a fixed window size to surface the last N messages"
+                            },
+                            {
+                                "label": "Conversation Summary",
+                                "name": "conversationSummary",
+                                "description": "Summarizes the whole conversation"
+                            },
+                            {
+                                "label": "Conversation Summary Buffer",
+                                "name": "conversationSummaryBuffer",
+                                "description": "Summarize conversations once token limit is reached. Default to 2000"
+                            }
+                        ],
+                        "optional": true,
+                        "default": "allMessages",
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_1-input-llmMemoryType-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Window Size",
+                        "name": "llmMemoryWindowSize",
+                        "type": "number",
+                        "default": "20",
+                        "description": "Uses a fixed window size to surface the last N messages",
+                        "show": {
+                            "llmMemoryType": "windowSize"
+                        },
+                        "id": "llmAgentflow_1-input-llmMemoryWindowSize-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Max Token Limit",
+                        "name": "llmMemoryMaxTokenLimit",
+                        "type": "number",
+                        "default": "2000",
+                        "description": "Summarize conversations once token limit is reached. Default to 2000",
+                        "show": {
+                            "llmMemoryType": "conversationSummaryBuffer"
+                        },
+                        "id": "llmAgentflow_1-input-llmMemoryMaxTokenLimit-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Input Message",
+                        "name": "llmUserMessage",
+                        "type": "string",
+                        "description": "Add an input message as user message at the end of the conversation",
+                        "rows": 4,
+                        "optional": true,
+                        "acceptVariable": true,
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_1-input-llmUserMessage-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Return Response As",
+                        "name": "llmReturnResponseAs",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "User Message",
+                                "name": "userMessage"
+                            },
+                            {
+                                "label": "Assistant Message",
+                                "name": "assistantMessage"
+                            }
+                        ],
+                        "default": "userMessage",
+                        "id": "llmAgentflow_1-input-llmReturnResponseAs-options",
+                        "display": true
+                    },
+                    {
+                        "label": "JSON Structured Output",
+                        "name": "llmStructuredOutput",
+                        "description": "Instruct the LLM to give output in a JSON structured schema",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "string"
+                            },
+                            {
+                                "label": "Type",
+                                "name": "type",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "String",
+                                        "name": "string"
+                                    },
+                                    {
+                                        "label": "String Array",
+                                        "name": "stringArray"
+                                    },
+                                    {
+                                        "label": "Number",
+                                        "name": "number"
+                                    },
+                                    {
+                                        "label": "Boolean",
+                                        "name": "boolean"
+                                    },
+                                    {
+                                        "label": "Enum",
+                                        "name": "enum"
+                                    },
+                                    {
+                                        "label": "JSON Array",
+                                        "name": "jsonArray"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Enum Values",
+                                "name": "enumValues",
+                                "type": "string",
+                                "placeholder": "value1, value2, value3",
+                                "description": "Enum values. Separated by comma",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "enum"
+                                }
+                            },
+                            {
+                                "label": "JSON Schema",
+                                "name": "jsonSchema",
+                                "type": "code",
+                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
+                                "description": "JSON schema for the structured output",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "jsonArray"
+                                }
+                            },
+                            {
+                                "label": "Description",
+                                "name": "description",
+                                "type": "string",
+                                "placeholder": "Description of the key"
+                            }
+                        ],
+                        "id": "llmAgentflow_1-input-llmStructuredOutput-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "llmUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_1-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatDeepseek",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是科普视频工作流中的资料精读分析师。请从完整对话历史中识别用户上传的资料内容（通常会以 <code>&lt;doc name='...'&gt;</code> 形式出现），并输出后续视频创作可直接使用的资料摘要。</p><p>输出格式固定为纯文本，不要输出 Markdown 代码块。请尽量按文件逐一整理，每个文件至少包含：摘要、关键事实、适合转化为视频的表达点、可视化切入角度、可引用依据。</p><p>要求：1）优先保留文件名；2）可引用依据优先写文件名 + 页码/章节/图表名，无法确定时不要编造；3）如果没有检测到上传资料，要明确返回“未检测到上传资料”，并列出建议补充的材料类型；4）可以吸收用户在对话中补充的口头要求，但不要把助手追问当作资料来源；5）默认跟随用户语言，未指定时使用简体中文。</p>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>任务画像：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.videoTaskProfile\" data-label=\"$flow.state.videoTaskProfile\">{{ $flow.state.videoTaskProfile }}</span></p><p>完整对话历史：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"chat_history\" data-label=\"chat_history\">{{ chat_history }}</span></p><p>请输出资料精读结果。</p>"
+                        }
+                    ],
+                    "llmEnableMemory": false,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": [],
+                    "llmUpdateState": [
+                        {
+                            "key": "sourceDigest",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "deepseek-chat",
+                        "temperature": 0.2,
+                        "streaming": true,
+                        "maxTokens": "",
+                        "llmModel": "chatDeepseek"
+                    },
+                    "llmMemoryWindowSize": "20",
+                    "llmMemoryMaxTokenLimit": "2000"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_1-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {}
+            },
+            "positionAbsolute": {
+                "x": 1380,
+                "y": 60
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "llmAgentflow_2",
+            "type": "agentFlow",
+            "position": {
+                "x": 1720,
+                "y": 60
+            },
+            "data": {
+                "id": "llmAgentflow_2",
+                "label": "视频蓝图",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "把任务画像与资料摘要整合为结构化视频蓝图 JSON",
+                "inputParams": [
+                    {
+                        "label": "Model",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_2-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Messages",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Role",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "System",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "Assistant",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "Developer",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "User",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Content",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_2-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Enable Memory",
+                        "name": "llmEnableMemory",
+                        "type": "boolean",
+                        "description": "Enable memory for the conversation thread",
+                        "default": true,
+                        "optional": true,
+                        "id": "llmAgentflow_2-input-llmEnableMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Type",
+                        "name": "llmMemoryType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Messages",
+                                "name": "allMessages",
+                                "description": "Retrieve all messages from the conversation"
+                            },
+                            {
+                                "label": "Window Size",
+                                "name": "windowSize",
+                                "description": "Uses a fixed window size to surface the last N messages"
+                            },
+                            {
+                                "label": "Conversation Summary",
+                                "name": "conversationSummary",
+                                "description": "Summarizes the whole conversation"
+                            },
+                            {
+                                "label": "Conversation Summary Buffer",
+                                "name": "conversationSummaryBuffer",
+                                "description": "Summarize conversations once token limit is reached. Default to 2000"
+                            }
+                        ],
+                        "optional": true,
+                        "default": "allMessages",
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_2-input-llmMemoryType-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Window Size",
+                        "name": "llmMemoryWindowSize",
+                        "type": "number",
+                        "default": "20",
+                        "description": "Uses a fixed window size to surface the last N messages",
+                        "show": {
+                            "llmMemoryType": "windowSize"
+                        },
+                        "id": "llmAgentflow_2-input-llmMemoryWindowSize-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Max Token Limit",
+                        "name": "llmMemoryMaxTokenLimit",
+                        "type": "number",
+                        "default": "2000",
+                        "description": "Summarize conversations once token limit is reached. Default to 2000",
+                        "show": {
+                            "llmMemoryType": "conversationSummaryBuffer"
+                        },
+                        "id": "llmAgentflow_2-input-llmMemoryMaxTokenLimit-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Input Message",
+                        "name": "llmUserMessage",
+                        "type": "string",
+                        "description": "Add an input message as user message at the end of the conversation",
+                        "rows": 4,
+                        "optional": true,
+                        "acceptVariable": true,
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_2-input-llmUserMessage-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Return Response As",
+                        "name": "llmReturnResponseAs",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "User Message",
+                                "name": "userMessage"
+                            },
+                            {
+                                "label": "Assistant Message",
+                                "name": "assistantMessage"
+                            }
+                        ],
+                        "default": "userMessage",
+                        "id": "llmAgentflow_2-input-llmReturnResponseAs-options",
+                        "display": true
+                    },
+                    {
+                        "label": "JSON Structured Output",
+                        "name": "llmStructuredOutput",
+                        "description": "Instruct the LLM to give output in a JSON structured schema",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "string"
+                            },
+                            {
+                                "label": "Type",
+                                "name": "type",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "String",
+                                        "name": "string"
+                                    },
+                                    {
+                                        "label": "String Array",
+                                        "name": "stringArray"
+                                    },
+                                    {
+                                        "label": "Number",
+                                        "name": "number"
+                                    },
+                                    {
+                                        "label": "Boolean",
+                                        "name": "boolean"
+                                    },
+                                    {
+                                        "label": "Enum",
+                                        "name": "enum"
+                                    },
+                                    {
+                                        "label": "JSON Array",
+                                        "name": "jsonArray"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Enum Values",
+                                "name": "enumValues",
+                                "type": "string",
+                                "placeholder": "value1, value2, value3",
+                                "description": "Enum values. Separated by comma",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "enum"
+                                }
+                            },
+                            {
+                                "label": "JSON Schema",
+                                "name": "jsonSchema",
+                                "type": "code",
+                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
+                                "description": "JSON schema for the structured output",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "jsonArray"
+                                }
+                            },
+                            {
+                                "label": "Description",
+                                "name": "description",
+                                "type": "string",
+                                "placeholder": "Description of the key"
+                            }
+                        ],
+                        "id": "llmAgentflow_2-input-llmStructuredOutput-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "llmUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_2-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatDeepseek",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是科普视频工作流中的视频蓝图策划师。请结合任务画像、资料摘要与用户原始目标，输出严格合法 JSON，供后续视频提示词编排使用。</p><p>要求：1）以“目的和效果”为最高优先级，围绕用户想要达成的传播效果组织内容；2）优先使用资料中已有事实，不要编造数据、研究结论或引用；3）如果资料不足，也要给出可执行的叙事方案，但在 riskNotes 中明确标注信息不足；4）默认跟随用户语言，未指定时使用简体中文；5）不要输出 Markdown 代码块或额外说明。</p><p>输出键名至少包含：openingHook, coreNarrative, sceneProgression, voiceoverStrategy, firstFrameIntent, lastFrameIntent, evidenceConstraints, riskNotes。</p><p>其中：sceneProgression、evidenceConstraints、riskNotes 必须是字符串数组。</p>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>用户需求：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"question\" data-label=\"question\">{{ question }}</span></p><p>任务画像：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.videoTaskProfile\" data-label=\"$flow.state.videoTaskProfile\">{{ $flow.state.videoTaskProfile }}</span></p><p>资料精读：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.sourceDigest\" data-label=\"$flow.state.sourceDigest\">{{ $flow.state.sourceDigest }}</span></p><p>请输出视频蓝图 JSON。</p>"
+                        }
+                    ],
+                    "llmEnableMemory": false,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": [
+                        {
+                            "key": "output",
+                            "type": "jsonArray",
+                            "enumValues": "",
+                            "jsonSchema": "{\n    \"openingHook\": {\n        \"type\": \"string\",\n        \"description\": \"Opening hook or first sentence strategy\"\n    },\n    \"coreNarrative\": {\n        \"type\": \"string\",\n        \"description\": \"Main narrative arc\"\n    },\n    \"sceneProgression\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"string\"\n        },\n        \"description\": \"Ordered scene progression\"\n    },\n    \"voiceoverStrategy\": {\n        \"type\": \"string\",\n        \"description\": \"Voiceover and subtitle strategy\"\n    },\n    \"firstFrameIntent\": {\n        \"type\": \"string\",\n        \"description\": \"Desired first frame visual intent\"\n    },\n    \"lastFrameIntent\": {\n        \"type\": \"string\",\n        \"description\": \"Desired last frame visual intent\"\n    },\n    \"evidenceConstraints\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"string\"\n        },\n        \"description\": \"Evidence and factual constraints\"\n    },\n    \"riskNotes\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"string\"\n        },\n        \"description\": \"Risks or missing information\"\n    }\n}",
+                            "description": "视频蓝图 JSON"
+                        }
+                    ],
+                    "llmUpdateState": [
+                        {
+                            "key": "videoBlueprint",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "deepseek-chat",
+                        "temperature": 0.2,
+                        "streaming": true,
+                        "maxTokens": "",
+                        "llmModel": "chatDeepseek"
+                    },
+                    "llmMemoryWindowSize": "20",
+                    "llmMemoryMaxTokenLimit": "2000"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_2-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {}
+            },
+            "positionAbsolute": {
+                "x": 1720,
+                "y": 60
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "llmAgentflow_3",
+            "type": "agentFlow",
+            "position": {
+                "x": 2060,
+                "y": 60
+            },
+            "data": {
+                "id": "llmAgentflow_3",
+                "label": "生成指令编排",
+                "version": 1.1,
+                "name": "llmAgentflow",
+                "type": "LLM",
+                "color": "#64B5F6",
+                "baseClasses": ["LLM"],
+                "category": "Agent Flows",
+                "description": "把蓝图压缩为单条 Doubao Video 请求 JSON",
+                "inputParams": [
+                    {
+                        "label": "Model",
+                        "name": "llmModel",
+                        "type": "asyncOptions",
+                        "loadMethod": "listModels",
+                        "loadConfig": true,
+                        "id": "llmAgentflow_3-input-llmModel-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Messages",
+                        "name": "llmMessages",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Role",
+                                "name": "role",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "System",
+                                        "name": "system"
+                                    },
+                                    {
+                                        "label": "Assistant",
+                                        "name": "assistant"
+                                    },
+                                    {
+                                        "label": "Developer",
+                                        "name": "developer"
+                                    },
+                                    {
+                                        "label": "User",
+                                        "name": "user"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Content",
+                                "name": "content",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "generateInstruction": true,
+                                "rows": 4
+                            }
+                        ],
+                        "id": "llmAgentflow_3-input-llmMessages-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Enable Memory",
+                        "name": "llmEnableMemory",
+                        "type": "boolean",
+                        "description": "Enable memory for the conversation thread",
+                        "default": true,
+                        "optional": true,
+                        "id": "llmAgentflow_3-input-llmEnableMemory-boolean",
+                        "display": true
+                    },
+                    {
+                        "label": "Memory Type",
+                        "name": "llmMemoryType",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "All Messages",
+                                "name": "allMessages",
+                                "description": "Retrieve all messages from the conversation"
+                            },
+                            {
+                                "label": "Window Size",
+                                "name": "windowSize",
+                                "description": "Uses a fixed window size to surface the last N messages"
+                            },
+                            {
+                                "label": "Conversation Summary",
+                                "name": "conversationSummary",
+                                "description": "Summarizes the whole conversation"
+                            },
+                            {
+                                "label": "Conversation Summary Buffer",
+                                "name": "conversationSummaryBuffer",
+                                "description": "Summarize conversations once token limit is reached. Default to 2000"
+                            }
+                        ],
+                        "optional": true,
+                        "default": "allMessages",
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_3-input-llmMemoryType-options",
+                        "display": true
+                    },
+                    {
+                        "label": "Window Size",
+                        "name": "llmMemoryWindowSize",
+                        "type": "number",
+                        "default": "20",
+                        "description": "Uses a fixed window size to surface the last N messages",
+                        "show": {
+                            "llmMemoryType": "windowSize"
+                        },
+                        "id": "llmAgentflow_3-input-llmMemoryWindowSize-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Max Token Limit",
+                        "name": "llmMemoryMaxTokenLimit",
+                        "type": "number",
+                        "default": "2000",
+                        "description": "Summarize conversations once token limit is reached. Default to 2000",
+                        "show": {
+                            "llmMemoryType": "conversationSummaryBuffer"
+                        },
+                        "id": "llmAgentflow_3-input-llmMemoryMaxTokenLimit-number",
+                        "display": false
+                    },
+                    {
+                        "label": "Input Message",
+                        "name": "llmUserMessage",
+                        "type": "string",
+                        "description": "Add an input message as user message at the end of the conversation",
+                        "rows": 4,
+                        "optional": true,
+                        "acceptVariable": true,
+                        "show": {
+                            "llmEnableMemory": true
+                        },
+                        "id": "llmAgentflow_3-input-llmUserMessage-string",
+                        "display": true
+                    },
+                    {
+                        "label": "Return Response As",
+                        "name": "llmReturnResponseAs",
+                        "type": "options",
+                        "options": [
+                            {
+                                "label": "User Message",
+                                "name": "userMessage"
+                            },
+                            {
+                                "label": "Assistant Message",
+                                "name": "assistantMessage"
+                            }
+                        ],
+                        "default": "userMessage",
+                        "id": "llmAgentflow_3-input-llmReturnResponseAs-options",
+                        "display": true
+                    },
+                    {
+                        "label": "JSON Structured Output",
+                        "name": "llmStructuredOutput",
+                        "description": "Instruct the LLM to give output in a JSON structured schema",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "string"
+                            },
+                            {
+                                "label": "Type",
+                                "name": "type",
+                                "type": "options",
+                                "options": [
+                                    {
+                                        "label": "String",
+                                        "name": "string"
+                                    },
+                                    {
+                                        "label": "String Array",
+                                        "name": "stringArray"
+                                    },
+                                    {
+                                        "label": "Number",
+                                        "name": "number"
+                                    },
+                                    {
+                                        "label": "Boolean",
+                                        "name": "boolean"
+                                    },
+                                    {
+                                        "label": "Enum",
+                                        "name": "enum"
+                                    },
+                                    {
+                                        "label": "JSON Array",
+                                        "name": "jsonArray"
+                                    }
+                                ]
+                            },
+                            {
+                                "label": "Enum Values",
+                                "name": "enumValues",
+                                "type": "string",
+                                "placeholder": "value1, value2, value3",
+                                "description": "Enum values. Separated by comma",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "enum"
+                                }
+                            },
+                            {
+                                "label": "JSON Schema",
+                                "name": "jsonSchema",
+                                "type": "code",
+                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
+                                "description": "JSON schema for the structured output",
+                                "optional": true,
+                                "show": {
+                                    "llmStructuredOutput[$index].type": "jsonArray"
+                                }
+                            },
+                            {
+                                "label": "Description",
+                                "name": "description",
+                                "type": "string",
+                                "placeholder": "Description of the key"
+                            }
+                        ],
+                        "id": "llmAgentflow_3-input-llmStructuredOutput-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "llmUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "llmAgentflow_3-input-llmUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "llmModel": "chatDeepseek",
+                    "llmMessages": [
+                        {
+                            "role": "system",
+                            "content": "<p>你是科普视频工作流中的生成指令编排师。请把视频蓝图压缩成一条可直接传给 Doubao Video Tool 的严格 JSON 请求。</p><p>只能输出严格合法 JSON，不要输出 Markdown 代码块或额外说明。</p><p>输出键名固定为：prompt, ratio, resolution, duration, cameraFixed, watermark。</p><p>规则：</p><ul><li><p><code>prompt</code> 必须是一段高质量中文或用户指定语言的视频提示词，整合核心目的、目标受众、预期效果、画面推进、口播策略、首帧/尾帧意图、风格与质量要求。</p></li><li><p><code>ratio</code> 优先使用任务画像中的明确值，没有则默认 <code>16:9</code>。</p></li><li><p><code>resolution</code> 固定优先输出 <code>720p</code>，除非用户明确要求更高分辨率。</p></li><li><p><code>duration</code> 必须输出 2-12 之间的整数秒数；若任务画像是文本时长（如“8秒”），请转换为整数；没有明确时长时默认 8。</p></li><li><p><code>cameraFixed</code> 根据画面需求输出 true 或 false；若需要更有宣传/科普感的镜头推进，可优先 false。</p></li><li><p><code>watermark</code> 固定为 false。</p></li><li><p>默认不要输出 <code>referenceImageFileNames</code>；只有在你能从上下文中稳定获得真实上传文件名时才可以额外输出该字段，否则省略，让系统自动使用最近上传的 1-2 张图片。</p></li><li><p>不得输出数组包裹结构，不得生成多条候选请求。</p></li></ul>"
+                        },
+                        {
+                            "role": "user",
+                            "content": "<p>任务画像：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.videoTaskProfile\" data-label=\"$flow.state.videoTaskProfile\">{{ $flow.state.videoTaskProfile }}</span></p><p>资料精读：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.sourceDigest\" data-label=\"$flow.state.sourceDigest\">{{ $flow.state.sourceDigest }}</span></p><p>视频蓝图：</p><p><span class=\"variable\" data-type=\"mention\" data-id=\"$flow.state.videoBlueprint\" data-label=\"$flow.state.videoBlueprint\">{{ $flow.state.videoBlueprint }}</span></p><p>请输出最终的视频请求 JSON。</p>"
+                        }
+                    ],
+                    "llmEnableMemory": false,
+                    "llmMemoryType": "allMessages",
+                    "llmUserMessage": "",
+                    "llmReturnResponseAs": "assistantMessage",
+                    "llmStructuredOutput": [
+                        {
+                            "key": "output",
+                            "type": "jsonArray",
+                            "enumValues": "",
+                            "jsonSchema": "{\n    \"prompt\": {\n        \"type\": \"string\",\n        \"description\": \"Single high quality video prompt\"\n    },\n    \"ratio\": {\n        \"type\": \"string\",\n        \"description\": \"Aspect ratio\"\n    },\n    \"resolution\": {\n        \"type\": \"string\",\n        \"description\": \"Resolution such as 720p\"\n    },\n    \"duration\": {\n        \"type\": \"number\",\n        \"description\": \"Duration in seconds\"\n    },\n    \"cameraFixed\": {\n        \"type\": \"boolean\",\n        \"description\": \"Whether camera should be fixed\"\n    },\n    \"watermark\": {\n        \"type\": \"boolean\",\n        \"description\": \"Whether provider watermark should be kept\"\n    },\n    \"referenceImageFileNames\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"string\"\n        },\n        \"description\": \"Optional uploaded file names for first and last frame guidance\"\n    }\n}",
+                            "description": "Doubao 视频请求 JSON"
+                        }
+                    ],
+                    "llmUpdateState": [
+                        {
+                            "key": "finalVideoRequest",
+                            "value": "{{ output }}"
+                        }
+                    ],
+                    "llmModelConfig": {
+                        "credential": "",
+                        "modelName": "deepseek-chat",
+                        "temperature": 0.1,
+                        "streaming": true,
+                        "maxTokens": "",
+                        "llmModel": "chatDeepseek"
+                    },
+                    "llmMemoryWindowSize": "20",
+                    "llmMemoryMaxTokenLimit": "2000"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "llmAgentflow_3-output-llmAgentflow",
+                        "label": "LLM",
+                        "name": "llmAgentflow"
+                    }
+                ],
+                "outputs": {}
+            },
+            "positionAbsolute": {
+                "x": 2060,
+                "y": 60
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "toolAgentflow_0",
+            "type": "agentFlow",
+            "position": {
+                "x": 2400,
+                "y": 60
+            },
+            "data": {
+                "id": "toolAgentflow_0",
+                "label": "生成视频",
+                "version": 1.2,
+                "name": "toolAgentflow",
+                "type": "Tool",
+                "color": "#d4a373",
+                "baseClasses": ["Tool"],
+                "category": "Agent Flows",
+                "description": "调用 Doubao Video Tool 生成单条预期视频",
+                "inputParams": [
+                    {
+                        "label": "Tool",
+                        "name": "toolAgentflowSelectedTool",
+                        "type": "asyncOptions",
+                        "loadMethod": "listTools",
+                        "loadConfig": true,
+                        "id": "toolAgentflow_0-input-toolAgentflowSelectedTool-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Tool Input Arguments",
+                        "name": "toolInputArgs",
+                        "type": "array",
+                        "acceptVariable": true,
+                        "refresh": true,
+                        "array": [
+                            {
+                                "label": "Input Argument Name",
+                                "name": "inputArgName",
+                                "type": "asyncOptions",
+                                "loadMethod": "listToolInputArgs",
+                                "refresh": true
+                            },
+                            {
+                                "label": "Input Argument Value",
+                                "name": "inputArgValue",
+                                "type": "string",
+                                "acceptVariable": true
+                            }
+                        ],
+                        "show": {
+                            "toolAgentflowSelectedTool": ".+"
+                        },
+                        "id": "toolAgentflow_0-input-toolInputArgs-array",
+                        "display": true
+                    },
+                    {
+                        "label": "Update Flow State",
+                        "name": "toolUpdateState",
+                        "description": "Update runtime state during the execution of the workflow",
+                        "type": "array",
+                        "optional": true,
+                        "acceptVariable": true,
+                        "array": [
+                            {
+                                "label": "Key",
+                                "name": "key",
+                                "type": "asyncOptions",
+                                "loadMethod": "listRuntimeStateKeys",
+                                "freeSolo": true
+                            },
+                            {
+                                "label": "Value",
+                                "name": "value",
+                                "type": "string",
+                                "acceptVariable": true,
+                                "acceptNodeOutputAsVariable": true
+                            }
+                        ],
+                        "id": "toolAgentflow_0-input-toolUpdateState-array",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "toolAgentflowSelectedTool": "doubaoVideoTool",
+                    "toolInputArgs": [
+                        {
+                            "inputArgName": "videoRequests",
+                            "inputArgValue": "{{ $flow.state.finalVideoRequest }}"
+                        }
+                    ],
+                    "toolUpdateState": [],
+                    "toolAgentflowSelectedToolConfig": {
+                        "credential": "",
+                        "model": "doubao-seedance-1-5-pro-251215",
+                        "resolution": "720p",
+                        "ratio": "16:9",
+                        "duration": 8,
+                        "cameraFixed": false,
+                        "watermark": false,
+                        "toolAgentflowSelectedTool": "doubaoVideoTool"
+                    }
+                },
+                "outputAnchors": [
+                    {
+                        "id": "toolAgentflow_0-output-toolAgentflow",
+                        "label": "工具",
+                        "name": "toolAgentflow"
+                    }
+                ],
+                "outputs": {}
+            },
+            "positionAbsolute": {
+                "x": 2400,
+                "y": 60
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_startAgentflow_0",
+            "position": {
+                "x": -180,
+                "y": 20
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_startAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_startAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "入口支持纯文本对话，也支持先上传 PDF/DOC/文本资料与最多 2 张图片参考。v1 只基于当前对话与上传内容，不做外部检索。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_startAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 240,
+            "height": 150,
+            "positionAbsolute": {
+                "x": -180,
+                "y": 20
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_agentAgentflow_0",
+            "position": {
+                "x": 260,
+                "y": -90
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_agentAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_agentAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "需求收集阶段：围绕视频类型、目的、效果、受众、渠道、语言、时长、比例、风格、关键信息点、CTA 与首尾帧参考持续追问；信息不足时不能生成。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_agentAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 290,
+            "height": 180,
+            "positionAbsolute": {
+                "x": 260,
+                "y": -90
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_humanInputAgentflow_0",
+            "position": {
+                "x": 610,
+                "y": -90
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_humanInputAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_humanInputAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "人工确认阶段：用户点击“继续补充”会回到需求收集；点击“继续生成”才进入后续结构化规划与视频生成。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_humanInputAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 250,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 610,
+                "y": -90
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_llmAgentflow_0",
+            "position": {
+                "x": 1240,
+                "y": -220
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_llmAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "结构化规划阶段：先抽取任务画像，再精读上传资料，然后生成视频蓝图和最终 Doubao Video 请求 JSON，确保末端工具拿到单条合法请求。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_llmAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 390,
+            "height": 180,
+            "positionAbsolute": {
+                "x": 1240,
+                "y": -220
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_toolAgentflow_0",
+            "position": {
+                "x": 2270,
+                "y": -150
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_toolAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_toolAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "视频生成阶段：仅调用一次 Doubao Video Tool，默认 16:9 / 720p / 8 秒；若最终请求中提供覆盖值，则以请求值为准。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_toolAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 250,
+            "height": 150,
+            "positionAbsolute": {
+                "x": 2270,
+                "y": -150
+            },
+            "selected": false,
+            "dragging": false
+        }
+    ],
+    "edges": [
+        {
+            "source": "startAgentflow_0",
+            "sourceHandle": "startAgentflow_0-output-startAgentflow",
+            "target": "agentAgentflow_0",
+            "targetHandle": "agentAgentflow_0",
+            "data": {
+                "sourceColor": "#7EE787",
+                "targetColor": "#E57373",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "startAgentflow_0-startAgentflow_0-output-startAgentflow-agentAgentflow_0-agentAgentflow_0"
+        },
+        {
+            "source": "agentAgentflow_0",
+            "sourceHandle": "agentAgentflow_0-output-agentAgentflow",
+            "target": "humanInputAgentflow_0",
+            "targetHandle": "humanInputAgentflow_0",
+            "data": {
+                "sourceColor": "#E57373",
+                "targetColor": "#6E6EFD",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "agentAgentflow_0-agentAgentflow_0-output-agentAgentflow-humanInputAgentflow_0-humanInputAgentflow_0"
+        },
+        {
+            "source": "humanInputAgentflow_0",
+            "sourceHandle": "humanInputAgentflow_0-output-0",
+            "target": "llmAgentflow_0",
+            "targetHandle": "llmAgentflow_0",
+            "data": {
+                "sourceColor": "#6E6EFD",
+                "targetColor": "#64B5F6",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "humanInputAgentflow_0-humanInputAgentflow_0-output-0-llmAgentflow_0-llmAgentflow_0"
+        },
+        {
+            "source": "humanInputAgentflow_0",
+            "sourceHandle": "humanInputAgentflow_0-output-1",
+            "target": "loopAgentflow_0",
+            "targetHandle": "loopAgentflow_0",
+            "data": {
+                "sourceColor": "#6E6EFD",
+                "targetColor": "#FFA07A",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "humanInputAgentflow_0-humanInputAgentflow_0-output-1-loopAgentflow_0-loopAgentflow_0"
+        },
+        {
+            "source": "llmAgentflow_0",
+            "sourceHandle": "llmAgentflow_0-output-llmAgentflow",
+            "target": "llmAgentflow_1",
+            "targetHandle": "llmAgentflow_1",
+            "data": {
+                "sourceColor": "#64B5F6",
+                "targetColor": "#64B5F6",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "llmAgentflow_0-llmAgentflow_0-output-llmAgentflow-llmAgentflow_1-llmAgentflow_1"
+        },
+        {
+            "source": "llmAgentflow_1",
+            "sourceHandle": "llmAgentflow_1-output-llmAgentflow",
+            "target": "llmAgentflow_2",
+            "targetHandle": "llmAgentflow_2",
+            "data": {
+                "sourceColor": "#64B5F6",
+                "targetColor": "#64B5F6",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "llmAgentflow_1-llmAgentflow_1-output-llmAgentflow-llmAgentflow_2-llmAgentflow_2"
+        },
+        {
+            "source": "llmAgentflow_2",
+            "sourceHandle": "llmAgentflow_2-output-llmAgentflow",
+            "target": "llmAgentflow_3",
+            "targetHandle": "llmAgentflow_3",
+            "data": {
+                "sourceColor": "#64B5F6",
+                "targetColor": "#64B5F6",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "llmAgentflow_2-llmAgentflow_2-output-llmAgentflow-llmAgentflow_3-llmAgentflow_3"
+        },
+        {
+            "source": "llmAgentflow_3",
+            "sourceHandle": "llmAgentflow_3-output-llmAgentflow",
+            "target": "toolAgentflow_0",
+            "targetHandle": "toolAgentflow_0",
+            "data": {
+                "sourceColor": "#64B5F6",
+                "targetColor": "#d4a373",
+                "isHumanInput": false
+            },
+            "type": "agentFlow",
+            "id": "llmAgentflow_3-llmAgentflow_3-output-llmAgentflow-toolAgentflow_0-toolAgentflow_0"
+        }
+    ]
+}
