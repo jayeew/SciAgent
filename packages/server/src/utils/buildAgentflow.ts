@@ -61,6 +61,7 @@ import { UsageCacheManager } from '../UsageCacheManager'
 import { generateTTSForResponseStream, shouldAutoPlayTTS } from './buildChatflow'
 import { TokenUsageService } from '../enterprise/services/token-usage.service'
 import mediaGenerationService from '../services/media-generation'
+import { getAgentflowTokenUsagePayloadSeeds } from './agentflowTokenUsage'
 
 interface IWaitingNode {
     nodeId: string
@@ -2282,7 +2283,10 @@ export const executeAgentFlow = async ({
                         executionId: newExecution.id,
                         chatId,
                         sessionId,
-                        usagePayloadSeeds: agentFlowExecutedData.length ? [agentFlowExecutedData] : [],
+                        usagePayloadSeeds: getAgentflowTokenUsagePayloadSeeds({
+                            agentFlowExecutedData,
+                            tokenAuditContext
+                        }),
                         tokenAuditContext
                     })
                 }
@@ -2399,7 +2403,11 @@ export const executeAgentFlow = async ({
                 executionId: newExecution.id,
                 chatId,
                 sessionId,
-                usagePayloadSeeds: agentFlowExecutedData.length ? [agentFlowExecutedData] : [lastNodeOutput || {}],
+                usagePayloadSeeds: getAgentflowTokenUsagePayloadSeeds({
+                    agentFlowExecutedData,
+                    fallbackPayload: lastNodeOutput || {},
+                    tokenAuditContext
+                }),
                 tokenAuditContext
             })
         }

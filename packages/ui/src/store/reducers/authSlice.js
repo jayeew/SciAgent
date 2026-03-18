@@ -6,6 +6,7 @@ const initialState = {
     user: localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')) : null,
     isAuthenticated: 'true' === localStorage.getItem('isAuthenticated'),
     isGlobal: 'true' === localStorage.getItem('isGlobal'),
+    loginMarker: AuthUtils.ensureStoredLoginMarker(),
     token: null,
     permissions:
         localStorage.getItem('permissions') && localStorage.getItem('permissions') !== 'undefined'
@@ -22,7 +23,7 @@ const authSlice = createSlice({
     initialState,
     reducers: {
         loginSuccess: (state, action) => {
-            AuthUtils.updateStateAndLocalStorage(state, action.payload)
+            AuthUtils.updateStateAndLocalStorage(state, action.payload, { regenerateLoginMarker: true })
         },
         logoutSuccess: (state) => {
             state.user = null
@@ -31,6 +32,7 @@ const authSlice = createSlice({
             state.features = null
             state.isAuthenticated = false
             state.isGlobal = false
+            state.loginMarker = null
             AuthUtils.removeCurrentUser()
         },
         workspaceSwitchSuccess: (state, action) => {

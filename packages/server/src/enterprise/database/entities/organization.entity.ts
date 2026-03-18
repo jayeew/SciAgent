@@ -13,6 +13,15 @@ export class Organization {
     @Column({ type: 'varchar', length: 100, default: OrganizationName.DEFAULT_ORGANIZATION })
     name: string
 
+    @Column({ type: 'text', nullable: true })
+    worldMessageDraft?: string | null
+
+    @Column({ type: 'text', nullable: true })
+    worldMessagePublished?: string | null
+
+    @Column({ nullable: true })
+    worldMessagePublishedAt?: Date | null
+
     @Column({ type: 'varchar', length: 100, nullable: true })
     customerId?: string
 

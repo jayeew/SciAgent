@@ -2081,6 +2081,7 @@ export const configureStructuredOutput = (llmNodeInstance: BaseChatModel, struct
 }
 
 const structuredOutputJsonHint = 'Return the response as valid json only.'
+const structuredOutputExactKeyHintPrefix = 'Use exactly the JSON keys listed below.'
 
 const containsJsonKeyword = (value: unknown): boolean => {
     if (typeof value === 'string') {
@@ -2093,6 +2094,22 @@ const containsJsonKeyword = (value: unknown): boolean => {
 
     if (value && typeof value === 'object') {
         return Object.values(value as Record<string, unknown>).some((item) => containsJsonKeyword(item))
+    }
+
+    return false
+}
+
+const containsStructuredOutputExactKeyHint = (value: unknown): boolean => {
+    if (typeof value === 'string') {
+        return value.includes(structuredOutputExactKeyHintPrefix)
+    }
+
+    if (Array.isArray(value)) {
+        return value.some((item) => containsStructuredOutputExactKeyHint(item))
+    }
+
+    if (value && typeof value === 'object') {
+        return Object.values(value as Record<string, unknown>).some((item) => containsStructuredOutputExactKeyHint(item))
     }
 
     return false
@@ -2118,6 +2135,71 @@ export const ensureStructuredOutputJsonHint = <T>(input: T): T => {
     }
 
     return input
+}
+
+const getStructuredOutputTypeLabel = (field: ICommonObject): string => {
+    if (field.type === 'stringArray') {
+        return 'string[]'
+    }
+
+    if (field.type === 'jsonArray') {
+        return 'object[]'
+    }
+
+    if (field.type === 'enum') {
+        const enumValues = field.enumValues
+            ?.split(',')
+            .map((item: string) => item.trim())
+            .filter(Boolean)
+
+        return enumValues?.length ? `enum(${enumValues.join(' | ')})` : 'enum'
+    }
+
+    return field.type || 'value'
+}
+
+export const buildStructuredOutputExactKeyHint = (structuredOutput: any[]): string => {
+    const schemaLines = structuredOutput.map((field) => {
+        const typeLabel = getStructuredOutputTypeLabel(field)
+        const description = field.description ? ` ${field.description}` : ''
+
+        return `- ${field.key}: ${typeLabel}.${description}`.trim()
+    })
+
+    return [
+        structuredOutputExactKeyHintPrefix,
+        'Do not translate, localize, rename, omit, or add keys.',
+        'Every listed key is required. Keep keys exactly as written even if the field values are in another language.',
+        'Use JSON arrays for array fields and schema-compatible primitive values for every field.',
+        'Required schema:',
+        ...schemaLines
+    ].join('\n')
+}
+
+export const ensureStructuredOutputInstructions = <T>(input: T, structuredOutput?: any[]): T => {
+    const inputWithJsonHint = ensureStructuredOutputJsonHint(input)
+
+    if (!structuredOutput?.length || containsStructuredOutputExactKeyHint(inputWithJsonHint)) {
+        return inputWithJsonHint
+    }
+
+    const exactKeyHint = buildStructuredOutputExactKeyHint(structuredOutput)
+
+    if (typeof inputWithJsonHint === 'string') {
+        return `${inputWithJsonHint}\n\n${exactKeyHint}` as T
+    }
+
+    if (Array.isArray(inputWithJsonHint)) {
+        return [
+            ...inputWithJsonHint,
+            {
+                role: 'system',
+                content: exactKeyHint
+            }
+        ] as T
+    }
+
+    return inputWithJsonHint
 }
 
 /**

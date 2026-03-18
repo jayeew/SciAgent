@@ -14,7 +14,7 @@ import {
     replaceInlineDataWithFileReferences,
     updateFlowState
 } from '../utils'
-import { processTemplateVariables, configureStructuredOutput, ensureStructuredOutputJsonHint } from '../../../src/utils'
+import { configureStructuredOutput, ensureStructuredOutputInstructions, processTemplateVariables } from '../../../src/utils'
 import { flatten } from 'lodash'
 
 class LLM_Agentflow implements INode {
@@ -377,6 +377,7 @@ class LLM_Agentflow implements INode {
                 }
             }
             let llmNodeInstance = (await newLLMNodeInstance.init(newNodeData, '', options)) as BaseChatModel
+            const baseLlmNodeInstance = llmNodeInstance
 
             // Prepare messages array
             const messages: BaseMessageLike[] = []
@@ -462,7 +463,9 @@ class LLM_Agentflow implements INode {
             if (isStructuredOutput) {
                 llmNodeInstance = configureStructuredOutput(llmNodeInstance, _llmStructuredOutput)
             }
-            const llmInvokeInput = isStructuredOutput ? (ensureStructuredOutputJsonHint(messages) as BaseMessageLike[]) : messages
+            const llmInvokeInput = isStructuredOutput
+                ? (ensureStructuredOutputInstructions(messages, _llmStructuredOutput) as BaseMessageLike[])
+                : messages
 
             // Initialize response and determine if streaming is possible
             let response: AIMessageChunk = new AIMessageChunk('')
@@ -485,7 +488,20 @@ class LLM_Agentflow implements INode {
             if (isStreamable) {
                 response = await this.handleStreamingResponse(sseStreamer, llmNodeInstance, llmInvokeInput, chatId, abortController)
             } else {
-                response = await llmNodeInstance.invoke(llmInvokeInput, { signal: abortController?.signal })
+                try {
+                    response = await llmNodeInstance.invoke(llmInvokeInput, { signal: abortController?.signal })
+                } catch (error) {
+                    if (!isStructuredOutput) {
+                        throw error
+                    }
+
+                    response = await this.handleStructuredOutputFallback(
+                        baseLlmNodeInstance,
+                        _llmStructuredOutput,
+                        llmInvokeInput,
+                        abortController
+                    )
+                }
 
                 // Stream whole response back to UI if this is the last node
                 if (isLastNode && options.sseStreamer) {
@@ -871,6 +887,40 @@ class LLM_Agentflow implements INode {
             response.content = responseContents.map((item) => item.text).join('')
         }
         return response
+    }
+
+    private async handleStructuredOutputFallback(
+        baseLlmNodeInstance: BaseChatModel,
+        structuredOutput: any[],
+        invokeInput: BaseMessageLike[],
+        abortController: AbortController
+    ): Promise<AIMessageChunk> {
+        const rawResponse = (await baseLlmNodeInstance.invoke(invokeInput, { signal: abortController?.signal })) as AIMessageChunk
+        const rawResponseContent = this.getResponseContent(rawResponse)
+        const structuredLlmNodeInstance = configureStructuredOutput(baseLlmNodeInstance, structuredOutput)
+        const structuredPrompt = ensureStructuredOutputInstructions(
+            'Convert the following response to the structured output format. Preserve the meaning, but rewrite it so it matches the schema exactly.\n\n' +
+                rawResponseContent,
+            structuredOutput
+        )
+
+        return (await structuredLlmNodeInstance.invoke(structuredPrompt, { signal: abortController?.signal })) as AIMessageChunk
+    }
+
+    private getResponseContent(response: AIMessageChunk): string {
+        if (response.content && Array.isArray(response.content)) {
+            return response.content.map((item: any) => item.text).join('\n')
+        }
+
+        if (response.content && typeof response.content === 'string') {
+            return response.content
+        }
+
+        if (response.content === '') {
+            return ''
+        }
+
+        return JSON.stringify(response, null, 2)
     }
 
     /**

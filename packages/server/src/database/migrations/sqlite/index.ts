@@ -59,6 +59,7 @@ import { ExecutionLinkWorkspaceId1746862866554 } from '../../../enterprise/datab
 import { OwnerRoleFullPermissions1765400000000 } from '../../../enterprise/database/migrations/sqlite/1765400000000-OwnerRoleFullPermissions'
 import { CredentialOwnerOnlyAndSharedWorkspace1765500000000 } from '../../../enterprise/database/migrations/sqlite/1765500000000-CredentialOwnerOnlyAndSharedWorkspace'
 import { AddWorkspaceCredit1765600000000 } from '../../../enterprise/database/migrations/sqlite/1765600000000-AddWorkspaceCredit'
+import { AddOrganizationWorldMessage1766100000000 } from '../../../enterprise/database/migrations/sqlite/1766100000000-AddOrganizationWorldMessage'
 
 export const sqliteMigrations = [
     Init1693835579790,
@@ -120,5 +121,6 @@ export const sqliteMigrations = [
     OwnerRoleFullPermissions1765400000000,
     CredentialOwnerOnlyAndSharedWorkspace1765500000000,
     AddWorkspaceCredit1765600000000,
-    AddTokenUsageAudit1765800000000
+    AddTokenUsageAudit1765800000000,
+    AddOrganizationWorldMessage1766100000000
 ]

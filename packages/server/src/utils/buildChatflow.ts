@@ -1381,7 +1381,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
         logger.error(`[server]:${organizationId}/${chatflow.id}/${chatId} Error:`, e)
         appServer.abortControllerPool.remove(`${chatflow.id}_${chatId}`)
         incrementFailedMetricCounter(appServer.metricsProvider, isInternal, isAgentFlow)
-        if (workspaceId && organizationId && tokenAuditContext) {
+        if (workspaceId && organizationId && tokenAuditContext && chatflow.type !== 'AGENTFLOW') {
             await recordTokenUsage({
                 workspaceId,
                 organizationId,

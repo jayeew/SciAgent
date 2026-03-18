@@ -106,6 +106,23 @@ const messageImageStyle = {
 }
 const DEFAULT_MIN_CREDIT_TO_INTERACT = 1
 const INSUFFICIENT_CREDIT_ERROR_PREFIX = 'Insufficient credit for model interaction'
+const DEFAULT_GREETING_MESSAGE = {
+    message: 'Hi there! How can I help?',
+    type: 'apiMessage'
+}
+
+const getDefaultMessages = () => [{ ...DEFAULT_GREETING_MESSAGE }]
+
+const hasAgentflowResumeAction = (action) => {
+    if (!action || !Array.isArray(action.elements)) return false
+    return action.elements.some((elem) => elem.type?.includes('agentflowv2'))
+}
+
+const shouldDisplayRecoveredAction = (message) => {
+    if (!message?.action) return false
+    if (!hasAgentflowResumeAction(message.action)) return true
+    return message.execution?.state === 'STOPPED'
+}
 
 // Extension must match recording MIME so server validation and STT work (audio/webm, audio/mp4, audio/ogg).
 const getRecordingExtensionForMime = (mime) => {
@@ -201,6 +218,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
     const navigate = useNavigate()
 
     const ps = useRef()
+    const hasLoadedInitialSessionRef = useRef(false)
 
     const dispatch = useDispatch()
     const { onAgentflowNodeStatusUpdate, clearAgentflowNodeStatus } = useContext(flowContext)
@@ -211,12 +229,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
 
     const [userInput, setUserInput] = useState('')
     const [loading, setLoading] = useState(false)
-    const [messages, setMessages] = useState([
-        {
-            message: 'Hi there! How can I help?',
-            type: 'apiMessage'
-        }
-    ])
+    const [messages, setMessages] = useState(getDefaultMessages)
     const [isChatFlowAvailableToStream, setIsChatFlowAvailableToStream] = useState(false)
     const [isChatFlowAvailableForSpeech, setIsChatFlowAvailableForSpeech] = useState(false)
     const [sourceDialogOpen, setSourceDialogOpen] = useState(false)
@@ -601,6 +614,11 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         }
     }
 
+    const focusInput = useCallback(() => {
+        if (!open) return
+        inputRef.current?.focus()
+    }, [open])
+
     // Helper function to manage TTS action flag
     const setTTSAction = (isActive) => {
         isTTSActionRef.current = isActive
@@ -828,7 +846,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
             return allMessages
         })
         setTimeout(() => {
-            inputRef.current?.focus()
+            focusInput()
         }, 100)
         enqueueSnackbar({
             message: 'Message stopped',
@@ -851,7 +869,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         setUserInput('')
         setUploadedFiles([])
         setTimeout(() => {
-            inputRef.current?.focus()
+            focusInput()
         }, 100)
     }
 
@@ -1071,6 +1089,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         }
 
         setLoading(true)
+        setLocalStorageChatflow(chatflowid, chatId)
         clearAgentflowNodeStatus()
 
         let uploads = previews.map((item) => {
@@ -1145,7 +1164,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                     setUploadedFiles([])
 
                     setTimeout(() => {
-                        inputRef.current?.focus()
+                        focusInput()
                         scrollToBottom()
                     }, 100)
                 }
@@ -1280,7 +1299,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         setUserInput('')
         setUploadedFiles([])
         setTimeout(() => {
-            inputRef.current?.focus()
+            focusInput()
             scrollToBottom()
         }, 100)
     }
@@ -1379,7 +1398,7 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                 if (message.calledTools) obj.calledTools = message.calledTools
                 if (message.fileAnnotations) obj.fileAnnotations = message.fileAnnotations
                 if (message.agentReasoning) obj.agentReasoning = message.agentReasoning
-                if (message.action) obj.action = message.action
+                if (shouldDisplayRecoveredAction(message)) obj.action = message.action
                 if (message.artifacts) {
                     obj.artifacts = normalizeArtifactsForDisplay(baseURL, message.artifacts, chatflowid, chatId)
                 }
@@ -1569,48 +1588,47 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
     }, [messages])
 
     useEffect(() => {
-        if (isDialog && inputRef) {
+        if (isDialog && open && inputRef) {
             setTimeout(() => {
-                inputRef.current?.focus()
+                focusInput()
             }, 100)
         }
-    }, [isDialog, inputRef])
+    }, [focusInput, isDialog, open, inputRef])
 
     useEffect(() => {
-        if (open && chatflowid) {
-            // API request
-            getChatmessageApi.request(chatflowid)
-            getIsChatflowStreamingApi.request(chatflowid)
-            getAllowChatFlowUploads.request(chatflowid)
-            getChatflowConfig.request(chatflowid)
+        hasLoadedInitialSessionRef.current = false
+    }, [chatflowid])
 
-            // Add a small delay to ensure content is rendered before scrolling
-            setTimeout(() => {
-                scrollToBottom()
-            }, 100)
-
-            setIsRecording(false)
-            setIsConfigLoading(true)
-
-            // leads
-            const savedLead = getLocalStorageChatflow(chatflowid)?.lead
-            if (savedLead) {
-                setIsLeadSaved(!!savedLead)
-                setLeadEmail(savedLead.email)
-            }
+    useEffect(() => {
+        if (!open || !chatflowid || hasLoadedInitialSessionRef.current) {
+            return
         }
 
-        return () => {
-            setUserInput('')
-            setUploadedFiles([])
-            setLoading(false)
-            setMessages([
-                {
-                    message: 'Hi there! How can I help?',
-                    type: 'apiMessage'
-                }
-            ])
+        const savedChatDetails = getLocalStorageChatflow(chatflowid)
+        const savedChatId = savedChatDetails?.chatId
+
+        // API request
+        getChatmessageApi.request(chatflowid, savedChatId ? { chatId: savedChatId } : {})
+        getIsChatflowStreamingApi.request(chatflowid)
+        getAllowChatFlowUploads.request(chatflowid)
+        getChatflowConfig.request(chatflowid)
+
+        // Add a small delay to ensure content is rendered before scrolling
+        setTimeout(() => {
+            scrollToBottom()
+        }, 100)
+
+        setIsRecording(false)
+        setIsConfigLoading(true)
+
+        // leads
+        const savedLead = savedChatDetails?.lead
+        if (savedLead) {
+            setIsLeadSaved(!!savedLead)
+            setLeadEmail(savedLead.email)
         }
+
+        hasLoadedInitialSessionRef.current = true
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, chatflowid])

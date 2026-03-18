@@ -13,7 +13,17 @@ export const enum OrganizationErrorMessage {
     INVALID_ORGANIZATION_NAME = 'Invalid Organization Name',
     ORGANIZATION_NOT_FOUND = 'Organization Not Found',
     ORGANIZATION_FOUND_MULTIPLE = 'Organization Found Multiple',
-    ORGANIZATION_RESERVERD_NAME = 'Organization name cannot be Default Organization - this is a reserved name'
+    ORGANIZATION_RESERVERD_NAME = 'Organization name cannot be Default Organization - this is a reserved name',
+    ORGANIZATION_WORLD_MESSAGE_EMPTY = 'World message draft cannot be empty'
+}
+
+export interface OrganizationWorldMessage {
+    publishedMessage: string | null
+    publishedAt: Date | null
+}
+
+export interface OrganizationWorldMessageManage extends OrganizationWorldMessage {
+    draftMessage: string | null
 }
 
 export class OrganizationService {
@@ -117,5 +127,106 @@ export class OrganizationService {
         }
 
         return updateOrganization
+    }
+
+    public async getWorldMessage(organizationId: string): Promise<OrganizationWorldMessage> {
+        const queryRunner = this.dataSource.createQueryRunner()
+        await queryRunner.connect()
+
+        try {
+            const organization = await this.readOrganizationById(organizationId, queryRunner)
+            if (!organization) throw new InternalFlowiseError(StatusCodes.NOT_FOUND, OrganizationErrorMessage.ORGANIZATION_NOT_FOUND)
+
+            return {
+                publishedMessage: organization.worldMessagePublished ?? null,
+                publishedAt: organization.worldMessagePublishedAt ?? null
+            }
+        } finally {
+            await queryRunner.release()
+        }
+    }
+
+    public async getWorldMessageManage(organizationId: string): Promise<OrganizationWorldMessageManage> {
+        const queryRunner = this.dataSource.createQueryRunner()
+        await queryRunner.connect()
+
+        try {
+            const organization = await this.readOrganizationById(organizationId, queryRunner)
+            if (!organization) throw new InternalFlowiseError(StatusCodes.NOT_FOUND, OrganizationErrorMessage.ORGANIZATION_NOT_FOUND)
+
+            return {
+                draftMessage: organization.worldMessageDraft ?? null,
+                publishedMessage: organization.worldMessagePublished ?? null,
+                publishedAt: organization.worldMessagePublishedAt ?? null
+            }
+        } finally {
+            await queryRunner.release()
+        }
+    }
+
+    public async updateWorldMessageDraft(
+        organizationId: string,
+        updatedBy: string,
+        draftMessage: string
+    ): Promise<OrganizationWorldMessageManage> {
+        return await this.updateWorldMessage(organizationId, updatedBy, (organization) => {
+            organization.worldMessageDraft = draftMessage
+        })
+    }
+
+    public async publishWorldMessage(organizationId: string, updatedBy: string): Promise<OrganizationWorldMessageManage> {
+        return await this.updateWorldMessage(organizationId, updatedBy, (organization) => {
+            const draftMessage = organization.worldMessageDraft?.trim()
+            if (!draftMessage) {
+                throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, OrganizationErrorMessage.ORGANIZATION_WORLD_MESSAGE_EMPTY)
+            }
+
+            organization.worldMessagePublished = organization.worldMessageDraft ?? ''
+            organization.worldMessagePublishedAt = new Date()
+        })
+    }
+
+    public async unpublishWorldMessage(organizationId: string, updatedBy: string): Promise<OrganizationWorldMessageManage> {
+        return await this.updateWorldMessage(organizationId, updatedBy, (organization) => {
+            organization.worldMessagePublished = null
+            organization.worldMessagePublishedAt = null
+        })
+    }
+
+    private async updateWorldMessage(
+        organizationId: string,
+        updatedBy: string,
+        updater: (organization: Organization) => void
+    ): Promise<OrganizationWorldMessageManage> {
+        const queryRunner = this.dataSource.createQueryRunner()
+        await queryRunner.connect()
+
+        try {
+            const organization = await this.readOrganizationById(organizationId, queryRunner)
+            if (!organization) throw new InternalFlowiseError(StatusCodes.NOT_FOUND, OrganizationErrorMessage.ORGANIZATION_NOT_FOUND)
+
+            const user = await this.userService.readUserById(updatedBy, queryRunner)
+            if (!user) throw new InternalFlowiseError(StatusCodes.NOT_FOUND, UserErrorMessage.USER_NOT_FOUND)
+
+            updater(organization)
+            organization.updatedBy = updatedBy
+
+            await queryRunner.startTransaction()
+            await this.saveOrganization(organization, queryRunner)
+            await queryRunner.commitTransaction()
+
+            return {
+                draftMessage: organization.worldMessageDraft ?? null,
+                publishedMessage: organization.worldMessagePublished ?? null,
+                publishedAt: organization.worldMessagePublishedAt ?? null
+            }
+        } catch (error) {
+            if (queryRunner.isTransactionActive) {
+                await queryRunner.rollbackTransaction()
+            }
+            throw error
+        } finally {
+            await queryRunner.release()
+        }
     }
 }

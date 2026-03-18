@@ -64,6 +64,33 @@ const SignInPage = () => {
     const [successMessage, setSuccessMessage] = useState('')
 
     const { authRateLimitError, setAuthRateLimitError } = useError()
+    const registerLinkCopy = (() => {
+        if (isEnterpriseLicensed) {
+            return {
+                prompt: 'Have an invite code?',
+                action: 'Sign up for an account'
+            }
+        }
+
+        if (isCloud) {
+            return {
+                prompt: "Don't have an account?",
+                action: 'Sign up for free'
+            }
+        }
+
+        if (isOpenSource && canPublicRegister) {
+            return {
+                prompt: "Don't have an account?",
+                action: 'Create a new account'
+            }
+        }
+
+        return {
+            prompt: 'Need an account?',
+            action: 'Register here'
+        }
+    })()
 
     const loginApi = useApi(authApi.login)
     const ssoLoginApi = useApi(ssoApi.ssoLogin)
@@ -203,33 +230,13 @@ const SignInPage = () => {
                     )}
                     <Stack sx={{ gap: 1 }}>
                         <Typography variant='h1'>Sign In</Typography>
-                        {isCloud && (
-                            <Typography variant='body2' sx={{ color: theme.palette.grey[600] }}>
-                                Don&apos;t have an account?{' '}
-                                <Link style={{ color: `${theme.palette.primary.main}` }} to='/register'>
-                                    Sign up for free
-                                </Link>
-                                .
-                            </Typography>
-                        )}
-                        {isEnterpriseLicensed && (
-                            <Typography variant='body2' sx={{ color: theme.palette.grey[600] }}>
-                                Have an invite code?{' '}
-                                <Link style={{ color: `${theme.palette.primary.main}` }} to='/register'>
-                                    Sign up for an account
-                                </Link>
-                                .
-                            </Typography>
-                        )}
-                        {isOpenSource && canPublicRegister && (
-                            <Typography variant='body2' sx={{ color: theme.palette.grey[600] }}>
-                                Don&apos;t have an account?{' '}
-                                <Link style={{ color: `${theme.palette.primary.main}` }} to='/register'>
-                                    Create a new account
-                                </Link>
-                                .
-                            </Typography>
-                        )}
+                        <Typography variant='body2' sx={{ color: theme.palette.grey[600] }}>
+                            {registerLinkCopy.prompt}{' '}
+                            <Link style={{ color: `${theme.palette.primary.main}` }} to='/register'>
+                                {registerLinkCopy.action}
+                            </Link>
+                            .
+                        </Typography>
                     </Stack>
                     <form onSubmit={doLogin}>
                         <Stack sx={{ width: '100%', flexDirection: 'column', alignItems: 'left', justifyContent: 'center', gap: 2 }}>

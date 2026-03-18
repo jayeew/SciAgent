@@ -7,13 +7,14 @@ import ChatMessage from './ChatMessage'
 import { StyledButton } from '@/ui-component/button/StyledButton'
 import { IconEraser } from '@tabler/icons-react'
 
-const ChatExpandDialog = ({ show, dialogProps, isAgentCanvas, onClear, onCancel, previews, setPreviews }) => {
+const ChatExpandDialog = ({ show, dialogProps, isAgentCanvas, onClear, onCancel, previews, setPreviews, resetVersion }) => {
     const portalElement = document.getElementById('portal')
     const customization = useSelector((state) => state.customization)
 
-    const component = show ? (
+    const component = (
         <Dialog
             open={show}
+            keepMounted
             fullWidth
             maxWidth='md'
             onClose={onCancel}
@@ -48,8 +49,9 @@ const ChatExpandDialog = ({ show, dialogProps, isAgentCanvas, onClear, onCancel,
                 sx={{ display: 'flex', justifyContent: 'flex-end', flexDirection: 'column', p: 0 }}
             >
                 <ChatMessage
+                    key={`${dialogProps.chatflowid || 'chat'}-dialog-${resetVersion}`}
                     isDialog={true}
-                    open={dialogProps.open}
+                    open={show && dialogProps.open}
                     isAgentCanvas={isAgentCanvas}
                     chatflowid={dialogProps.chatflowid}
                     previews={previews}
@@ -57,7 +59,7 @@ const ChatExpandDialog = ({ show, dialogProps, isAgentCanvas, onClear, onCancel,
                 />
             </DialogContent>
         </Dialog>
-    ) : null
+    )
 
     return createPortal(component, portalElement)
 }
@@ -69,7 +71,8 @@ ChatExpandDialog.propTypes = {
     onClear: PropTypes.func,
     onCancel: PropTypes.func,
     previews: PropTypes.array,
-    setPreviews: PropTypes.func
+    setPreviews: PropTypes.func,
+    resetVersion: PropTypes.number
 }
 
 export default ChatExpandDialog

@@ -9,6 +9,30 @@ import { OrganizationUserService } from '../services/organization-user.service'
 import { getCurrentUsage } from '../../utils/quotaUsage'
 
 export class OrganizationController {
+    private getInternalUserId(req: Request): string {
+        const userId = req.user?.id
+        if (!userId) {
+            throw new InternalFlowiseError(StatusCodes.UNAUTHORIZED, GeneralErrorMessage.UNAUTHORIZED)
+        }
+
+        return userId
+    }
+
+    private getActiveOrganizationId(req: Request): string {
+        const organizationId = req.user?.activeOrganizationId
+        if (!organizationId) {
+            throw new InternalFlowiseError(StatusCodes.UNAUTHORIZED, GeneralErrorMessage.UNAUTHORIZED)
+        }
+
+        return organizationId
+    }
+
+    private ensureOwner(req: Request) {
+        if (!req.user?.isOrganizationAdmin) {
+            throw new InternalFlowiseError(StatusCodes.FORBIDDEN, GeneralErrorMessage.FORBIDDEN)
+        }
+    }
+
     public async create(req: Request, res: Response, next: NextFunction) {
         try {
             const organizationUserService = new OrganizationUserService()
@@ -38,6 +62,12 @@ export class OrganizationController {
                 throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, GeneralErrorMessage.UNHANDLED_EDGE_CASE)
             }
 
+            if (organization) {
+                delete organization.worldMessageDraft
+                delete organization.worldMessagePublished
+                delete organization.worldMessagePublishedAt
+            }
+
             return res.status(StatusCodes.OK).json(organization)
         } catch (error) {
             next(error)
@@ -51,6 +81,71 @@ export class OrganizationController {
             const organizationService = new OrganizationService()
             const organization = await organizationService.updateOrganization(req.body)
             return res.status(StatusCodes.OK).json(organization)
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    public async getWorldMessage(req: Request, res: Response, next: NextFunction) {
+        try {
+            this.getInternalUserId(req)
+            const organizationService = new OrganizationService()
+            const organizationId = this.getActiveOrganizationId(req)
+            return res.status(StatusCodes.OK).json(await organizationService.getWorldMessage(organizationId))
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    public async getWorldMessageManage(req: Request, res: Response, next: NextFunction) {
+        try {
+            this.getInternalUserId(req)
+            this.ensureOwner(req)
+            const organizationService = new OrganizationService()
+            const organizationId = this.getActiveOrganizationId(req)
+            return res.status(StatusCodes.OK).json(await organizationService.getWorldMessageManage(organizationId))
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    public async updateWorldMessageDraft(req: Request, res: Response, next: NextFunction) {
+        try {
+            const userId = this.getInternalUserId(req)
+            this.ensureOwner(req)
+            if (typeof req.body?.draftMessage !== 'string') {
+                throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'draftMessage must be a string')
+            }
+
+            const organizationService = new OrganizationService()
+            const organizationId = this.getActiveOrganizationId(req)
+            return res
+                .status(StatusCodes.OK)
+                .json(await organizationService.updateWorldMessageDraft(organizationId, userId, req.body.draftMessage))
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    public async publishWorldMessage(req: Request, res: Response, next: NextFunction) {
+        try {
+            const userId = this.getInternalUserId(req)
+            this.ensureOwner(req)
+            const organizationService = new OrganizationService()
+            const organizationId = this.getActiveOrganizationId(req)
+            return res.status(StatusCodes.OK).json(await organizationService.publishWorldMessage(organizationId, userId))
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    public async unpublishWorldMessage(req: Request, res: Response, next: NextFunction) {
+        try {
+            const userId = this.getInternalUserId(req)
+            this.ensureOwner(req)
+            const organizationService = new OrganizationService()
+            const organizationId = this.getActiveOrganizationId(req)
+            return res.status(StatusCodes.OK).json(await organizationService.unpublishWorldMessage(organizationId, userId))
         } catch (error) {
             next(error)
         }

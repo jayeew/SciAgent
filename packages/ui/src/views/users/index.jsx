@@ -30,6 +30,7 @@ import ConfirmDialog from '@/ui-component/dialog/ConfirmDialog'
 import ViewHeader from '@/layout/MainLayout/ViewHeader'
 import ErrorBoundary from '@/ErrorBoundary'
 import EditUserDialog from '@/views/users/EditUserDialog'
+import WorldMessageDialog from '@/views/users/WorldMessageDialog'
 import { StyledTableCell, StyledTableRow } from '@/ui-component/table/TableStyles'
 import InviteUsersDialog from '@/ui-component/dialog/InviteUsersDialog'
 import { PermissionIconButton, StyledPermissionButton } from '@/ui-component/button/RBACButtons'
@@ -333,6 +334,7 @@ const Users = () => {
     const [tokenUsageSummary, setTokenUsageSummary] = useState({})
     const [openTokenUsageDrawer, setOpenTokenUsageDrawer] = useState(false)
     const [selectedUsageUser, setSelectedUsageUser] = useState(null)
+    const [showWorldMessageDialog, setShowWorldMessageDialog] = useState(false)
     const [usageStartDate, setUsageStartDate] = useState('')
     const [usageEndDate, setUsageEndDate] = useState('')
     const [usagePage, setUsagePage] = useState(1)
@@ -578,6 +580,15 @@ const Users = () => {
                 ) : (
                     <Stack flexDirection='column' sx={{ gap: 3 }}>
                         <ViewHeader onSearchChange={onSearchChange} search={true} searchPlaceholder='Search Users' title='User Management'>
+                            {currentUser?.isOrganizationAdmin && (
+                                <Button
+                                    variant='outlined'
+                                    sx={{ borderRadius: 2, height: '100%' }}
+                                    onClick={() => setShowWorldMessageDialog(true)}
+                                >
+                                    World Message
+                                </Button>
+                            )}
                             <StyledPermissionButton
                                 permissionId={'workspace:add-user,users:manage'}
                                 variant='contained'
@@ -1021,6 +1032,9 @@ const Users = () => {
                     onConfirm={onConfirm}
                     setError={setError}
                 ></EditUserDialog>
+            )}
+            {showWorldMessageDialog && (
+                <WorldMessageDialog open={showWorldMessageDialog} onClose={() => setShowWorldMessageDialog(false)} />
             )}
             <ConfirmDialog />
         </>

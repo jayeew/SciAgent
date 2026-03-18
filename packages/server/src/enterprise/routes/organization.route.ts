@@ -4,6 +4,12 @@ import { OrganizationController } from '../controllers/organization.controller'
 const router = express.Router()
 const organizationController = new OrganizationController()
 
+router.get('/world-message', organizationController.getWorldMessage)
+router.get('/world-message/manage', organizationController.getWorldMessageManage)
+router.put('/world-message/draft', organizationController.updateWorldMessageDraft)
+router.post('/world-message/publish', organizationController.publishWorldMessage)
+router.post('/world-message/unpublish', organizationController.unpublishWorldMessage)
+
 router.get('/', organizationController.read)
 
 router.post('/', organizationController.create)

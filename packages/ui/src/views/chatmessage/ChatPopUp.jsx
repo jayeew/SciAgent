@@ -1,6 +1,7 @@
 import { memo, useState, useRef, useEffect, useContext } from 'react'
 import { useDispatch } from 'react-redux'
 import PropTypes from 'prop-types'
+import { v4 as uuidv4 } from 'uuid'
 
 import { ClickAwayListener, Paper, Popper, Button } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
@@ -25,7 +26,7 @@ import { flowContext } from '@/store/context/ReactFlowContext'
 import { enqueueSnackbar as enqueueSnackbarAction, closeSnackbar as closeSnackbarAction } from '@/store/actions'
 
 // Utils
-import { getLocalStorageChatflow, removeLocalStorageChatHistory } from '@/utils/genericHelper'
+import { getLocalStorageChatflow, removeLocalStorageChatHistory, setLocalStorageChatflow } from '@/utils/genericHelper'
 
 const ChatPopUp = ({ chatflowid, isAgentCanvas, onOpenChange }) => {
     const theme = useTheme()
@@ -41,11 +42,18 @@ const ChatPopUp = ({ chatflowid, isAgentCanvas, onOpenChange }) => {
     const [showExpandDialog, setShowExpandDialog] = useState(false)
     const [expandDialogProps, setExpandDialogProps] = useState({})
     const [previews, setPreviews] = useState([])
+    const [chatResetVersion, setChatResetVersion] = useState(0)
+    const [hasOpenedOnce, setHasOpenedOnce] = useState(false)
 
     const anchorRef = useRef(null)
     const prevOpen = useRef(open)
+    const ignoreClickAwayRef = useRef(false)
+    const clickAwayTimeoutRef = useRef(null)
 
     const handleClose = (event) => {
+        if (ignoreClickAwayRef.current) {
+            return
+        }
         if (anchorRef.current && anchorRef.current.contains(event.target)) {
             return
         }
@@ -53,8 +61,18 @@ const ChatPopUp = ({ chatflowid, isAgentCanvas, onOpenChange }) => {
         if (onOpenChange) onOpenChange(false)
     }
 
-    const handleToggle = () => {
+    const handleToggle = (event) => {
+        event?.stopPropagation?.()
         const newOpenState = !open
+        if (newOpenState) {
+            setHasOpenedOnce(true)
+            ignoreClickAwayRef.current = true
+            if (clickAwayTimeoutRef.current) clearTimeout(clickAwayTimeoutRef.current)
+            clickAwayTimeoutRef.current = setTimeout(() => {
+                ignoreClickAwayRef.current = false
+                clickAwayTimeoutRef.current = null
+            }, 150)
+        }
         setOpen(newOpenState)
         if (onOpenChange) onOpenChange(newOpenState)
     }
@@ -69,19 +87,9 @@ const ChatPopUp = ({ chatflowid, isAgentCanvas, onOpenChange }) => {
     }
 
     const resetChatDialog = () => {
-        const props = {
-            ...expandDialogProps,
-            open: false
-        }
-        setExpandDialogProps(props)
         clearAgentflowNodeStatus()
-        setTimeout(() => {
-            const resetProps = {
-                ...expandDialogProps,
-                open: true
-            }
-            setExpandDialogProps(resetProps)
-        }, 500)
+        setPreviews([])
+        setChatResetVersion((prevVersion) => prevVersion + 1)
     }
 
     const clearChat = async () => {
@@ -99,6 +107,7 @@ const ChatPopUp = ({ chatflowid, isAgentCanvas, onOpenChange }) => {
                 if (!objChatDetails.chatId) return
                 await chatmessageApi.deleteChatmessage(chatflowid, { chatId: objChatDetails.chatId, chatType: 'INTERNAL' })
                 removeLocalStorageChatHistory(chatflowid)
+                setLocalStorageChatflow(chatflowid, uuidv4())
                 resetChatDialog()
                 enqueueSnackbar({
                     message: 'Succesfully cleared all chat history',
@@ -140,6 +149,28 @@ const ChatPopUp = ({ chatflowid, isAgentCanvas, onOpenChange }) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, chatflowid])
 
+    useEffect(() => {
+        setOpen(false)
+        setShowExpandDialog(false)
+        setExpandDialogProps({})
+        setHasOpenedOnce(false)
+        ignoreClickAwayRef.current = false
+        if (clickAwayTimeoutRef.current) {
+            clearTimeout(clickAwayTimeoutRef.current)
+            clickAwayTimeoutRef.current = null
+        }
+        if (onOpenChange) onOpenChange(false)
+    }, [chatflowid, onOpenChange])
+
+    useEffect(() => {
+        return () => {
+            if (clickAwayTimeoutRef.current) {
+                clearTimeout(clickAwayTimeoutRef.current)
+                clickAwayTimeoutRef.current = null
+            }
+        }
+    }, [])
+
     return (
         <>
             <StyledFab
@@ -178,50 +209,58 @@ const ChatPopUp = ({ chatflowid, isAgentCanvas, onOpenChange }) => {
                     <IconArrowsMaximize />
                 </StyledFab>
             )}
-            <Popper
-                placement='bottom-end'
-                open={open}
-                anchorEl={anchorRef.current}
-                role={undefined}
-                transition
-                disablePortal
-                popperOptions={{
-                    modifiers: [
-                        {
-                            name: 'offset',
-                            options: {
-                                offset: [40, 14]
+            {hasOpenedOnce && (
+                <Popper
+                    placement='bottom-end'
+                    open={open}
+                    keepMounted
+                    anchorEl={anchorRef.current}
+                    role={undefined}
+                    transition
+                    disablePortal
+                    popperOptions={{
+                        modifiers: [
+                            {
+                                name: 'offset',
+                                options: {
+                                    offset: [40, 14]
+                                }
                             }
-                        }
-                    ]
-                }}
-                sx={{ zIndex: 1000 }}
-            >
-                {({ TransitionProps }) => (
-                    <Transitions in={open} {...TransitionProps}>
-                        <Paper>
-                            <ClickAwayListener onClickAway={handleClose}>
-                                <MainCard
-                                    border={false}
-                                    className='cloud-wrapper'
-                                    elevation={16}
-                                    content={false}
-                                    boxShadow
-                                    shadow={theme.shadows[16]}
+                        ]
+                    }}
+                    sx={{ zIndex: 1000, pointerEvents: open ? 'auto' : 'none' }}
+                >
+                    {({ TransitionProps }) => (
+                        <Transitions in={open} {...TransitionProps}>
+                            <Paper>
+                                <ClickAwayListener
+                                    mouseEvent={open ? 'onClick' : false}
+                                    touchEvent={open ? 'onTouchEnd' : false}
+                                    onClickAway={handleClose}
                                 >
-                                    <ChatMessage
-                                        isAgentCanvas={isAgentCanvas}
-                                        chatflowid={chatflowid}
-                                        open={open}
-                                        previews={previews}
-                                        setPreviews={setPreviews}
-                                    />
-                                </MainCard>
-                            </ClickAwayListener>
-                        </Paper>
-                    </Transitions>
-                )}
-            </Popper>
+                                    <MainCard
+                                        border={false}
+                                        className='cloud-wrapper'
+                                        elevation={16}
+                                        content={false}
+                                        boxShadow
+                                        shadow={theme.shadows[16]}
+                                    >
+                                        <ChatMessage
+                                            key={`${chatflowid}-popup-${chatResetVersion}`}
+                                            isAgentCanvas={isAgentCanvas}
+                                            chatflowid={chatflowid}
+                                            open={open}
+                                            previews={previews}
+                                            setPreviews={setPreviews}
+                                        />
+                                    </MainCard>
+                                </ClickAwayListener>
+                            </Paper>
+                        </Transitions>
+                    )}
+                </Popper>
+            )}
             <ChatExpandDialog
                 show={showExpandDialog}
                 dialogProps={expandDialogProps}
@@ -230,6 +269,7 @@ const ChatPopUp = ({ chatflowid, isAgentCanvas, onOpenChange }) => {
                 onCancel={() => setShowExpandDialog(false)}
                 previews={previews}
                 setPreviews={setPreviews}
+                resetVersion={chatResetVersion}
             ></ChatExpandDialog>
         </>
     )

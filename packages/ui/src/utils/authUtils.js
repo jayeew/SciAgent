@@ -1,3 +1,22 @@
+import { v4 as uuidv4 } from 'uuid'
+
+const LOGIN_MARKER_STORAGE_KEY = 'loginMarker'
+
+const generateLoginMarker = () => `${Date.now()}:${uuidv4()}`
+
+const getStoredLoginMarker = () => localStorage.getItem(LOGIN_MARKER_STORAGE_KEY)
+
+const ensureStoredLoginMarker = () => {
+    const existingLoginMarker = getStoredLoginMarker()
+    if (existingLoginMarker) return existingLoginMarker
+
+    if (localStorage.getItem('isAuthenticated') !== 'true') return null
+
+    const generatedLoginMarker = generateLoginMarker()
+    localStorage.setItem(LOGIN_MARKER_STORAGE_KEY, generatedLoginMarker)
+    return generatedLoginMarker
+}
+
 const getCurrentUser = () => {
     if (!localStorage.getItem('user') || localStorage.getItem('user') === 'undefined') return undefined
     return JSON.parse(localStorage.getItem('user'))
@@ -23,6 +42,7 @@ const _removeFromStorage = () => {
     localStorage.removeItem('permissions')
     localStorage.removeItem('features')
     localStorage.removeItem('isSSO')
+    localStorage.removeItem(LOGIN_MARKER_STORAGE_KEY)
 }
 
 const clearAllCookies = () => {
@@ -55,7 +75,8 @@ const extractUser = (payload) => {
     return user
 }
 
-const updateStateAndLocalStorage = (state, payload) => {
+const updateStateAndLocalStorage = (state, payload, options = {}) => {
+    const { regenerateLoginMarker = false } = options
     const user = extractUser(payload)
     state.user = user
     state.token = payload.token
@@ -63,20 +84,26 @@ const updateStateAndLocalStorage = (state, payload) => {
     state.features = payload.features
     state.isAuthenticated = true
     state.isGlobal = user.isOrganizationAdmin
+    const loginMarker = regenerateLoginMarker ? generateLoginMarker() : state.loginMarker || getStoredLoginMarker() || generateLoginMarker()
+    state.loginMarker = loginMarker
     localStorage.setItem('isAuthenticated', 'true')
     localStorage.setItem('isGlobal', state.isGlobal)
     localStorage.setItem('isSSO', state.user.isSSO)
     localStorage.setItem('user', JSON.stringify(user))
     localStorage.setItem('permissions', JSON.stringify(payload.permissions))
     localStorage.setItem('features', JSON.stringify(payload.features))
+    localStorage.setItem(LOGIN_MARKER_STORAGE_KEY, loginMarker)
 }
 
 const AuthUtils = {
     getCurrentUser,
+    getStoredLoginMarker,
+    ensureStoredLoginMarker,
     updateCurrentUser,
     removeCurrentUser,
     updateStateAndLocalStorage,
-    extractUser
+    extractUser,
+    generateLoginMarker
 }
 
 export default AuthUtils
