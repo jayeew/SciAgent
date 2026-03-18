@@ -436,10 +436,34 @@ export class CustomChainHandler extends BaseCallbackHandler {
 class TokenUsageAuditHandler extends BaseCallbackHandler {
     name = 'token_usage_audit_handler'
     tokenAuditContext?: ICommonObject
+    credentialId?: string
+    credentialName?: string
+    model?: string
+    provider?: string
+    tokenUsageCredentialCallId?: string
 
-    constructor(tokenAuditContext?: ICommonObject) {
+    constructor({
+        tokenAuditContext,
+        credentialId,
+        credentialName,
+        model,
+        provider,
+        tokenUsageCredentialCallId
+    }: {
+        tokenAuditContext?: ICommonObject
+        credentialId?: string
+        credentialName?: string
+        model?: string
+        provider?: string
+        tokenUsageCredentialCallId?: string
+    }) {
         super()
         this.tokenAuditContext = tokenAuditContext
+        this.credentialId = credentialId
+        this.credentialName = credentialName
+        this.model = model
+        this.provider = provider
+        this.tokenUsageCredentialCallId = tokenUsageCredentialCallId
     }
 
     handleLLMEnd(output: any): void | Promise<void> {
@@ -449,8 +473,74 @@ class TokenUsageAuditHandler extends BaseCallbackHandler {
             this.tokenAuditContext.tokenUsagePayloads = []
         }
 
-        this.tokenAuditContext.tokenUsagePayloads.push(output)
+        if (!Array.isArray(this.tokenAuditContext.tokenUsageRecordedCallIds)) {
+            this.tokenAuditContext.tokenUsageRecordedCallIds = []
+        }
+
+        const callId = this.tokenUsageCredentialCallId || uuidv4()
+        const recordedCallIds = this.tokenAuditContext.tokenUsageRecordedCallIds as string[]
+        if (recordedCallIds.includes(callId)) return
+        recordedCallIds.push(callId)
+
+        this.tokenAuditContext.tokenUsagePayloads.push({
+            auditSource: 'llm_callback',
+            tokenUsageCredentialCallId: callId,
+            ...(this.credentialId ? { credentialId: this.credentialId } : {}),
+            ...(this.credentialName ? { credentialName: this.credentialName } : {}),
+            ...(this.model ? { model: this.model } : {}),
+            ...(this.provider ? { provider: this.provider } : {}),
+            output
+        })
+
+        if (!this.credentialId && !this.credentialName) return
+
+        if (!Array.isArray(this.tokenAuditContext.credentialAccesses)) {
+            this.tokenAuditContext.credentialAccesses = []
+        }
+
+        this.tokenAuditContext.credentialAccesses.push({
+            credentialId: this.credentialId,
+            credentialName: this.credentialName,
+            model: this.model,
+            provider: this.provider,
+            tokenUsageCredentialCallId: callId
+        })
     }
+}
+
+export const createTokenUsageAuditCallbacks = ({
+    tokenAuditContext,
+    credentialId,
+    credentialName,
+    model,
+    provider,
+    tokenUsageCredentialCallId
+}: {
+    tokenAuditContext?: ICommonObject
+    credentialId?: string
+    credentialName?: string
+    model?: string
+    provider?: string
+    tokenUsageCredentialCallId?: string
+}) => {
+    if (!tokenAuditContext) return []
+
+    const resolvedCredentialName =
+        credentialName ||
+        (credentialId && tokenAuditContext?.credentialMetadataById
+            ? (tokenAuditContext.credentialMetadataById as Record<string, { credentialName?: string }>)[credentialId]?.credentialName
+            : undefined)
+
+    return [
+        new TokenUsageAuditHandler({
+            tokenAuditContext,
+            credentialId,
+            credentialName: resolvedCredentialName,
+            model,
+            provider,
+            tokenUsageCredentialCallId: tokenUsageCredentialCallId || uuidv4()
+        })
+    ]
 }
 
 /*TODO - Add llamaIndex tracer to non evaluation runs*/
@@ -537,7 +627,11 @@ export const additionalCallbacks = async (nodeData: INodeData, options: ICommonO
     try {
         const callbacks: any = []
         if (options.tokenAuditContext) {
-            callbacks.push(new TokenUsageAuditHandler(options.tokenAuditContext))
+            callbacks.push(
+                new TokenUsageAuditHandler({
+                    tokenAuditContext: options.tokenAuditContext
+                })
+            )
         }
 
         if (!options.analytic) return callbacks

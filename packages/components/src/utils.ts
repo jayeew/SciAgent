@@ -625,6 +625,14 @@ export const getCredentialData = async (selectedCredentialId: string, options: I
                 tokenAuditContext.credentialAccesses = []
             }
 
+            if (!tokenAuditContext.credentialMetadataById || typeof tokenAuditContext.credentialMetadataById !== 'object') {
+                tokenAuditContext.credentialMetadataById = {}
+            }
+
+            ;(tokenAuditContext.credentialMetadataById as Record<string, { credentialName?: string }>)[selectedCredentialId] = {
+                credentialName: credential.name
+            }
+
             tokenAuditContext.credentialAccesses.push({
                 credentialId: selectedCredentialId,
                 credentialName: credential.name
@@ -2024,6 +2032,42 @@ export async function parseWithTypeConversion<T extends z.ZodTypeAny>(schema: T,
     }
 }
 
+export const buildStructuredOutputSchema = (structuredOutput: any[]): z.ZodObject<any> => {
+    const zodObj: ICommonObject = {}
+    for (const sch of structuredOutput) {
+        if (sch.type === 'string') {
+            zodObj[sch.key] = z.string().describe(sch.description || '')
+        } else if (sch.type === 'stringArray') {
+            zodObj[sch.key] = z.array(z.string()).describe(sch.description || '')
+        } else if (sch.type === 'number') {
+            zodObj[sch.key] = z.number().describe(sch.description || '')
+        } else if (sch.type === 'boolean') {
+            zodObj[sch.key] = z.boolean().describe(sch.description || '')
+        } else if (sch.type === 'enum') {
+            const enumValues = sch.enumValues?.split(',').map((item: string) => item.trim()) || []
+            zodObj[sch.key] = z
+                .enum(enumValues.length ? (enumValues as [string, ...string[]]) : ['default'])
+                .describe(sch.description || '')
+        } else if (sch.type === 'jsonArray') {
+            const jsonSchema = sch.jsonSchema
+            if (jsonSchema) {
+                try {
+                    const schemaObj = JSON.parse(jsonSchema)
+                    const itemSchema = createZodSchemaFromJSON(schemaObj)
+                    zodObj[sch.key] = z.array(itemSchema).describe(sch.description || '')
+                } catch (err) {
+                    console.error(`Error parsing JSON schema for ${sch.key}:`, err)
+                    zodObj[sch.key] = z.array(z.record(z.any())).describe(sch.description || '')
+                }
+            } else {
+                zodObj[sch.key] = z.array(z.record(z.any())).describe(sch.description || '')
+            }
+        }
+    }
+
+    return z.object(zodObj)
+}
+
 /**
  * Configures structured output for the LLM using Zod schema
  * @param {BaseChatModel} llmNodeInstance - The LLM instance to configure
@@ -2032,48 +2076,11 @@ export async function parseWithTypeConversion<T extends z.ZodTypeAny>(schema: T,
  */
 export const configureStructuredOutput = (llmNodeInstance: BaseChatModel, structuredOutput: any[]): BaseChatModel => {
     try {
-        const zodObj: ICommonObject = {}
-        for (const sch of structuredOutput) {
-            if (sch.type === 'string') {
-                zodObj[sch.key] = z.string().describe(sch.description || '')
-            } else if (sch.type === 'stringArray') {
-                zodObj[sch.key] = z.array(z.string()).describe(sch.description || '')
-            } else if (sch.type === 'number') {
-                zodObj[sch.key] = z.number().describe(sch.description || '')
-            } else if (sch.type === 'boolean') {
-                zodObj[sch.key] = z.boolean().describe(sch.description || '')
-            } else if (sch.type === 'enum') {
-                const enumValues = sch.enumValues?.split(',').map((item: string) => item.trim()) || []
-                zodObj[sch.key] = z
-                    .enum(enumValues.length ? (enumValues as [string, ...string[]]) : ['default'])
-                    .describe(sch.description || '')
-            } else if (sch.type === 'jsonArray') {
-                const jsonSchema = sch.jsonSchema
-                if (jsonSchema) {
-                    try {
-                        // Parse the JSON schema
-                        const schemaObj = JSON.parse(jsonSchema)
+        const structuredOutputSchema = buildStructuredOutputSchema(structuredOutput)
 
-                        // Create a Zod schema from the JSON schema
-                        const itemSchema = createZodSchemaFromJSON(schemaObj)
-
-                        // Create an array schema of the item schema
-                        zodObj[sch.key] = z.array(itemSchema).describe(sch.description || '')
-                    } catch (err) {
-                        console.error(`Error parsing JSON schema for ${sch.key}:`, err)
-                        // Fallback to generic array of records
-                        zodObj[sch.key] = z.array(z.record(z.any())).describe(sch.description || '')
-                    }
-                } else {
-                    // If no schema provided, use generic array of records
-                    zodObj[sch.key] = z.array(z.record(z.any())).describe(sch.description || '')
-                }
-            }
-        }
-        const structuredOutputSchema = z.object(zodObj)
-
+        // Prefer function calling because some OpenAI-compatible providers reject response_format json schemas.
         // @ts-ignore
-        return llmNodeInstance.withStructuredOutput(structuredOutputSchema)
+        return llmNodeInstance.withStructuredOutput(structuredOutputSchema, { method: 'functionCalling' })
     } catch (exception) {
         console.error(exception)
         return llmNodeInstance

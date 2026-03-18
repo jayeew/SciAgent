@@ -9,6 +9,24 @@ import { OrganizationUserService } from '../services/organization-user.service'
 import { getCurrentUsage } from '../../utils/quotaUsage'
 
 export class OrganizationController {
+    constructor() {
+        this.create = this.create.bind(this)
+        this.read = this.read.bind(this)
+        this.update = this.update.bind(this)
+        this.getWorldMessage = this.getWorldMessage.bind(this)
+        this.getWorldMessageManage = this.getWorldMessageManage.bind(this)
+        this.updateWorldMessageDraft = this.updateWorldMessageDraft.bind(this)
+        this.publishWorldMessage = this.publishWorldMessage.bind(this)
+        this.unpublishWorldMessage = this.unpublishWorldMessage.bind(this)
+        this.getAdditionalSeatsQuantity = this.getAdditionalSeatsQuantity.bind(this)
+        this.getCustomerWithDefaultSource = this.getCustomerWithDefaultSource.bind(this)
+        this.getAdditionalSeatsProration = this.getAdditionalSeatsProration.bind(this)
+        this.getPlanProration = this.getPlanProration.bind(this)
+        this.updateAdditionalSeats = this.updateAdditionalSeats.bind(this)
+        this.updateSubscriptionPlan = this.updateSubscriptionPlan.bind(this)
+        this.getCurrentUsage = this.getCurrentUsage.bind(this)
+    }
+
     private getInternalUserId(req: Request): string {
         const userId = req.user?.id
         if (!userId) {

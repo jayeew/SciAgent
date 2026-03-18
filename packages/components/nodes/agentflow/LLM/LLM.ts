@@ -2,7 +2,7 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { ICommonObject, IMessage, INode, INodeData, INodeOptionsValue, INodeParams, IServerSideEventStreamer } from '../../../src/Interface'
 import { AIMessageChunk, BaseMessageLike, MessageContentText } from '@langchain/core/messages'
 import { DEFAULT_SUMMARIZER_TEMPLATE } from '../prompt'
-import { AnalyticHandler } from '../../../src/handler'
+import { AnalyticHandler, createTokenUsageAuditCallbacks } from '../../../src/handler'
 import { ILLMMessage } from '../Interface.Agentflow'
 import {
     addImageArtifactsToMessages,
@@ -14,8 +14,23 @@ import {
     replaceInlineDataWithFileReferences,
     updateFlowState
 } from '../utils'
-import { configureStructuredOutput, ensureStructuredOutputInstructions, processTemplateVariables } from '../../../src/utils'
+import {
+    buildStructuredOutputSchema,
+    configureStructuredOutput,
+    ensureStructuredOutputInstructions,
+    parseJsonBody,
+    parseWithTypeConversion,
+    processTemplateVariables
+} from '../../../src/utils'
 import { flatten } from 'lodash'
+
+type LLMStructuredResponse = AIMessageChunk | Record<string, any> | null | undefined
+interface ITokenUsageAuditMetadata {
+    tokenAuditContext?: ICommonObject
+    credentialId?: string
+    model?: string
+    provider?: string
+}
 
 class LLM_Agentflow implements INode {
     label: string
@@ -378,6 +393,7 @@ class LLM_Agentflow implements INode {
             }
             let llmNodeInstance = (await newLLMNodeInstance.init(newNodeData, '', options)) as BaseChatModel
             const baseLlmNodeInstance = llmNodeInstance
+            const tokenUsageAuditMetadata = this.getTokenUsageAuditMetadata(options, modelConfig, model)
 
             // Prepare messages array
             const messages: BaseMessageLike[] = []
@@ -426,7 +442,8 @@ class LLM_Agentflow implements INode {
                     options,
                     modelConfig,
                     runtimeImageMessagesWithFileRef,
-                    pastImageMessagesWithFileRef
+                    pastImageMessagesWithFileRef,
+                    tokenUsageAuditMetadata
                 })
             } else if (!runtimeChatHistory.length) {
                 /*
@@ -468,7 +485,7 @@ class LLM_Agentflow implements INode {
                 : messages
 
             // Initialize response and determine if streaming is possible
-            let response: AIMessageChunk = new AIMessageChunk('')
+            let response: LLMStructuredResponse = new AIMessageChunk('')
             const isLastNode = options.isLastNode as boolean
             const isStreamable = isLastNode && options.sseStreamer !== undefined && modelConfig?.streaming !== false && !isStructuredOutput
 
@@ -486,10 +503,20 @@ class LLM_Agentflow implements INode {
              * Invoke LLM
              */
             if (isStreamable) {
-                response = await this.handleStreamingResponse(sseStreamer, llmNodeInstance, llmInvokeInput, chatId, abortController)
+                response = await this.handleStreamingResponse(
+                    sseStreamer,
+                    llmNodeInstance,
+                    llmInvokeInput,
+                    chatId,
+                    abortController,
+                    tokenUsageAuditMetadata
+                )
             } else {
                 try {
-                    response = await llmNodeInstance.invoke(llmInvokeInput, { signal: abortController?.signal })
+                    response = await llmNodeInstance.invoke(
+                        llmInvokeInput,
+                        this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+                    )
                 } catch (error) {
                     if (!isStructuredOutput) {
                         throw error
@@ -499,17 +526,36 @@ class LLM_Agentflow implements INode {
                         baseLlmNodeInstance,
                         _llmStructuredOutput,
                         llmInvokeInput,
-                        abortController
+                        abortController,
+                        tokenUsageAuditMetadata
                     )
+                }
+
+                if (response === undefined || response === null) {
+                    if (!isStructuredOutput) {
+                        throw new Error('LLM returned an empty response')
+                    }
+
+                    response = await this.handleStructuredOutputFallback(
+                        baseLlmNodeInstance,
+                        _llmStructuredOutput,
+                        llmInvokeInput,
+                        abortController,
+                        tokenUsageAuditMetadata
+                    )
+
+                    if (response === undefined || response === null) {
+                        throw new Error('Structured output fallback returned an empty response')
+                    }
                 }
 
                 // Stream whole response back to UI if this is the last node
                 if (isLastNode && options.sseStreamer) {
                     const sseStreamer: IServerSideEventStreamer = options.sseStreamer as IServerSideEventStreamer
                     let finalResponse = ''
-                    if (response.content && Array.isArray(response.content)) {
+                    if (response?.content && Array.isArray(response.content)) {
                         finalResponse = response.content.map((item: any) => item.text).join('\n')
-                    } else if (response.content && typeof response.content === 'string') {
+                    } else if (response?.content && typeof response.content === 'string') {
                         finalResponse = response.content
                     } else {
                         finalResponse = JSON.stringify(response, null, 2)
@@ -525,7 +571,7 @@ class LLM_Agentflow implements INode {
             // Extract artifacts and file annotations from response metadata
             let artifacts: any[] = []
             let fileAnnotations: any[] = []
-            if (response.response_metadata) {
+            if (response?.response_metadata) {
                 const {
                     artifacts: extractedArtifacts,
                     fileAnnotations: extractedFileAnnotations,
@@ -551,7 +597,7 @@ class LLM_Agentflow implements INode {
                 }
 
                 // Replace inlineData base64 with file references in the response
-                if (savedInlineImages && savedInlineImages.length > 0) {
+                if (savedInlineImages && savedInlineImages.length > 0 && response instanceof AIMessageChunk) {
                     replaceInlineDataWithFileReferences(response, savedInlineImages)
                 }
             }
@@ -571,11 +617,11 @@ class LLM_Agentflow implements INode {
 
             // Prepare final response and output object
             let finalResponse = ''
-            if (response.content && Array.isArray(response.content)) {
+            if (response?.content && Array.isArray(response.content)) {
                 finalResponse = response.content.map((item: any) => item.text).join('\n')
-            } else if (response.content && typeof response.content === 'string') {
+            } else if (response?.content && typeof response.content === 'string') {
                 finalResponse = response.content
-            } else if (response.content === '') {
+            } else if (response?.content === '') {
                 // Empty response content, this could happen when there is only image data
                 finalResponse = ''
             } else {
@@ -598,7 +644,7 @@ class LLM_Agentflow implements INode {
             }
 
             // Send additional streaming events if needed
-            if (isStreamable) {
+            if (isStreamable && response instanceof AIMessageChunk) {
                 this.sendStreamingEvents(options, chatId, response)
             }
 
@@ -708,7 +754,8 @@ class LLM_Agentflow implements INode {
         options,
         modelConfig,
         runtimeImageMessagesWithFileRef,
-        pastImageMessagesWithFileRef
+        pastImageMessagesWithFileRef,
+        tokenUsageAuditMetadata
     }: {
         messages: BaseMessageLike[]
         memoryType: string
@@ -724,6 +771,7 @@ class LLM_Agentflow implements INode {
         modelConfig: ICommonObject
         runtimeImageMessagesWithFileRef: BaseMessageLike[]
         pastImageMessagesWithFileRef: BaseMessageLike[]
+        tokenUsageAuditMetadata: ITokenUsageAuditMetadata
     }): Promise<void> {
         const { updatedPastMessages, transformedPastMessages } = await getPastChatHistoryImageMessages(pastChatHistory, options)
         pastChatHistory = updatedPastMessages
@@ -771,12 +819,12 @@ class LLM_Agentflow implements INode {
                             )
                         }
                     ],
-                    { signal: abortController?.signal }
+                    this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
                 )
                 messages.push({ role: 'assistant', content: summary.content as string })
             } else if (memoryType === 'conversationSummaryBuffer') {
                 // Summary buffer: Summarize messages that exceed token limit
-                await this.handleSummaryBuffer(messages, pastMessages, llmNodeInstance, nodeData, abortController)
+                await this.handleSummaryBuffer(messages, pastMessages, llmNodeInstance, nodeData, abortController, tokenUsageAuditMetadata)
             } else {
                 // Default: Use all messages
                 messages.push(...pastMessages)
@@ -800,7 +848,8 @@ class LLM_Agentflow implements INode {
         pastMessages: BaseMessageLike[],
         llmNodeInstance: BaseChatModel,
         nodeData: INodeData,
-        abortController: AbortController
+        abortController: AbortController,
+        tokenUsageAuditMetadata: ITokenUsageAuditMetadata
     ): Promise<void> {
         const maxTokenLimit = (nodeData.inputs?.llmMemoryMaxTokenLimit as number) || 2000
 
@@ -835,7 +884,7 @@ class LLM_Agentflow implements INode {
                         content: DEFAULT_SUMMARIZER_TEMPLATE.replace('{conversation}', messagesToSummarizeString)
                     }
                 ],
-                { signal: abortController?.signal }
+                this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
             )
 
             // Add summary as a system message at the beginning, then add remaining messages
@@ -855,12 +904,16 @@ class LLM_Agentflow implements INode {
         llmNodeInstance: BaseChatModel,
         messages: BaseMessageLike[],
         chatId: string,
-        abortController: AbortController
+        abortController: AbortController,
+        tokenUsageAuditMetadata: ITokenUsageAuditMetadata
     ): Promise<AIMessageChunk> {
         let response = new AIMessageChunk('')
 
         try {
-            for await (const chunk of await llmNodeInstance.stream(messages, { signal: abortController?.signal })) {
+            for await (const chunk of await llmNodeInstance.stream(
+                messages,
+                this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+            )) {
                 if (sseStreamer) {
                     let content = ''
 
@@ -893,18 +946,65 @@ class LLM_Agentflow implements INode {
         baseLlmNodeInstance: BaseChatModel,
         structuredOutput: any[],
         invokeInput: BaseMessageLike[],
-        abortController: AbortController
-    ): Promise<AIMessageChunk> {
-        const rawResponse = (await baseLlmNodeInstance.invoke(invokeInput, { signal: abortController?.signal })) as AIMessageChunk
+        abortController: AbortController,
+        tokenUsageAuditMetadata: ITokenUsageAuditMetadata
+    ): Promise<Record<string, any>> {
+        const rawResponse = (await baseLlmNodeInstance.invoke(
+            invokeInput,
+            this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+        )) as AIMessageChunk
         const rawResponseContent = this.getResponseContent(rawResponse)
-        const structuredLlmNodeInstance = configureStructuredOutput(baseLlmNodeInstance, structuredOutput)
         const structuredPrompt = ensureStructuredOutputInstructions(
             'Convert the following response to the structured output format. Preserve the meaning, but rewrite it so it matches the schema exactly.\n\n' +
                 rawResponseContent,
             structuredOutput
         )
+        const structuredResponse = (await baseLlmNodeInstance.invoke(
+            structuredPrompt,
+            this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+        )) as AIMessageChunk
+        const structuredResponseContent = this.getResponseContent(structuredResponse)
 
-        return (await structuredLlmNodeInstance.invoke(structuredPrompt, { signal: abortController?.signal })) as AIMessageChunk
+        return await this.parseStructuredOutputResponse(structuredResponseContent, structuredOutput)
+    }
+
+    private getTokenUsageAuditMetadata(
+        options: ICommonObject,
+        modelConfig: ICommonObject | undefined,
+        provider: string | undefined
+    ): ITokenUsageAuditMetadata {
+        return {
+            tokenAuditContext: options.tokenAuditContext as ICommonObject | undefined,
+            credentialId:
+                (typeof modelConfig?.FLOWISE_CREDENTIAL_ID === 'string' && modelConfig.FLOWISE_CREDENTIAL_ID) ||
+                (typeof modelConfig?.credential === 'string' && modelConfig.credential) ||
+                undefined,
+            model:
+                (typeof modelConfig?.modelName === 'string' && modelConfig.modelName) ||
+                (typeof modelConfig?.model === 'string' && modelConfig.model) ||
+                undefined,
+            provider:
+                (typeof modelConfig?.llmModel === 'string' && modelConfig.llmModel) ||
+                (typeof modelConfig?.agentModel === 'string' && modelConfig.agentModel) ||
+                provider
+        }
+    }
+
+    private buildModelInvocationConfig(
+        abortController: AbortController | undefined,
+        tokenUsageAuditMetadata: ITokenUsageAuditMetadata
+    ): ICommonObject {
+        const callbacks = createTokenUsageAuditCallbacks(tokenUsageAuditMetadata)
+        if (callbacks.length) {
+            return {
+                signal: abortController?.signal,
+                callbacks
+            }
+        }
+
+        return {
+            signal: abortController?.signal
+        }
     }
 
     private getResponseContent(response: AIMessageChunk): string {
@@ -923,11 +1023,67 @@ class LLM_Agentflow implements INode {
         return JSON.stringify(response, null, 2)
     }
 
+    private async parseStructuredOutputResponse(content: string, structuredOutput: any[]): Promise<Record<string, any>> {
+        const schema = buildStructuredOutputSchema(structuredOutput)
+        const candidates = this.getStructuredOutputJsonCandidates(content)
+        let lastError: Error | undefined
+
+        for (const candidate of candidates) {
+            try {
+                const parsedJson = parseJsonBody(candidate)
+                return (await parseWithTypeConversion(schema, parsedJson)) as Record<string, any>
+            } catch (error) {
+                lastError = error instanceof Error ? error : new Error(String(error))
+            }
+        }
+
+        throw new Error(
+            `Unable to parse structured output fallback response as JSON. ${lastError?.message ?? 'No valid JSON candidate found.'}`
+        )
+    }
+
+    private getStructuredOutputJsonCandidates(content: string): string[] {
+        const trimmedContent = content.trim()
+        const candidates: string[] = []
+        const seenCandidates = new Set<string>()
+
+        const addCandidate = (candidate: string | undefined): void => {
+            const normalizedCandidate = candidate?.trim()
+            if (!normalizedCandidate || seenCandidates.has(normalizedCandidate)) {
+                return
+            }
+
+            seenCandidates.add(normalizedCandidate)
+            candidates.push(normalizedCandidate)
+        }
+
+        addCandidate(trimmedContent)
+
+        const fencedBlocks = trimmedContent.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)
+        for (const block of fencedBlocks) {
+            addCandidate(block[1])
+        }
+
+        const firstObjectIndex = trimmedContent.indexOf('{')
+        const lastObjectIndex = trimmedContent.lastIndexOf('}')
+        if (firstObjectIndex !== -1 && lastObjectIndex > firstObjectIndex) {
+            addCandidate(trimmedContent.slice(firstObjectIndex, lastObjectIndex + 1))
+        }
+
+        const firstArrayIndex = trimmedContent.indexOf('[')
+        const lastArrayIndex = trimmedContent.lastIndexOf(']')
+        if (firstArrayIndex !== -1 && lastArrayIndex > firstArrayIndex) {
+            addCandidate(trimmedContent.slice(firstArrayIndex, lastArrayIndex + 1))
+        }
+
+        return candidates
+    }
+
     /**
      * Prepares the output object with response and metadata
      */
     private prepareOutputObject(
-        response: AIMessageChunk,
+        response: LLMStructuredResponse,
         finalResponse: string,
         startTime: number,
         endTime: number,
@@ -943,6 +1099,10 @@ class LLM_Agentflow implements INode {
                 end: endTime,
                 delta: timeDelta
             }
+        }
+
+        if (!response) {
+            return output
         }
 
         if (response.tool_calls) {

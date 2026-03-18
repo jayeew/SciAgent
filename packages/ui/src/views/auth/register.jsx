@@ -173,7 +173,7 @@ const RegisterPage = () => {
                 const errorMessages = result.error.errors.map((err) => err.message)
                 setAuthError(errorMessages.join(', '))
             }
-        } else if (isOpenSource && canPublicRegister) {
+        } else if (isOpenSource) {
             const result = RegisterCloudUserSchema.safeParse({
                 username,
                 email,
@@ -204,12 +204,23 @@ const RegisterPage = () => {
 
     useEffect(() => {
         if (registerApi.error) {
+            const errMessage =
+                typeof registerApi.error?.response?.data === 'object'
+                    ? registerApi.error?.response?.data?.message
+                    : registerApi.error?.response?.data || registerApi.error.message
+
             if (isEnterpriseLicensed) {
-                setAuthError(
-                    `Error in registering user. Please contact your administrator. (${registerApi.error?.response?.data?.message})`
-                )
-            } else if (isCloud || (isOpenSource && canPublicRegister)) {
+                setAuthError(`Error in registering user. Please contact your administrator. (${errMessage})`)
+            } else if (isCloud) {
                 setAuthError(`Error in registering user. Please try again.`)
+            } else if (isOpenSource) {
+                if (!canPublicRegister && errMessage === 'You can only have one organization') {
+                    setAuthError(
+                        'Public self-registration is disabled. Sign in with an existing account, or set ENABLE_PUBLIC_REGISTRATION=true to allow new users to register.'
+                    )
+                } else {
+                    setAuthError(`Error in registering user: ${errMessage}`)
+                }
             }
             setLoading(false)
         }
@@ -265,7 +276,7 @@ const RegisterPage = () => {
                 setSuccessMsg('Registration Successful. You will be redirected to the sign in page shortly.')
             } else if (isCloud) {
                 setSuccessMsg('To complete your registration, please click on the verification link we sent to your email address')
-            } else if (isOpenSource && canPublicRegister) {
+            } else if (isOpenSource) {
                 setSuccessMsg('Registration Successful. You will be redirected to the sign in page shortly.')
             }
             setTimeout(() => {

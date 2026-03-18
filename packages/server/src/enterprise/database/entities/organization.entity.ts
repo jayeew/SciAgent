@@ -19,7 +19,7 @@ export class Organization {
     @Column({ type: 'text', nullable: true })
     worldMessagePublished?: string | null
 
-    @Column({ nullable: true })
+    @Column({ type: Date, nullable: true })
     worldMessagePublishedAt?: Date | null
 
     @Column({ type: 'varchar', length: 100, nullable: true })

@@ -68,27 +68,39 @@ const SignInPage = () => {
         if (isEnterpriseLicensed) {
             return {
                 prompt: 'Have an invite code?',
-                action: 'Sign up for an account'
+                action: 'Sign up for an account',
+                to: '/register'
             }
         }
 
         if (isCloud) {
             return {
                 prompt: "Don't have an account?",
-                action: 'Sign up for free'
+                action: 'Sign up for free',
+                to: '/register'
             }
         }
 
         if (isOpenSource && canPublicRegister) {
             return {
                 prompt: "Don't have an account?",
-                action: 'Create a new account'
+                action: 'Create a new account',
+                to: '/register'
+            }
+        }
+
+        if (isOpenSource) {
+            return {
+                prompt: 'Need an account?',
+                action: 'Contact your administrator',
+                to: null
             }
         }
 
         return {
             prompt: 'Need an account?',
-            action: 'Register here'
+            action: 'Register here',
+            to: '/register'
         }
     })()
 
@@ -232,9 +244,13 @@ const SignInPage = () => {
                         <Typography variant='h1'>Sign In</Typography>
                         <Typography variant='body2' sx={{ color: theme.palette.grey[600] }}>
                             {registerLinkCopy.prompt}{' '}
-                            <Link style={{ color: `${theme.palette.primary.main}` }} to='/register'>
-                                {registerLinkCopy.action}
-                            </Link>
+                            {registerLinkCopy.to ? (
+                                <Link style={{ color: `${theme.palette.primary.main}` }} to={registerLinkCopy.to}>
+                                    {registerLinkCopy.action}
+                                </Link>
+                            ) : (
+                                registerLinkCopy.action
+                            )}
                             .
                         </Typography>
                     </Stack>

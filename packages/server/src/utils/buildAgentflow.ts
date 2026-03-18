@@ -59,7 +59,13 @@ import { Telemetry } from './telemetry'
 import { getWorkspaceSearchOptions } from '../enterprise/utils/ControllerServiceUtils'
 import { UsageCacheManager } from '../UsageCacheManager'
 import { generateTTSForResponseStream, shouldAutoPlayTTS } from './buildChatflow'
-import { TokenUsageService } from '../enterprise/services/token-usage.service'
+import {
+    extractUsageEntryMetricsFromPayloads,
+    getUnclassifiedTokens,
+    ITokenUsageMetrics,
+    IUsageEntryMetrics,
+    TokenUsageService
+} from '../enterprise/services/token-usage.service'
 import mediaGenerationService from '../services/media-generation'
 import { getAgentflowTokenUsagePayloadSeeds } from './agentflowTokenUsage'
 
@@ -157,9 +163,13 @@ interface ITokenAuditSnapshot {
 
 const MAX_LOOP_COUNT = process.env.MAX_LOOP_COUNT ? parseInt(process.env.MAX_LOOP_COUNT) : 10
 
+const getTokenAuditCollections = (tokenAuditContext?: ICommonObject) => ({
+    tokenUsagePayloads: Array.isArray(tokenAuditContext?.tokenUsagePayloads) ? (tokenAuditContext.tokenUsagePayloads as any[]) : [],
+    credentialAccesses: Array.isArray(tokenAuditContext?.credentialAccesses) ? (tokenAuditContext.credentialAccesses as any[]) : []
+})
+
 const getTokenAuditSnapshot = (tokenAuditContext?: ICommonObject): ITokenAuditSnapshot => {
-    const tokenUsagePayloads = Array.isArray(tokenAuditContext?.tokenUsagePayloads) ? (tokenAuditContext?.tokenUsagePayloads as any[]) : []
-    const credentialAccesses = Array.isArray(tokenAuditContext?.credentialAccesses) ? (tokenAuditContext?.credentialAccesses as any[]) : []
+    const { tokenUsagePayloads, credentialAccesses } = getTokenAuditCollections(tokenAuditContext)
 
     return {
         payloadCount: tokenUsagePayloads.length,
@@ -204,6 +214,115 @@ const getPendingNodeMediaBillingDetails = (result: ICommonObject | undefined): a
 const formatSignedNumber = (value: number): string => {
     if (value > 0) return `+${value}`
     return `${value}`
+}
+
+const formatTokenUsageMetricsForLog = (metrics: ITokenUsageMetrics): string => {
+    const parts = [`input=${metrics.inputTokens}`, `output=${metrics.outputTokens}`, `total=${metrics.totalTokens}`]
+
+    if (metrics.cacheReadTokens > 0) parts.push(`cacheRead=${metrics.cacheReadTokens}`)
+    if (metrics.cacheWriteTokens > 0) parts.push(`cacheWrite=${metrics.cacheWriteTokens}`)
+    if (metrics.reasoningTokens > 0) parts.push(`reasoning=${metrics.reasoningTokens}`)
+    if (metrics.acceptedPredictionTokens > 0) parts.push(`acceptedPrediction=${metrics.acceptedPredictionTokens}`)
+    if (metrics.rejectedPredictionTokens > 0) parts.push(`rejectedPrediction=${metrics.rejectedPredictionTokens}`)
+    if (metrics.audioInputTokens > 0) parts.push(`audioInput=${metrics.audioInputTokens}`)
+    if (metrics.audioOutputTokens > 0) parts.push(`audioOutput=${metrics.audioOutputTokens}`)
+
+    const unclassifiedTokens = getUnclassifiedTokens(metrics)
+    if (unclassifiedTokens > 0) parts.push(`unclassified=${unclassifiedTokens}`)
+
+    if (Object.keys(metrics.additionalBreakdown || {}).length > 0) {
+        parts.push(`breakdown=${JSON.stringify(metrics.additionalBreakdown)}`)
+    }
+
+    return parts.join(' ')
+}
+
+const resolveUsageEntryCredentialAccess = (entry: IUsageEntryMetrics, credentialAccesses: any[]) => {
+    if (entry.tokenUsageCredentialCallId) {
+        const matchedByCallId = credentialAccesses.find((access) => access?.tokenUsageCredentialCallId === entry.tokenUsageCredentialCallId)
+        if (matchedByCallId) return matchedByCallId
+    }
+
+    return credentialAccesses.find(
+        (access) =>
+            (!!entry.credentialId && access?.credentialId === entry.credentialId) ||
+            (!!entry.credentialName && access?.credentialName === entry.credentialName)
+    )
+}
+
+const logAgentflowNodeTokenUsage = ({
+    nodeId,
+    nodeLabel,
+    nodeDurationMs,
+    latestTokenAuditSnapshot,
+    previousTokenAuditSnapshot,
+    tokenAuditContext,
+    nodeResult,
+    nodeMediaBillingDetails
+}: {
+    nodeId: string
+    nodeLabel: string
+    nodeDurationMs: number
+    latestTokenAuditSnapshot: ITokenAuditSnapshot
+    previousTokenAuditSnapshot: ITokenAuditSnapshot
+    tokenAuditContext?: ICommonObject
+    nodeResult?: ICommonObject
+    nodeMediaBillingDetails: any[]
+}) => {
+    const { tokenUsagePayloads, credentialAccesses } = getTokenAuditCollections(tokenAuditContext)
+    const payloadDelta = latestTokenAuditSnapshot.payloadCount - previousTokenAuditSnapshot.payloadCount
+    const credentialAccessDelta = latestTokenAuditSnapshot.credentialAccessCount - previousTokenAuditSnapshot.credentialAccessCount
+    const newTokenUsagePayloads =
+        payloadDelta > 0 ? tokenUsagePayloads.slice(previousTokenAuditSnapshot.payloadCount, latestTokenAuditSnapshot.payloadCount) : []
+    const newCredentialAccesses =
+        credentialAccessDelta > 0
+            ? credentialAccesses.slice(previousTokenAuditSnapshot.credentialAccessCount, latestTokenAuditSnapshot.credentialAccessCount)
+            : []
+
+    const usageLogSource = newTokenUsagePayloads.length ? 'audited_payloads' : nodeResult ? 'execution_fallback' : 'none'
+    const usageExtraction =
+        usageLogSource === 'none'
+            ? undefined
+            : extractUsageEntryMetricsFromPayloads(newTokenUsagePayloads.length ? newTokenUsagePayloads : [nodeResult])
+    const summaryMetrics = usageExtraction?.hasAnyUsage ? usageExtraction.aggregatedMetrics : undefined
+    const usageSummary = summaryMetrics ? formatTokenUsageMetricsForLog(summaryMetrics) : 'input=0 output=0 total=0'
+
+    logger.info(
+        `[agentflow-token] node=${nodeId} label=${nodeLabel} durationMs=${nodeDurationMs} payloads=${
+            latestTokenAuditSnapshot.payloadCount
+        } (${formatSignedNumber(payloadDelta)}) credentialAccesses=${latestTokenAuditSnapshot.credentialAccessCount} (${formatSignedNumber(
+            credentialAccessDelta
+        )}) usageSource=${usageLogSource} usageEntries=${usageExtraction?.selectedEntries || 0} ${usageSummary} models=${JSON.stringify(
+            usageExtraction?.modelTotals || {}
+        )} sources=${JSON.stringify(usageExtraction?.sourceCounts || {})} mediaUsages=${nodeMediaBillingDetails.length}`
+    )
+
+    if (usageExtraction?.hasAnyUsage) {
+        usageExtraction.usageEntryMetrics.forEach((entry, index) => {
+            const matchedAccess = resolveUsageEntryCredentialAccess(entry, newCredentialAccesses)
+            logger.info(
+                `[agentflow-token] node=${nodeId} label=${nodeLabel} usage#${index + 1} callId=${
+                    entry.tokenUsageCredentialCallId || '-'
+                } provider=${entry.provider || matchedAccess?.provider || '-'} model=${
+                    entry.model || matchedAccess?.model || '-'
+                } credentialId=${entry.credentialId || matchedAccess?.credentialId || '-'} credentialName=${
+                    entry.credentialName || matchedAccess?.credentialName || '-'
+                } source=${entry.source || '-'} billingSource=${entry.billingSource || '-'} billingMode=${
+                    entry.billingMode || 'token'
+                } audit=${entry.auditSource || '-'} ${formatTokenUsageMetricsForLog(entry.metrics)}`
+            )
+        })
+    }
+
+    nodeMediaBillingDetails.forEach((mediaBillingDetails, index) => {
+        logger.info(
+            `[agentflow-token] node=${nodeId} label=${nodeLabel} media#${index + 1} callId=${
+                mediaBillingDetails?.tokenUsageCredentialCallId || '-'
+            } provider=${mediaBillingDetails?.provider || 'unknown'} model=${mediaBillingDetails?.model || '-'} credentialId=${
+                mediaBillingDetails?.credentialId || '-'
+            } billingMode=${mediaBillingDetails?.billingMode || '-'} usage=${JSON.stringify(mediaBillingDetails?.usage || {})}`
+        )
+    })
 }
 
 const mergeAndDedupeTokenPayloads = (payloads: any[], tokenAuditContext?: ICommonObject): any[] => {
@@ -2068,6 +2187,7 @@ export const executeAgentFlow = async ({
         if (!reactFlowNode || reactFlowNode === undefined || reactFlowNode.data.name === 'stickyNoteAgentflow') continue
 
         let nodeResult
+        const nodeExecutionStartedAt = Date.now()
         try {
             // Check for abort signal early in the loop
             if (abortController?.signal?.aborted) {
@@ -2201,17 +2321,16 @@ export const executeAgentFlow = async ({
             }
 
             const latestTokenAuditSnapshot = getTokenAuditSnapshot(tokenAuditContext)
-            const payloadDelta = latestTokenAuditSnapshot.payloadCount - tokenAuditSnapshot.payloadCount
-            const credentialAccessDelta = latestTokenAuditSnapshot.credentialAccessCount - tokenAuditSnapshot.credentialAccessCount
-            if (payloadDelta !== 0 || credentialAccessDelta !== 0) {
-                logger.info(
-                    `[agentflow-token] node=${currentNode.nodeId} label=${reactFlowNode.data.label} payloads=${
-                        latestTokenAuditSnapshot.payloadCount
-                    } (${formatSignedNumber(payloadDelta)}) credentialAccesses=${
-                        latestTokenAuditSnapshot.credentialAccessCount
-                    } (${formatSignedNumber(credentialAccessDelta)})`
-                )
-            }
+            logAgentflowNodeTokenUsage({
+                nodeId: currentNode.nodeId,
+                nodeLabel: reactFlowNode.data.label,
+                nodeDurationMs: Date.now() - nodeExecutionStartedAt,
+                latestTokenAuditSnapshot,
+                previousTokenAuditSnapshot: tokenAuditSnapshot,
+                tokenAuditContext,
+                nodeResult,
+                nodeMediaBillingDetails
+            })
             tokenAuditSnapshot = latestTokenAuditSnapshot
 
             // Process node outputs and handle branching

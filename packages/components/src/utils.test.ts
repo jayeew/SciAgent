@@ -1,4 +1,10 @@
-import { buildStructuredOutputExactKeyHint, ensureStructuredOutputInstructions, ensureStructuredOutputJsonHint } from './utils'
+import {
+    buildStructuredOutputExactKeyHint,
+    buildStructuredOutputSchema,
+    ensureStructuredOutputInstructions,
+    ensureStructuredOutputJsonHint,
+    parseWithTypeConversion
+} from './utils'
 
 describe('ensureStructuredOutputJsonHint', () => {
     it('should append a json hint to string prompts when missing', () => {
@@ -53,6 +59,37 @@ describe('buildStructuredOutputExactKeyHint', () => {
                 }
             ])
         ).toContain('- riskLevel: enum(green | yellow | red). 风险等级')
+    })
+})
+
+describe('buildStructuredOutputSchema', () => {
+    it('should build a schema that supports type conversion for fallback parsing', async () => {
+        const schema = buildStructuredOutputSchema([
+            {
+                key: 'chiefComplaint',
+                type: 'string'
+            },
+            {
+                key: 'mustSeekUrgentCare',
+                type: 'boolean'
+            },
+            {
+                key: 'missingCriticalInfo',
+                type: 'stringArray'
+            }
+        ])
+
+        await expect(
+            parseWithTypeConversion(schema, {
+                chiefComplaint: '胸痛',
+                mustSeekUrgentCare: 'true',
+                missingCriticalInfo: ['心电图', '血压']
+            })
+        ).resolves.toEqual({
+            chiefComplaint: '胸痛',
+            mustSeekUrgentCare: true,
+            missingCriticalInfo: ['心电图', '血压']
+        })
     })
 })
 

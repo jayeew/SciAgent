@@ -1,5 +1,5 @@
 import { OTLPTraceExporter as ProtoOTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto'
-import { getPhoenixTracer } from './handler'
+import { createTokenUsageAuditCallbacks, getPhoenixTracer } from './handler'
 
 jest.mock('@opentelemetry/exporter-trace-otlp-proto', () => {
     return {
@@ -46,5 +46,64 @@ describe('URL Handling For Phoenix Tracer', () => {
                 })
             })
         )
+    })
+})
+
+describe('Token usage audit callbacks', () => {
+    it('records aligned payload and credential access metadata exactly once per call id', async () => {
+        const tokenAuditContext: Record<string, any> = {
+            credentialMetadataById: {
+                'credential-1': {
+                    credentialName: 'DeepSeek Credential'
+                }
+            }
+        }
+        const [callback] = createTokenUsageAuditCallbacks({
+            tokenAuditContext,
+            credentialId: 'credential-1',
+            model: 'deepseek-chat',
+            provider: 'chatDeepseek',
+            tokenUsageCredentialCallId: 'call-1'
+        })
+
+        const output = {
+            generations: [
+                [
+                    {
+                        message: {
+                            usage_metadata: {
+                                input_tokens: 10,
+                                output_tokens: 5,
+                                total_tokens: 15
+                            }
+                        }
+                    }
+                ]
+            ]
+        }
+
+        await callback.handleLLMEnd(output)
+        await callback.handleLLMEnd(output)
+
+        expect(tokenAuditContext.tokenUsagePayloads).toEqual([
+            expect.objectContaining({
+                auditSource: 'llm_callback',
+                tokenUsageCredentialCallId: 'call-1',
+                credentialId: 'credential-1',
+                credentialName: 'DeepSeek Credential',
+                model: 'deepseek-chat',
+                provider: 'chatDeepseek',
+                output
+            })
+        ])
+        expect(tokenAuditContext.credentialAccesses).toEqual([
+            expect.objectContaining({
+                credentialId: 'credential-1',
+                credentialName: 'DeepSeek Credential',
+                model: 'deepseek-chat',
+                provider: 'chatDeepseek',
+                tokenUsageCredentialCallId: 'call-1'
+            })
+        ])
     })
 })

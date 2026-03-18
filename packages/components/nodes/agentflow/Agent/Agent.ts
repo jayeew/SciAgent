@@ -13,7 +13,7 @@ import {
     IUsedTool
 } from '../../../src/Interface'
 import { AIMessageChunk, BaseMessageLike, MessageContentText } from '@langchain/core/messages'
-import { AnalyticHandler } from '../../../src/handler'
+import { AnalyticHandler, createTokenUsageAuditCallbacks } from '../../../src/handler'
 import { DEFAULT_SUMMARIZER_TEMPLATE } from '../prompt'
 import { ILLMMessage } from '../Interface.Agentflow'
 import { Tool } from '@langchain/core/tools'
@@ -39,6 +39,13 @@ import {
     ensureStructuredOutputInstructions,
     processTemplateVariables
 } from '../../../src/utils'
+
+interface ITokenUsageAuditMetadata {
+    tokenAuditContext?: ICommonObject
+    credentialId?: string
+    model?: string
+    provider?: string
+}
 
 interface ITool {
     agentSelectedTool: string
@@ -973,6 +980,7 @@ class Agent_Agentflow implements INode {
 
             const llmWithoutToolsBind = (await newLLMNodeInstance.init(newNodeData, '', options)) as BaseChatModel
             let llmNodeInstance = llmWithoutToolsBind
+            const tokenUsageAuditMetadata = this.getTokenUsageAuditMetadata(options, modelConfig, model)
 
             const isStructuredOutput = _agentStructuredOutput && Array.isArray(_agentStructuredOutput) && _agentStructuredOutput.length > 0
 
@@ -1106,7 +1114,8 @@ class Agent_Agentflow implements INode {
                     options,
                     modelConfig,
                     runtimeImageMessagesWithFileRef,
-                    pastImageMessagesWithFileRef
+                    pastImageMessagesWithFileRef,
+                    tokenUsageAuditMetadata
                 })
             } else if (!runtimeChatHistory.length) {
                 /*
@@ -1197,7 +1206,8 @@ class Agent_Agentflow implements INode {
                     isLastNode,
                     recentImageUploads,
                     iterationContext,
-                    isStructuredOutput
+                    isStructuredOutput,
+                    tokenUsageAuditMetadata
                 })
 
                 response = result.response
@@ -1233,10 +1243,14 @@ class Agent_Agentflow implements INode {
                         messages,
                         chatId,
                         abortController,
+                        tokenUsageAuditMetadata,
                         isStructuredOutput
                     )
                 } else {
-                    response = await llmNodeInstance.invoke(messages, { signal: abortController?.signal })
+                    response = await llmNodeInstance.invoke(
+                        messages,
+                        this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+                    )
                 }
             }
 
@@ -1258,7 +1272,8 @@ class Agent_Agentflow implements INode {
                     isLastNode,
                     recentImageUploads,
                     iterationContext,
-                    isStructuredOutput
+                    isStructuredOutput,
+                    tokenUsageAuditMetadata
                 })
 
                 response = result.response
@@ -1433,7 +1448,7 @@ class Agent_Agentflow implements INode {
                     'Convert the following response to the structured output format: ' + finalResponse,
                     _agentStructuredOutput
                 )
-                response = await llmNodeInstance.invoke(prompt, { signal: abortController?.signal })
+                response = await llmNodeInstance.invoke(prompt, this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata))
 
                 if (typeof response === 'object') {
                     finalResponse = '```json\n' + JSON.stringify(response, null, 2) + '\n```'
@@ -1714,6 +1729,45 @@ class Agent_Agentflow implements INode {
         return builtInUsedTools
     }
 
+    private getTokenUsageAuditMetadata(
+        options: ICommonObject,
+        modelConfig: ICommonObject | undefined,
+        provider: string | undefined
+    ): ITokenUsageAuditMetadata {
+        return {
+            tokenAuditContext: options.tokenAuditContext as ICommonObject | undefined,
+            credentialId:
+                (typeof modelConfig?.FLOWISE_CREDENTIAL_ID === 'string' && modelConfig.FLOWISE_CREDENTIAL_ID) ||
+                (typeof modelConfig?.credential === 'string' && modelConfig.credential) ||
+                undefined,
+            model:
+                (typeof modelConfig?.modelName === 'string' && modelConfig.modelName) ||
+                (typeof modelConfig?.model === 'string' && modelConfig.model) ||
+                undefined,
+            provider:
+                (typeof modelConfig?.llmModel === 'string' && modelConfig.llmModel) ||
+                (typeof modelConfig?.agentModel === 'string' && modelConfig.agentModel) ||
+                provider
+        }
+    }
+
+    private buildModelInvocationConfig(
+        abortController: AbortController | undefined,
+        tokenUsageAuditMetadata: ITokenUsageAuditMetadata
+    ): ICommonObject {
+        const callbacks = createTokenUsageAuditCallbacks(tokenUsageAuditMetadata)
+        if (callbacks.length) {
+            return {
+                signal: abortController?.signal,
+                callbacks
+            }
+        }
+
+        return {
+            signal: abortController?.signal
+        }
+    }
+
     /**
      * Handles memory management based on the specified memory type
      */
@@ -1731,7 +1785,8 @@ class Agent_Agentflow implements INode {
         options,
         modelConfig,
         runtimeImageMessagesWithFileRef,
-        pastImageMessagesWithFileRef
+        pastImageMessagesWithFileRef,
+        tokenUsageAuditMetadata
     }: {
         messages: BaseMessageLike[]
         memoryType: string
@@ -1747,6 +1802,7 @@ class Agent_Agentflow implements INode {
         modelConfig: ICommonObject
         runtimeImageMessagesWithFileRef: BaseMessageLike[]
         pastImageMessagesWithFileRef: BaseMessageLike[]
+        tokenUsageAuditMetadata: ITokenUsageAuditMetadata
     }): Promise<void> {
         const { updatedPastMessages, transformedPastMessages } = await getPastChatHistoryImageMessages(pastChatHistory, options)
         pastChatHistory = updatedPastMessages
@@ -1794,12 +1850,12 @@ class Agent_Agentflow implements INode {
                             )
                         }
                     ],
-                    { signal: abortController?.signal }
+                    this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
                 )
                 messages.push({ role: 'assistant', content: summary.content as string })
             } else if (memoryType === 'conversationSummaryBuffer') {
                 // Summary buffer: Summarize messages that exceed token limit
-                await this.handleSummaryBuffer(messages, pastMessages, llmNodeInstance, nodeData, abortController)
+                await this.handleSummaryBuffer(messages, pastMessages, llmNodeInstance, nodeData, abortController, tokenUsageAuditMetadata)
             } else {
                 // Default: Use all messages
                 messages.push(...pastMessages)
@@ -1823,7 +1879,8 @@ class Agent_Agentflow implements INode {
         pastMessages: BaseMessageLike[],
         llmNodeInstance: BaseChatModel,
         nodeData: INodeData,
-        abortController: AbortController
+        abortController: AbortController,
+        tokenUsageAuditMetadata: ITokenUsageAuditMetadata
     ): Promise<void> {
         const maxTokenLimit = (nodeData.inputs?.agentMemoryMaxTokenLimit as number) || 2000
 
@@ -1858,7 +1915,7 @@ class Agent_Agentflow implements INode {
                         content: DEFAULT_SUMMARIZER_TEMPLATE.replace('{conversation}', messagesToSummarizeString)
                     }
                 ],
-                { signal: abortController?.signal }
+                this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
             )
 
             // Add summary as a system message at the beginning, then add remaining messages
@@ -1879,12 +1936,16 @@ class Agent_Agentflow implements INode {
         messages: BaseMessageLike[],
         chatId: string,
         abortController: AbortController,
+        tokenUsageAuditMetadata: ITokenUsageAuditMetadata,
         isStructuredOutput: boolean = false
     ): Promise<AIMessageChunk> {
         let response = new AIMessageChunk('')
 
         try {
-            for await (const chunk of await llmNodeInstance.stream(messages, { signal: abortController?.signal })) {
+            for await (const chunk of await llmNodeInstance.stream(
+                messages,
+                this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+            )) {
                 if (sseStreamer && !isStructuredOutput) {
                     let content = ''
 
@@ -2070,7 +2131,8 @@ class Agent_Agentflow implements INode {
         isLastNode,
         recentImageUploads,
         iterationContext,
-        isStructuredOutput = false
+        isStructuredOutput = false,
+        tokenUsageAuditMetadata
     }: {
         response: AIMessageChunk
         messages: BaseMessageLike[]
@@ -2086,6 +2148,7 @@ class Agent_Agentflow implements INode {
         recentImageUploads?: IFileUpload[]
         iterationContext: ICommonObject
         isStructuredOutput?: boolean
+        tokenUsageAuditMetadata: ITokenUsageAuditMetadata
     }): Promise<{
         response: AIMessageChunk
         usedTools: IUsedTool[]
@@ -2321,10 +2384,11 @@ class Agent_Agentflow implements INode {
                 messages,
                 chatId,
                 abortController,
+                tokenUsageAuditMetadata,
                 isStructuredOutput
             )
         } else {
-            newResponse = await llmNodeInstance.invoke(messages, { signal: abortController?.signal })
+            newResponse = await llmNodeInstance.invoke(messages, this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata))
 
             // Stream non-streaming response if this is the last node
             if (isLastNode && sseStreamer && !isStructuredOutput) {
@@ -2366,7 +2430,8 @@ class Agent_Agentflow implements INode {
                 isLastNode,
                 iterationContext,
                 recentImageUploads,
-                isStructuredOutput
+                isStructuredOutput,
+                tokenUsageAuditMetadata
             })
 
             // Merge results from recursive tool calls
@@ -2410,7 +2475,8 @@ class Agent_Agentflow implements INode {
         isLastNode,
         recentImageUploads,
         iterationContext,
-        isStructuredOutput = false
+        isStructuredOutput = false,
+        tokenUsageAuditMetadata
     }: {
         humanInput: IHumanInput
         humanInputAction: Record<string, any> | undefined
@@ -2427,6 +2493,7 @@ class Agent_Agentflow implements INode {
         recentImageUploads?: IFileUpload[]
         iterationContext: ICommonObject
         isStructuredOutput?: boolean
+        tokenUsageAuditMetadata: ITokenUsageAuditMetadata
     }): Promise<{
         response: AIMessageChunk
         usedTools: IUsedTool[]
@@ -2676,10 +2743,11 @@ class Agent_Agentflow implements INode {
                 messages,
                 chatId,
                 abortController,
+                tokenUsageAuditMetadata,
                 isStructuredOutput
             )
         } else {
-            newResponse = await llmNodeInstance.invoke(messages, { signal: abortController?.signal })
+            newResponse = await llmNodeInstance.invoke(messages, this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata))
 
             // Stream non-streaming response if this is the last node
             if (isLastNode && sseStreamer && !isStructuredOutput) {
@@ -2721,7 +2789,8 @@ class Agent_Agentflow implements INode {
                 isLastNode,
                 iterationContext,
                 recentImageUploads,
-                isStructuredOutput
+                isStructuredOutput,
+                tokenUsageAuditMetadata
             })
 
             // Merge results from recursive tool calls

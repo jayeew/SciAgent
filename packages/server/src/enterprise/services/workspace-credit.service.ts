@@ -700,12 +700,14 @@ export class WorkspaceCreditService {
         usages: Array<{
             credentialId?: string
             credentialName?: string
+            provider?: string
             model?: string
             totalTokens: number
             inputTokens?: number
             outputTokens?: number
             tokenUsageCredentialCallId?: string
             usageBreakdown?: Record<string, any>
+            billUsingTotalTokens?: boolean
         }>
     ) {
         const billingUsages = usages
@@ -736,13 +738,14 @@ export class WorkspaceCreditService {
             .map((usage) => ({
                 credentialId: usage.credentialId,
                 credentialName: usage.credentialName,
+                provider: usage.provider,
                 model: usage.model,
                 source: typeof usage.usageBreakdown?.source === 'string' ? usage.usageBreakdown.source : undefined,
                 tokenUsageCredentialCallId: usage.tokenUsageCredentialCallId,
                 billingMode: 'token' as const,
                 usage: {
-                    inputTokens: usage.inputTokens,
-                    outputTokens: usage.outputTokens,
+                    inputTokens: usage.billUsingTotalTokens ? undefined : usage.inputTokens,
+                    outputTokens: usage.billUsingTotalTokens ? undefined : usage.outputTokens,
                     totalTokens: usage.totalTokens
                 }
             }))

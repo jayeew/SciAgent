@@ -23,7 +23,7 @@ type TokenUsageMetricKeys =
     | 'audioInputTokens'
     | 'audioOutputTokens'
 
-interface ITokenUsageMetrics {
+export interface ITokenUsageMetrics {
     inputTokens: number
     outputTokens: number
     totalTokens: number
@@ -40,16 +40,22 @@ interface ITokenUsageMetrics {
 interface IUsageEntry {
     usage: Record<string, any>
     model?: string
+    provider?: string
+    credentialId?: string
+    credentialName?: string
     source?: string
     billingSource?: string
     billingMode?: string
     tokenUsageCredentialCallId?: string
+    auditSource?: string
 }
 
 interface ICredentialAccess {
     credentialId?: string
     credentialName?: string
     model?: string
+    provider?: string
+    tokenUsageCredentialCallId?: string
 }
 
 interface IRecordTokenUsageInput {
@@ -68,12 +74,28 @@ interface IRecordTokenUsageInput {
 
 type TokenUsageAttributionMode = 'ordered' | 'estimated'
 
-interface IUsageEntryMetrics {
+export interface IUsageEntryMetrics {
     metrics: ITokenUsageMetrics
     model?: string
+    provider?: string
+    credentialId?: string
+    credentialName?: string
+    source?: string
     billingSource?: string
     billingMode?: string
     tokenUsageCredentialCallId?: string
+    auditSource?: string
+}
+
+export interface IExtractedUsageEntryMetricsResult {
+    extractedEntries: number
+    selectedEntries: number
+    hasActualUsageEntry: boolean
+    hasAnyUsage: boolean
+    sourceCounts: Record<string, number>
+    usageEntryMetrics: IUsageEntryMetrics[]
+    aggregatedMetrics: ITokenUsageMetrics
+    modelTotals: Record<string, number>
 }
 
 interface IAttributedUsageCall {
@@ -81,9 +103,11 @@ interface IAttributedUsageCall {
     credentialId?: string
     credentialName: string
     model?: string
+    provider?: string
     billingMode: string
     metrics: ITokenUsageMetrics
     usageBreakdown: Record<string, number | string>
+    billUsingTotalTokens?: boolean
 }
 
 interface ICredentialGroup {
@@ -270,21 +294,102 @@ const actualUsageContainerKeys = new Set(['usage', 'usagemetadata', 'usage_metad
 const estimatedUsageContainerKeys = new Set(['estimatedtokenusage', 'estimated_token_usage', 'tokenusage', 'token_usage'])
 
 const modelKeys = ['model', 'modelName', 'model_name']
+const providerKeys = ['provider', 'providerName', 'provider_name', 'llmModel', 'agentModel']
+const credentialIdKeys = ['credentialId', 'credential_id', 'FLOWISE_CREDENTIAL_ID', 'flowise_credential_id', 'credential']
+const credentialNameKeys = ['credentialName', 'credential_name']
+
+interface IUsageAuditContext {
+    model?: string
+    provider?: string
+    credentialId?: string
+    credentialName?: string
+    tokenUsageCredentialCallId?: string
+    auditSource?: string
+}
+
+const getStringValueFromKeys = (obj: Record<string, any>, keys: string[]): string | undefined => {
+    for (const key of keys) {
+        if (typeof obj[key] === 'string' && obj[key].trim()) return obj[key].trim()
+    }
+
+    return undefined
+}
 
 const getModelFromObject = (obj: Record<string, any>, inheritedModel?: string): string | undefined => {
-    for (const key of modelKeys) {
-        if (typeof obj[key] === 'string' && obj[key]) return obj[key]
-    }
+    const directModel = getStringValueFromKeys(obj, modelKeys)
+    if (directModel) return directModel
 
     const responseMetadata = obj.response_metadata || obj.responseMetadata
     if (responseMetadata && typeof responseMetadata === 'object') {
-        for (const key of modelKeys) {
-            if (typeof responseMetadata[key] === 'string' && responseMetadata[key]) return responseMetadata[key]
-        }
+        const responseMetadataModel = getStringValueFromKeys(responseMetadata as Record<string, any>, modelKeys)
+        if (responseMetadataModel) return responseMetadataModel
+    }
+
+    const modelConfigCandidates = [obj.llmModelConfig, obj.agentModelConfig, obj.input?.llmModelConfig, obj.input?.agentModelConfig]
+    for (const candidate of modelConfigCandidates) {
+        if (!candidate || typeof candidate !== 'object') continue
+        const configuredModel = getStringValueFromKeys(candidate as Record<string, any>, modelKeys)
+        if (configuredModel) return configuredModel
     }
 
     return inheritedModel
 }
+
+const getProviderFromObject = (obj: Record<string, any>, inheritedProvider?: string): string | undefined => {
+    const directProvider = getStringValueFromKeys(obj, providerKeys)
+    if (directProvider) return directProvider
+
+    const responseMetadata = obj.response_metadata || obj.responseMetadata
+    if (responseMetadata && typeof responseMetadata === 'object') {
+        const responseMetadataProvider = getStringValueFromKeys(responseMetadata as Record<string, any>, providerKeys)
+        if (responseMetadataProvider) return responseMetadataProvider
+    }
+
+    const modelConfigCandidates = [obj.llmModelConfig, obj.agentModelConfig, obj.input?.llmModelConfig, obj.input?.agentModelConfig]
+    for (const candidate of modelConfigCandidates) {
+        if (!candidate || typeof candidate !== 'object') continue
+        const configuredProvider = getStringValueFromKeys(candidate as Record<string, any>, providerKeys)
+        if (configuredProvider) return configuredProvider
+    }
+
+    return inheritedProvider
+}
+
+const getCredentialIdFromObject = (obj: Record<string, any>, inheritedCredentialId?: string): string | undefined => {
+    const directCredentialId = getStringValueFromKeys(obj, credentialIdKeys)
+    if (directCredentialId) return directCredentialId
+
+    const modelConfigCandidates = [obj.llmModelConfig, obj.agentModelConfig, obj.input?.llmModelConfig, obj.input?.agentModelConfig]
+    for (const candidate of modelConfigCandidates) {
+        if (!candidate || typeof candidate !== 'object') continue
+        const credentialId = getStringValueFromKeys(candidate as Record<string, any>, credentialIdKeys)
+        if (credentialId) return credentialId
+    }
+
+    return inheritedCredentialId
+}
+
+const getCredentialNameFromObject = (obj: Record<string, any>, inheritedCredentialName?: string): string | undefined => {
+    const directCredentialName = getStringValueFromKeys(obj, credentialNameKeys)
+    if (directCredentialName) return directCredentialName
+
+    return inheritedCredentialName
+}
+
+const getAuditSourceFromObject = (obj: Record<string, any>, inheritedAuditSource?: string): string | undefined => {
+    if (typeof obj.auditSource === 'string' && obj.auditSource.trim()) return obj.auditSource.trim()
+
+    return inheritedAuditSource
+}
+
+const resolveUsageAuditContext = (obj: Record<string, any>, currentContext: IUsageAuditContext = {}): IUsageAuditContext => ({
+    model: getModelFromObject(obj, currentContext.model),
+    provider: getProviderFromObject(obj, currentContext.provider),
+    credentialId: getCredentialIdFromObject(obj, currentContext.credentialId),
+    credentialName: getCredentialNameFromObject(obj, currentContext.credentialName),
+    tokenUsageCredentialCallId: getTokenUsageCredentialCallIdFromObject(obj) || currentContext.tokenUsageCredentialCallId,
+    auditSource: getAuditSourceFromObject(obj, currentContext.auditSource)
+})
 
 const getBillingSourceFromObject = (obj: Record<string, any>): string | undefined => {
     if (typeof obj.source !== 'string') return undefined
@@ -342,7 +447,7 @@ const isEstimatedUsageSource = (source?: string): boolean => {
     return estimatedUsageContainerKeys.has(source)
 }
 
-const pickPreferredUsageEntry = (obj: Record<string, any>, model?: string): IUsageEntry | undefined => {
+const pickPreferredUsageEntry = (obj: Record<string, any>, context: IUsageAuditContext = {}): IUsageEntry | undefined => {
     type UsageCandidate = {
         usage: Record<string, any>
         source: string
@@ -373,11 +478,15 @@ const pickPreferredUsageEntry = (obj: Record<string, any>, model?: string): IUsa
         if (hasUsageSignals(obj)) {
             return {
                 usage: obj,
-                model,
+                model: context.model,
+                provider: context.provider,
+                credentialId: context.credentialId,
+                credentialName: context.credentialName,
                 source: 'direct_usage_object',
                 billingSource: getBillingSourceFromObject(obj),
                 billingMode: getBillingModeFromObject(obj),
-                tokenUsageCredentialCallId: getTokenUsageCredentialCallIdFromObject(obj)
+                tokenUsageCredentialCallId: context.tokenUsageCredentialCallId,
+                auditSource: context.auditSource
             }
         }
         return undefined
@@ -390,11 +499,15 @@ const pickPreferredUsageEntry = (obj: Record<string, any>, model?: string): IUsa
 
     return {
         usage: candidates[0].usage,
-        model,
+        model: context.model,
+        provider: context.provider,
+        credentialId: context.credentialId,
+        credentialName: context.credentialName,
         source: candidates[0].source,
         billingSource: getBillingSourceFromObject(obj),
         billingMode: getBillingModeFromObject(obj),
-        tokenUsageCredentialCallId: getTokenUsageCredentialCallIdFromObject(obj)
+        tokenUsageCredentialCallId: context.tokenUsageCredentialCallId,
+        auditSource: context.auditSource
     }
 }
 
@@ -443,24 +556,45 @@ const buildUsageBreakdown = (
     return usageBreakdown
 }
 
+export const getUnclassifiedTokens = (metrics: ITokenUsageMetrics): number => {
+    const normalizedUnclassifiedTokens = metrics.totalTokens - metrics.inputTokens - metrics.outputTokens
+    return normalizedUnclassifiedTokens > 0 ? normalizedUnclassifiedTokens : 0
+}
+
+const withUsageDiagnostics = (
+    usageBreakdown: Record<string, number | string>,
+    metrics: ITokenUsageMetrics
+): Record<string, number | string> => {
+    const nextUsageBreakdown = {
+        ...usageBreakdown
+    }
+    const unclassifiedTokens = getUnclassifiedTokens(metrics)
+
+    if (unclassifiedTokens > 0) {
+        nextUsageBreakdown.unclassified_tokens = safeToNumber(nextUsageBreakdown.unclassified_tokens) + unclassifiedTokens
+    }
+
+    return nextUsageBreakdown
+}
+
 const buildCredentialGroupKey = (credentialId: string | undefined, credentialName: string, model: string | undefined): string =>
     `${credentialId || ''}:${credentialName}:${model || '__unknown_model__'}`
 
 const extractUsageEntriesFromPayload = (payload: any): IUsageEntry[] => {
     const entries: IUsageEntry[] = []
 
-    const walk = (value: any, currentModel?: string) => {
+    const walk = (value: any, currentContext: IUsageAuditContext = {}) => {
         if (!value || typeof value !== 'object') return
 
         if (Array.isArray(value)) {
             for (const item of value) {
-                walk(item, currentModel)
+                walk(item, currentContext)
             }
             return
         }
 
-        const nextModel = getModelFromObject(value, currentModel)
-        const preferredEntry = pickPreferredUsageEntry(value as Record<string, any>, nextModel)
+        const nextContext = resolveUsageAuditContext(value as Record<string, any>, currentContext)
+        const preferredEntry = pickPreferredUsageEntry(value as Record<string, any>, nextContext)
 
         if (preferredEntry) {
             entries.push(preferredEntry)
@@ -469,7 +603,7 @@ const extractUsageEntriesFromPayload = (payload: any): IUsageEntry[] => {
 
         for (const child of Object.values(value)) {
             if (!child || typeof child !== 'object') continue
-            walk(child, nextModel)
+            walk(child, nextContext)
         }
     }
 
@@ -540,6 +674,53 @@ const hasAnyUsage = (metrics: ITokenUsageMetrics): boolean => {
         metrics.audioOutputTokens > 0 ||
         additionalBreakdownTotal > 0
     )
+}
+
+export const extractUsageEntryMetricsFromPayloads = (usagePayloads: any[]): IExtractedUsageEntryMetricsResult => {
+    const usageEntries = usagePayloads.flatMap((payload) => extractUsageEntriesFromPayload(payload))
+    const hasActualUsageEntry = usageEntries.some((entry) => isActualUsageSource(entry.source))
+    const selectedUsageEntries = hasActualUsageEntry ? usageEntries.filter((entry) => !isEstimatedUsageSource(entry.source)) : usageEntries
+    const sourceCounts = selectedUsageEntries.reduce((acc, entry) => {
+        const key = entry.source || 'unknown_source'
+        acc[key] = (acc[key] || 0) + 1
+        return acc
+    }, {} as Record<string, number>)
+
+    const usageEntryMetrics = selectedUsageEntries.map((entry) => ({
+        metrics: deriveMetricsFromUsage(entry.usage),
+        model: typeof entry.model === 'string' && entry.model.trim() ? entry.model.trim() : undefined,
+        provider: typeof entry.provider === 'string' && entry.provider.trim() ? entry.provider.trim() : undefined,
+        credentialId: typeof entry.credentialId === 'string' && entry.credentialId.trim() ? entry.credentialId.trim() : undefined,
+        credentialName: typeof entry.credentialName === 'string' && entry.credentialName.trim() ? entry.credentialName.trim() : undefined,
+        source: typeof entry.source === 'string' && entry.source.trim() ? entry.source.trim() : undefined,
+        billingSource: typeof entry.billingSource === 'string' && entry.billingSource.trim() ? entry.billingSource.trim() : undefined,
+        billingMode: typeof entry.billingMode === 'string' && entry.billingMode.trim() ? entry.billingMode.trim() : undefined,
+        tokenUsageCredentialCallId:
+            typeof entry.tokenUsageCredentialCallId === 'string' && entry.tokenUsageCredentialCallId.trim()
+                ? entry.tokenUsageCredentialCallId.trim()
+                : undefined,
+        auditSource: typeof entry.auditSource === 'string' && entry.auditSource.trim() ? entry.auditSource.trim() : undefined
+    })) as IUsageEntryMetrics[]
+
+    const aggregatedMetrics = createEmptyMetrics()
+    const modelTotals: Record<string, number> = {}
+
+    for (const entry of usageEntryMetrics) {
+        addMetrics(aggregatedMetrics, entry.metrics)
+        const modelKey = entry.model || 'unknown'
+        modelTotals[modelKey] = (modelTotals[modelKey] || 0) + entry.metrics.totalTokens
+    }
+
+    return {
+        extractedEntries: usageEntries.length,
+        selectedEntries: selectedUsageEntries.length,
+        hasActualUsageEntry,
+        hasAnyUsage: hasAnyUsage(aggregatedMetrics),
+        sourceCounts,
+        usageEntryMetrics,
+        aggregatedMetrics,
+        modelTotals
+    }
 }
 
 const parseJsonRecord = (value?: string): Record<string, any> => {
@@ -638,8 +819,8 @@ export class TokenUsageService {
             return
         }
 
-        const usageEntries = usagePayloads.flatMap((payload) => extractUsageEntriesFromPayload(payload))
-        if (!usageEntries.length) {
+        const usageExtraction = extractUsageEntryMetricsFromPayloads(usagePayloads)
+        if (!usageExtraction.extractedEntries) {
             const firstPayloadKeys =
                 usagePayloads?.[0] && typeof usagePayloads[0] === 'object' ? Object.keys(usagePayloads[0]).slice(0, 30) : []
             logger.warn(
@@ -650,58 +831,30 @@ export class TokenUsageService {
             return
         }
 
-        const hasActualUsageEntry = usageEntries.some((entry) => isActualUsageSource(entry.source))
-        const selectedUsageEntries = hasActualUsageEntry
-            ? usageEntries.filter((entry) => !isEstimatedUsageSource(entry.source))
-            : usageEntries
-
-        if (!selectedUsageEntries.length) {
+        if (!usageExtraction.selectedEntries) {
             logger.warn(
-                `[token-usage] skip: usage entries extracted=${usageEntries.length}, but all entries were filtered out. flowType=${
-                    input.flowType
-                } chatId=${input.chatId || '-'}`
+                `[token-usage] skip: usage entries extracted=${
+                    usageExtraction.extractedEntries
+                }, but all entries were filtered out. flowType=${input.flowType} chatId=${input.chatId || '-'}`
             )
             return
         }
 
-        if (hasActualUsageEntry && selectedUsageEntries.length !== usageEntries.length) {
+        if (usageExtraction.hasActualUsageEntry && usageExtraction.selectedEntries !== usageExtraction.extractedEntries) {
             logger.info(
-                `[token-usage] filtered estimated usage entries: before=${usageEntries.length} after=${
-                    selectedUsageEntries.length
+                `[token-usage] filtered estimated usage entries: before=${usageExtraction.extractedEntries} after=${
+                    usageExtraction.selectedEntries
                 } flowType=${input.flowType} chatId=${input.chatId || '-'}`
             )
         }
 
-        const sourceCounts = selectedUsageEntries.reduce((acc, entry) => {
-            const key = entry.source || 'unknown_source'
-            acc[key] = (acc[key] || 0) + 1
-            return acc
-        }, {} as Record<string, number>)
-        logger.info(`[token-usage] selected usage sources: ${JSON.stringify(sourceCounts)}`)
+        logger.info(`[token-usage] selected usage sources: ${JSON.stringify(usageExtraction.sourceCounts)}`)
 
-        const usageEntryMetrics = selectedUsageEntries.map((entry) => ({
-            metrics: deriveMetricsFromUsage(entry.usage),
-            model: typeof entry.model === 'string' && entry.model.trim() ? entry.model.trim() : undefined,
-            billingSource: typeof entry.billingSource === 'string' && entry.billingSource.trim() ? entry.billingSource.trim() : undefined,
-            billingMode: typeof entry.billingMode === 'string' && entry.billingMode.trim() ? entry.billingMode.trim() : undefined,
-            tokenUsageCredentialCallId:
-                typeof entry.tokenUsageCredentialCallId === 'string' && entry.tokenUsageCredentialCallId.trim()
-                    ? entry.tokenUsageCredentialCallId.trim()
-                    : undefined
-        })) as IUsageEntryMetrics[]
+        const { usageEntryMetrics, aggregatedMetrics, modelTotals } = usageExtraction
 
-        const aggregatedMetrics = createEmptyMetrics()
-        const modelTotals: Record<string, number> = {}
-
-        for (const entry of usageEntryMetrics) {
-            addMetrics(aggregatedMetrics, entry.metrics)
-            const modelKey = entry.model || 'unknown'
-            modelTotals[modelKey] = (modelTotals[modelKey] || 0) + entry.metrics.totalTokens
-        }
-
-        if (!hasAnyUsage(aggregatedMetrics)) {
+        if (!usageExtraction.hasAnyUsage) {
             logger.warn(
-                `[token-usage] skip: extracted usage entries=${selectedUsageEntries.length} but aggregated metrics are zero. flowType=${
+                `[token-usage] skip: extracted usage entries=${usageExtraction.selectedEntries} but aggregated metrics are zero. flowType=${
                     input.flowType
                 } chatId=${input.chatId || '-'}`
             )
@@ -709,7 +862,7 @@ export class TokenUsageService {
         }
 
         logger.info(
-            `[token-usage] extracted entries=${selectedUsageEntries.length} total=${aggregatedMetrics.totalTokens} input=${
+            `[token-usage] extracted entries=${usageExtraction.selectedEntries} total=${aggregatedMetrics.totalTokens} input=${
                 aggregatedMetrics.inputTokens
             } output=${aggregatedMetrics.outputTokens} models=${JSON.stringify(modelTotals)}`
         )
@@ -746,11 +899,15 @@ export class TokenUsageService {
         const normalizedCredentialAccesses = credentialAccesses.map((access) => ({
             credentialId: access.credentialId,
             credentialName: access.credentialName || 'Unknown Credential',
-            model: typeof access.model === 'string' && access.model.trim() ? access.model.trim() : undefined
+            model: typeof access.model === 'string' && access.model.trim() ? access.model.trim() : undefined,
+            provider: typeof access.provider === 'string' && access.provider.trim() ? access.provider.trim() : undefined,
+            tokenUsageCredentialCallId:
+                typeof access.tokenUsageCredentialCallId === 'string' && access.tokenUsageCredentialCallId.trim()
+                    ? access.tokenUsageCredentialCallId.trim()
+                    : undefined
         }))
 
         const topModel = getTopModel(modelTotals)
-        const canAttributeByAccessOrder = normalizedCredentialAccesses.length === usageEntryMetrics.length && usageEntryMetrics.length > 0
 
         const credentialRepository = this.dataSource.getRepository(TokenUsageCredential)
         const credentialCallRepository = this.dataSource.getRepository(TokenUsageCredentialCall)
@@ -761,78 +918,170 @@ export class TokenUsageService {
             tokenUsageCredentialCallId: string
             credentialId?: string
             credentialName?: string
+            provider?: string
             model?: string
             totalTokens: number
             inputTokens?: number
             outputTokens?: number
             usageBreakdown?: Record<string, number | string>
+            billUsingTotalTokens?: boolean
         }> = []
 
-        if (canAttributeByAccessOrder) {
-            logger.info(
-                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length}`
+        const credentialAccessByCallId = normalizedCredentialAccesses.reduce((acc, access) => {
+            if (access.tokenUsageCredentialCallId) {
+                acc.set(access.tokenUsageCredentialCallId, access)
+            }
+            return acc
+        }, new Map<string, (typeof normalizedCredentialAccesses)[number]>())
+
+        const singleCredentialAccessMap = normalizedCredentialAccesses.reduce((acc, access) => {
+            const key = `${access.credentialId || ''}:${access.credentialName}`
+            if (!acc.has(key)) {
+                acc.set(key, access)
+            }
+            return acc
+        }, new Map<string, (typeof normalizedCredentialAccesses)[number]>())
+        const singleCredentialAccess = singleCredentialAccessMap.size === 1 ? Array.from(singleCredentialAccessMap.values())[0] : undefined
+
+        const canAttributeByCallId =
+            usageEntryMetrics.length > 0 &&
+            usageEntryMetrics.every(
+                (entry) => !!entry.tokenUsageCredentialCallId && credentialAccessByCallId.has(entry.tokenUsageCredentialCallId)
             )
+        const canAttributeByUsageEntryMetadata =
+            usageEntryMetrics.length > 0 && usageEntryMetrics.every((entry) => !!entry.credentialId || !!entry.credentialName)
+        const canAttributeByAccessOrder = normalizedCredentialAccesses.length === usageEntryMetrics.length && usageEntryMetrics.length > 0
+        const canAttributeBySingleCredential =
+            !canAttributeByCallId && !canAttributeByUsageEntryMetadata && !canAttributeByAccessOrder && !!singleCredentialAccess
 
-            for (let index = 0; index < normalizedCredentialAccesses.length; index += 1) {
-                const access = normalizedCredentialAccesses[index]
-                const usageEntry = usageEntryMetrics[index]
-                const resolvedModel = access.model || usageEntry.model || topModel
-                const billingMode = usageEntry.billingMode || 'token'
-                const usageBreakdown = buildUsageBreakdown(
-                    usageEntry.metrics.additionalBreakdown,
-                    usageEntry.billingSource,
-                    usageEntry.billingMode
+        const appendOrderedAttributedUsage = (
+            usageEntry: IUsageEntryMetrics,
+            access: {
+                credentialId?: string
+                credentialName?: string
+                model?: string
+                provider?: string
+            }
+        ) => {
+            const resolvedCredentialId = access.credentialId || usageEntry.credentialId
+            const resolvedCredentialName = access.credentialName || usageEntry.credentialName || 'Unknown Credential'
+            const resolvedModel = access.model || usageEntry.model || topModel
+            const resolvedProvider = access.provider || usageEntry.provider
+            const billingMode = usageEntry.billingMode || 'token'
+            const usageBreakdown = withUsageDiagnostics(
+                buildUsageBreakdown(usageEntry.metrics.additionalBreakdown, usageEntry.billingSource, usageEntry.billingMode),
+                usageEntry.metrics
+            )
+            const callId = usageEntry.tokenUsageCredentialCallId || uuidv4()
+            const useTotalTokensForBilling = usageEntry.auditSource !== 'llm_callback' && getUnclassifiedTokens(usageEntry.metrics) > 0
+            const groupKey = buildCredentialGroupKey(resolvedCredentialId, resolvedCredentialName, resolvedModel)
+
+            if (useTotalTokensForBilling) {
+                logger.info(
+                    `[token-usage] fallback usage billing by total tokens callId=${callId} model=${resolvedModel || 'unknown'} total=${
+                        usageEntry.metrics.totalTokens
+                    } input=${usageEntry.metrics.inputTokens} output=${usageEntry.metrics.outputTokens} unclassified=${
+                        usageBreakdown.unclassified_tokens || 0
+                    }`
                 )
-                const callId = usageEntry.tokenUsageCredentialCallId || uuidv4()
-                const groupKey = buildCredentialGroupKey(access.credentialId, access.credentialName, resolvedModel)
+            }
 
-                if (!credentialGroups.has(groupKey)) {
-                    const metrics = createEmptyMetrics()
-                    credentialGroups.set(groupKey, {
-                        key: groupKey,
-                        credentialId: access.credentialId,
-                        credentialName: access.credentialName,
-                        model: resolvedModel,
-                        attributionMode: 'ordered',
-                        usageCount: 0,
-                        metrics,
-                        usageBreakdown: {},
-                        calls: []
-                    })
-                }
-
-                const group = credentialGroups.get(groupKey)
-                if (!group) continue
-
-                group.usageCount += 1
-                addMetrics(group.metrics, usageEntry.metrics)
-                group.calls.push({
-                    id: callId,
-                    credentialId: access.credentialId,
-                    credentialName: access.credentialName,
+            if (!credentialGroups.has(groupKey)) {
+                const metrics = createEmptyMetrics()
+                credentialGroups.set(groupKey, {
+                    key: groupKey,
+                    credentialId: resolvedCredentialId,
+                    credentialName: resolvedCredentialName,
                     model: resolvedModel,
-                    billingMode,
-                    metrics: usageEntry.metrics,
-                    usageBreakdown
+                    attributionMode: 'ordered',
+                    usageCount: 0,
+                    metrics,
+                    usageBreakdown: {},
+                    calls: []
                 })
-                group.usageBreakdown = buildUsageBreakdown(
+            }
+
+            const group = credentialGroups.get(groupKey)
+            if (!group) return
+
+            group.usageCount += 1
+            addMetrics(group.metrics, usageEntry.metrics)
+            group.calls.push({
+                id: callId,
+                credentialId: resolvedCredentialId,
+                credentialName: resolvedCredentialName,
+                provider: resolvedProvider,
+                model: resolvedModel,
+                billingMode,
+                metrics: usageEntry.metrics,
+                usageBreakdown,
+                billUsingTotalTokens: useTotalTokensForBilling
+            })
+            group.usageBreakdown = withUsageDiagnostics(
+                buildUsageBreakdown(
                     group.metrics.additionalBreakdown,
                     getSharedBillingSource(
                         group.calls.map((call) => (typeof call.usageBreakdown.source === 'string' ? call.usageBreakdown.source : undefined))
                     ),
                     getSharedBillingMode(group.calls.map((call) => call.billingMode))
-                )
+                ),
+                group.metrics
+            )
 
-                orderedChargeUsages.push({
-                    tokenUsageCredentialCallId: callId,
-                    credentialId: access.credentialId,
-                    credentialName: access.credentialName,
-                    model: resolvedModel,
-                    totalTokens: usageEntry.metrics.totalTokens,
-                    inputTokens: usageEntry.metrics.inputTokens,
-                    outputTokens: usageEntry.metrics.outputTokens,
-                    usageBreakdown
-                })
+            orderedChargeUsages.push({
+                tokenUsageCredentialCallId: callId,
+                credentialId: resolvedCredentialId,
+                credentialName: resolvedCredentialName,
+                provider: resolvedProvider,
+                model: resolvedModel,
+                totalTokens: usageEntry.metrics.totalTokens,
+                inputTokens: usageEntry.metrics.inputTokens,
+                outputTokens: usageEntry.metrics.outputTokens,
+                usageBreakdown,
+                billUsingTotalTokens: useTotalTokensForBilling
+            })
+        }
+
+        if (canAttributeByCallId) {
+            logger.info(
+                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length} reason=call_id`
+            )
+
+            for (const usageEntry of usageEntryMetrics) {
+                const access = credentialAccessByCallId.get(usageEntry.tokenUsageCredentialCallId || '')
+                if (!access) continue
+                appendOrderedAttributedUsage(usageEntry, access)
+            }
+        } else if (canAttributeByUsageEntryMetadata) {
+            logger.info(
+                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length} reason=entry_metadata`
+            )
+
+            for (const usageEntry of usageEntryMetrics) {
+                const matchingAccess =
+                    normalizedCredentialAccesses.find(
+                        (access) =>
+                            (!!usageEntry.credentialId && access.credentialId === usageEntry.credentialId) ||
+                            (!!usageEntry.credentialName && access.credentialName === usageEntry.credentialName)
+                    ) || usageEntry
+
+                appendOrderedAttributedUsage(usageEntry, matchingAccess)
+            }
+        } else if (canAttributeByAccessOrder) {
+            logger.info(
+                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length} reason=access_order`
+            )
+
+            for (let index = 0; index < normalizedCredentialAccesses.length; index += 1) {
+                appendOrderedAttributedUsage(usageEntryMetrics[index], normalizedCredentialAccesses[index])
+            }
+        } else if (canAttributeBySingleCredential && singleCredentialAccess) {
+            logger.info(
+                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length} reason=single_credential`
+            )
+
+            for (const usageEntry of usageEntryMetrics) {
+                appendOrderedAttributedUsage(usageEntry, singleCredentialAccess)
             }
         } else {
             logger.info(
@@ -917,7 +1166,10 @@ export class TokenUsageService {
                     attributionMode: 'estimated',
                     usageCount: group.usageCount,
                     metrics,
-                    usageBreakdown: buildUsageBreakdown(additionalBreakdown, sharedBillingSource, sharedBillingMode),
+                    usageBreakdown: withUsageDiagnostics(
+                        buildUsageBreakdown(additionalBreakdown, sharedBillingSource, sharedBillingMode),
+                        metrics
+                    ),
                     calls: []
                 })
             })
@@ -955,7 +1207,7 @@ export class TokenUsageService {
 
         let savedCredentialCallRows: TokenUsageCredentialCall[] = []
 
-        if (canAttributeByAccessOrder && credentialGroupList.length) {
+        if (orderedChargeUsages.length && credentialGroupList.length) {
             const credentialRowByKey = new Map(
                 savedCredentialRows.map((row) => [
                     buildCredentialGroupKey(row.credentialId, row.credentialName || 'Unknown Credential', row.model),
@@ -1005,7 +1257,7 @@ export class TokenUsageService {
         const creditResult = await workspaceCreditService.consumeCreditByCredentialUsages(
             input.workspaceId,
             input.userId,
-            canAttributeByAccessOrder
+            orderedChargeUsages.length
                 ? orderedChargeUsages
                 : savedCredentialRows.map((row) => ({
                       credentialId: row.credentialId,
@@ -1014,7 +1266,8 @@ export class TokenUsageService {
                       totalTokens: row.totalTokens || 0,
                       inputTokens: row.inputTokens || 0,
                       outputTokens: row.outputTokens || 0,
-                      usageBreakdown: parseJsonRecord(row.usageBreakdown)
+                      usageBreakdown: parseJsonRecord(row.usageBreakdown),
+                      billUsingTotalTokens: safeToNumber(parseJsonRecord(row.usageBreakdown).unclassified_tokens) > 0
                   }))
         )
 
