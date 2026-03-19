@@ -19,6 +19,7 @@ import { Moderation, checkInputs, streamResponse } from '../../moderation/Modera
 import { formatResponse } from '../../outputparsers/OutputParserHelpers'
 import { addSingleFileToStorage } from '../../../src/storageUtils'
 import { DynamicStructuredTool } from '../../tools/OpenAPIToolkit/core'
+import { v4 as uuidv4 } from 'uuid'
 
 const lenticularBracketRegex = /【[^】]*】/g
 const imageRegex = /<img[^>]*\/>/g
@@ -238,7 +239,14 @@ class OpenAIAssistant_Agents implements INode {
         if (!openAIApiKey) throw new Error(`OpenAI ApiKey not found`)
 
         const openai = new OpenAI({ apiKey: openAIApiKey })
-        const getRunUsagePayload = async (threadId: string, runId: string) => {
+        const assistantCredentialId = assistant.credential ?? undefined
+        const assistantCredentialName =
+            assistantCredentialId && options.tokenAuditContext?.credentialMetadataById
+                ? (options.tokenAuditContext.credentialMetadataById as Record<string, { credentialName?: string }>)[assistantCredentialId]
+                      ?.credentialName
+                : undefined
+
+        const getRunUsagePayload = async (threadId: string, runId: string, tokenUsageCredentialCallId: string) => {
             if (!threadId || !runId) return {}
 
             try {
@@ -248,8 +256,17 @@ class OpenAIAssistant_Agents implements INode {
 
                 if (completedRun?.model) responseMetadata.model = completedRun.model
                 if (completedRun?.status) responseMetadata.status = completedRun.status
+                responseMetadata.provider = 'openai'
 
                 return {
+                    auditSource: 'openai_assistant_sdk',
+                    ...(assistantCredentialId ? { credentialId: assistantCredentialId } : {}),
+                    ...(assistantCredentialName ? { credentialName: assistantCredentialName } : {}),
+                    provider: 'openai',
+                    model: completedRun?.model || 'openai-assistant',
+                    source: 'llm',
+                    billingMode: 'token',
+                    tokenUsageCredentialCallId,
                     ...(usageMetadata && { usageMetadata }),
                     ...(Object.keys(responseMetadata).length > 0 && { responseMetadata })
                 }
@@ -383,6 +400,7 @@ class OpenAIAssistant_Agents implements INode {
             }
 
             if (shouldStreamResponse) {
+                const assistantRunCallId = uuidv4()
                 const streamThread = await openai.beta.threads.runs.create(threadId, {
                     assistant_id: retrievedAssistant.id,
                     stream: true,
@@ -648,7 +666,7 @@ class OpenAIAssistant_Agents implements INode {
                 let llmOutput = text.replace(imageRegex, '')
                 llmOutput = llmOutput.replace('<br/>', '')
 
-                const runUsagePayload = await getRunUsagePayload(threadId, runThreadId)
+                const runUsagePayload = await getRunUsagePayload(threadId, runThreadId, assistantRunCallId)
 
                 await analyticHandlers.onLLMEnd(llmIds, llmOutput)
                 await analyticHandlers.onChainEnd(parentIds, messageData, true)
@@ -789,6 +807,7 @@ class OpenAIAssistant_Agents implements INode {
             }
 
             // Polling run status
+            const assistantRunCallId = uuidv4()
             const runThread = await openai.beta.threads.runs.create(threadId, {
                 assistant_id: retrievedAssistant.id,
                 tool_choice: toolChoice,
@@ -941,7 +960,7 @@ class OpenAIAssistant_Agents implements INode {
             let llmOutput = returnVal.replace(imageRegex, '')
             llmOutput = llmOutput.replace('<br/>', '')
 
-            const runUsagePayload = await getRunUsagePayload(threadId, runThreadId)
+            const runUsagePayload = await getRunUsagePayload(threadId, runThreadId, assistantRunCallId)
 
             await analyticHandlers.onLLMEnd(llmIds, llmOutput)
             await analyticHandlers.onChainEnd(parentIds, messageData, true)

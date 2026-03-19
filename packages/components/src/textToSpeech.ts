@@ -5,6 +5,7 @@ import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js'
 import { Readable } from 'node:stream'
 import type { ReadableStream } from 'node:stream/web'
 import axios from 'axios'
+import { v4 as uuidv4 } from 'uuid'
 
 const TextToSpeechType = {
     OPENAI_TTS: 'openai',
@@ -16,6 +17,7 @@ export interface ITextToSpeechBillingResult {
     provider: string
     credentialId?: string
     model?: string
+    tokenUsageCredentialCallId?: string
     usage?: {
         characters?: number
     }
@@ -144,18 +146,50 @@ const buildAlibabaTTSPayload = (text: string, textToSpeechConfig: ICommonObject)
     }
 }
 
-const countTextToSpeechCharacters = (text: string): number => {
-    return Array.from(text || '').length
+const normalizeUsageCount = (value: unknown) => {
+    const numericValue = Number(value)
+    return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : undefined
 }
 
+const extractTextToSpeechUsageCharacters = (value: unknown): number | undefined => {
+    if (!value || typeof value !== 'object') return undefined
+
+    const rawValue = value as Record<string, unknown>
+    const usageCandidates = [rawValue, rawValue.usage, rawValue.output, rawValue.output_usage, rawValue.outputUsage].filter(
+        (candidate) => candidate && typeof candidate === 'object'
+    ) as Record<string, unknown>[]
+
+    for (const usageCandidate of usageCandidates) {
+        const directCharacters =
+            normalizeUsageCount(usageCandidate.characters) ||
+            normalizeUsageCount(usageCandidate.input_characters) ||
+            normalizeUsageCount(usageCandidate.inputCharacters) ||
+            normalizeUsageCount(usageCandidate.text_characters) ||
+            normalizeUsageCount(usageCandidate.textCharacters)
+
+        if (directCharacters) return directCharacters
+
+        if (usageCandidate.usage && typeof usageCandidate.usage === 'object') {
+            const nestedCharacters = extractTextToSpeechUsageCharacters(usageCandidate)
+            if (nestedCharacters) return nestedCharacters
+        }
+    }
+
+    return undefined
+}
+
+export const supportsTextToSpeechProviderUsageMetering = (provider: string) => provider === TextToSpeechType.ALIBABA_TTS
+
 export const getTextToSpeechBillingDetails = async (
-    text: string,
     textToSpeechConfig: ICommonObject,
-    _options: ICommonObject
+    providerUsagePayload?: ICommonObject
 ): Promise<ITextToSpeechBillingResult | undefined> => {
-    if (!textToSpeechConfig || textToSpeechConfig.name !== TextToSpeechType.ALIBABA_TTS) {
+    if (!textToSpeechConfig || !supportsTextToSpeechProviderUsageMetering(textToSpeechConfig.name as string)) {
         return undefined
     }
+
+    const characters = extractTextToSpeechUsageCharacters(providerUsagePayload)
+    if (!characters) return undefined
 
     const credentialId = textToSpeechConfig.credentialId as string
     const model = (textToSpeechConfig.model as string) || 'qwen3-tts-flash'
@@ -164,8 +198,11 @@ export const getTextToSpeechBillingDetails = async (
         provider: TextToSpeechType.ALIBABA_TTS,
         credentialId,
         model,
+        tokenUsageCredentialCallId:
+            (typeof textToSpeechConfig.tokenUsageCredentialCallId === 'string' && textToSpeechConfig.tokenUsageCredentialCallId) ||
+            uuidv4(),
         usage: {
-            characters: countTextToSpeechCharacters(text)
+            characters
         }
     }
 }
@@ -176,7 +213,7 @@ const streamAlibabaSSEAudio = async (
     apiKey: string,
     abortController: AbortController,
     onChunk: (chunk: Buffer) => void
-) => {
+): Promise<ICommonObject | undefined> => {
     const sseResponse = await axios.post(endpoint, payload, {
         headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -192,6 +229,8 @@ const streamAlibabaSSEAudio = async (
     if (!stream) {
         throw new Error('Failed to get Alibaba TTS SSE stream')
     }
+
+    let latestUsagePayload: ICommonObject | undefined
 
     await new Promise<void>((resolve, reject) => {
         let settled = false
@@ -234,6 +273,9 @@ const streamAlibabaSSEAudio = async (
                     hasAudioChunk = true
                     onChunk(Buffer.from(audioData, 'base64'))
                 }
+                if (extractTextToSpeechUsageCharacters(parsed)) {
+                    latestUsagePayload = parsed
+                }
             } catch (error) {
                 // Ignore malformed SSE lines and continue parsing
             }
@@ -275,6 +317,8 @@ const streamAlibabaSSEAudio = async (
             fail(error)
         })
     })
+
+    return latestUsagePayload
 }
 
 const fetchAlibabaAudioStream = async (audioUrl: string, abortController: AbortController): Promise<Readable> => {
@@ -312,8 +356,8 @@ export const convertTextToSpeechStream = async (
     onStart: (format: string) => void,
     onChunk: (chunk: Buffer) => void,
     onEnd: () => void
-): Promise<void> => {
-    return new Promise<void>((resolve, reject) => {
+): Promise<ITextToSpeechBillingResult | undefined> => {
+    return new Promise<ITextToSpeechBillingResult | undefined>((resolve, reject) => {
         let streamDestroyed = false
 
         // Handle abort signal early
@@ -362,9 +406,19 @@ export const convertTextToSpeechStream = async (
                                 throw new Error('Failed to get response stream')
                             }
 
-                            await processStreamWithRateLimit(stream, onChunk, onEnd, resolve, reject, 640, 20, abortController, () => {
-                                streamDestroyed = true
-                            })
+                            await processStreamWithRateLimit(
+                                stream,
+                                onChunk,
+                                onEnd,
+                                () => resolve(undefined),
+                                reject,
+                                640,
+                                20,
+                                abortController,
+                                () => {
+                                    streamDestroyed = true
+                                }
+                            )
                             break
                         }
 
@@ -389,9 +443,19 @@ export const convertTextToSpeechStream = async (
                                 throw new Error('Failed to get response stream')
                             }
 
-                            await processStreamWithRateLimit(stream, onChunk, onEnd, resolve, reject, 640, 40, abortController, () => {
-                                streamDestroyed = true
-                            })
+                            await processStreamWithRateLimit(
+                                stream,
+                                onChunk,
+                                onEnd,
+                                () => resolve(undefined),
+                                reject,
+                                640,
+                                40,
+                                abortController,
+                                () => {
+                                    streamDestroyed = true
+                                }
+                            )
                             break
                         }
 
@@ -400,6 +464,10 @@ export const convertTextToSpeechStream = async (
 
                             const endpoint = resolveAlibabaTTSEndpoint(textToSpeechConfig.baseUrl as string | undefined)
                             const payload = buildAlibabaTTSPayload(text, textToSpeechConfig)
+                            const meteredConfig = {
+                                ...textToSpeechConfig,
+                                tokenUsageCredentialCallId: uuidv4()
+                            }
 
                             let response: ICommonObject
                             try {
@@ -411,38 +479,72 @@ export const convertTextToSpeechStream = async (
                                     signal: abortController.signal
                                 })
                             } catch (postError) {
-                                await streamAlibabaSSEAudio(endpoint, payload, credentialData.alibabaApiKey, abortController, onChunk)
+                                const sseUsagePayload = await streamAlibabaSSEAudio(
+                                    endpoint,
+                                    payload,
+                                    credentialData.alibabaApiKey,
+                                    abortController,
+                                    onChunk
+                                )
+                                const billingDetails = await getTextToSpeechBillingDetails(meteredConfig, sseUsagePayload)
                                 onEnd()
-                                resolve()
+                                resolve(billingDetails)
                                 break
                             }
 
+                            const billingDetails = await getTextToSpeechBillingDetails(meteredConfig, response.data)
                             const audioData = response.data?.output?.audio?.data
                             if (audioData) {
                                 onChunk(Buffer.from(audioData, 'base64'))
                                 onEnd()
-                                resolve()
+                                resolve(billingDetails)
                                 break
                             }
 
                             const audioUrl = response.data?.output?.audio?.url
                             if (!audioUrl) {
-                                await streamAlibabaSSEAudio(endpoint, payload, credentialData.alibabaApiKey, abortController, onChunk)
+                                const sseUsagePayload = await streamAlibabaSSEAudio(
+                                    endpoint,
+                                    payload,
+                                    credentialData.alibabaApiKey,
+                                    abortController,
+                                    onChunk
+                                )
+                                const streamedBillingDetails =
+                                    (await getTextToSpeechBillingDetails(meteredConfig, sseUsagePayload)) || billingDetails
                                 onEnd()
-                                resolve()
+                                resolve(streamedBillingDetails)
                                 break
                             }
 
                             try {
                                 const stream = await fetchAlibabaAudioStream(audioUrl, abortController)
-                                await processStreamWithRateLimit(stream, onChunk, onEnd, resolve, reject, 640, 20, abortController, () => {
-                                    streamDestroyed = true
-                                })
+                                await processStreamWithRateLimit(
+                                    stream,
+                                    onChunk,
+                                    onEnd,
+                                    () => resolve(billingDetails),
+                                    reject,
+                                    640,
+                                    20,
+                                    abortController,
+                                    () => {
+                                        streamDestroyed = true
+                                    }
+                                )
                                 break
                             } catch (audioUrlError) {
-                                await streamAlibabaSSEAudio(endpoint, payload, credentialData.alibabaApiKey, abortController, onChunk)
+                                const sseUsagePayload = await streamAlibabaSSEAudio(
+                                    endpoint,
+                                    payload,
+                                    credentialData.alibabaApiKey,
+                                    abortController,
+                                    onChunk
+                                )
+                                const streamedBillingDetails =
+                                    (await getTextToSpeechBillingDetails(meteredConfig, sseUsagePayload)) || billingDetails
                                 onEnd()
-                                resolve()
+                                resolve(streamedBillingDetails)
                                 break
                             }
                         }

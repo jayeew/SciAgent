@@ -505,6 +505,20 @@ type BuildFlowParams = {
     subscriptionId?: string
     usageCacheManager?: any
     tokenAuditContext?: ICommonObject
+    onNodeExecutionCompleted?: (params: {
+        nodeId: string
+        nodeLabel: string
+        nodeName: string
+        mode: 'init' | 'upsert'
+        result?: any
+    }) => Promise<void>
+    onNodeExecutionFailed?: (params: {
+        nodeId: string
+        nodeLabel: string
+        nodeName: string
+        mode: 'init' | 'upsert'
+        error: Error
+    }) => Promise<void>
     uploadedFilesContent?: string
     updateStorageUsage?: (orgId: string, workspaceId: string, totalSize: number, usageCacheManager?: any) => void
     checkStorage?: (orgId: string, subscriptionId: string, usageCacheManager: any) => Promise<any>
@@ -544,6 +558,8 @@ export const buildFlow = async ({
     subscriptionId,
     usageCacheManager,
     tokenAuditContext,
+    onNodeExecutionCompleted,
+    onNodeExecutionFailed,
     updateStorageUsage,
     checkStorage
 }: BuildFlowParams) => {
@@ -629,6 +645,15 @@ export const buildFlow = async ({
                     baseURL
                 })
                 if (indexResult) upsertHistory['result'] = indexResult
+                if (onNodeExecutionCompleted) {
+                    await onNodeExecutionCompleted({
+                        nodeId,
+                        nodeLabel: reactFlowNode.data.label,
+                        nodeName: reactFlowNode.data.name,
+                        mode: 'upsert',
+                        result: indexResult
+                    })
+                }
                 logger.debug(`[server]: [${orgId}]: Finished upserting ${reactFlowNode.data.label} (${reactFlowNode.data.id})`)
                 break
             } else if (
@@ -704,13 +729,32 @@ export const buildFlow = async ({
                 }
 
                 flowNodes[nodeIndex].data.instance = outputResult
+                if (onNodeExecutionCompleted) {
+                    await onNodeExecutionCompleted({
+                        nodeId,
+                        nodeLabel: reactFlowNode.data.label,
+                        nodeName: reactFlowNode.data.name,
+                        mode: 'init',
+                        result: outputResult
+                    })
+                }
 
                 logger.debug(`[server]: [${orgId}]: Finished initializing ${reactFlowNode.data.label} (${reactFlowNode.data.id})`)
                 initializedNodes.add(reactFlowNode.data.id)
             }
         } catch (e: any) {
             logger.error(`[server]: [${orgId}]:`, e)
-            throw new Error(e)
+            const normalizedError = e instanceof Error ? e : new Error(`${e}`)
+            if (onNodeExecutionFailed) {
+                await onNodeExecutionFailed({
+                    nodeId,
+                    nodeLabel: reactFlowNode.data.label,
+                    nodeName: reactFlowNode.data.name,
+                    mode: isUpsert && stopNodeId && nodeId === stopNodeId ? 'upsert' : 'init',
+                    error: normalizedError
+                })
+            }
+            throw normalizedError
         }
 
         let neighbourNodeIds = graph[nodeId]

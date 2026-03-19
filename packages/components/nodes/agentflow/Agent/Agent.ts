@@ -13,7 +13,7 @@ import {
     IUsedTool
 } from '../../../src/Interface'
 import { AIMessageChunk, BaseMessageLike, MessageContentText } from '@langchain/core/messages'
-import { AnalyticHandler, createTokenUsageAuditCallbacks } from '../../../src/handler'
+import { AnalyticHandler, createTokenUsageAuditInvocationConfig, resolveCredentialIdFromConfig } from '../../../src/handler'
 import { DEFAULT_SUMMARIZER_TEMPLATE } from '../prompt'
 import { ILLMMessage } from '../Interface.Agentflow'
 import { Tool } from '@langchain/core/tools'
@@ -766,7 +766,7 @@ class Agent_Agentflow implements INode {
                 const newToolNodeInstance = new nodeModule.nodeClass()
                 const newNodeData = {
                     ...nodeData,
-                    credential: toolConfig['FLOWISE_CREDENTIAL_ID'],
+                    credential: resolveCredentialIdFromConfig(toolConfig),
                     inputs: {
                         ...nodeData.inputs,
                         ...toolConfig
@@ -889,7 +889,7 @@ class Agent_Agentflow implements INode {
                     const newEmbeddingInstance = new embeddingModule.nodeClass()
                     const newEmbeddingNodeData = {
                         ...nodeData,
-                        credential: selectedEmbeddingModelConfig['FLOWISE_CREDENTIAL_ID'],
+                        credential: resolveCredentialIdFromConfig(selectedEmbeddingModelConfig),
                         inputs: {
                             ...nodeData.inputs,
                             ...selectedEmbeddingModelConfig
@@ -904,7 +904,7 @@ class Agent_Agentflow implements INode {
                     const newVectorStoreInstance = new vectorStoreModule.nodeClass()
                     const newVSNodeData = {
                         ...nodeData,
-                        credential: selectedVectorStoreConfig['FLOWISE_CREDENTIAL_ID'],
+                        credential: resolveCredentialIdFromConfig(selectedVectorStoreConfig),
                         inputs: {
                             ...nodeData.inputs,
                             ...selectedVectorStoreConfig,
@@ -971,7 +971,7 @@ class Agent_Agentflow implements INode {
             const newLLMNodeInstance = new nodeModule.nodeClass()
             const newNodeData = {
                 ...nodeData,
-                credential: modelConfig['FLOWISE_CREDENTIAL_ID'],
+                credential: resolveCredentialIdFromConfig(modelConfig),
                 inputs: {
                     ...nodeData.inputs,
                     ...modelConfig
@@ -1247,10 +1247,8 @@ class Agent_Agentflow implements INode {
                         isStructuredOutput
                     )
                 } else {
-                    response = await llmNodeInstance.invoke(
-                        messages,
-                        this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
-                    )
+                    const modelInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+                    response = await llmNodeInstance.invoke(messages, modelInvocation.config)
                 }
             }
 
@@ -1448,7 +1446,8 @@ class Agent_Agentflow implements INode {
                     'Convert the following response to the structured output format: ' + finalResponse,
                     _agentStructuredOutput
                 )
-                response = await llmNodeInstance.invoke(prompt, this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata))
+                const structuredInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+                response = await llmNodeInstance.invoke(prompt, structuredInvocation.config)
 
                 if (typeof response === 'object') {
                     finalResponse = '```json\n' + JSON.stringify(response, null, 2) + '\n```'
@@ -1736,10 +1735,7 @@ class Agent_Agentflow implements INode {
     ): ITokenUsageAuditMetadata {
         return {
             tokenAuditContext: options.tokenAuditContext as ICommonObject | undefined,
-            credentialId:
-                (typeof modelConfig?.FLOWISE_CREDENTIAL_ID === 'string' && modelConfig.FLOWISE_CREDENTIAL_ID) ||
-                (typeof modelConfig?.credential === 'string' && modelConfig.credential) ||
-                undefined,
+            credentialId: resolveCredentialIdFromConfig(modelConfig),
             model:
                 (typeof modelConfig?.modelName === 'string' && modelConfig.modelName) ||
                 (typeof modelConfig?.model === 'string' && modelConfig.model) ||
@@ -1754,18 +1750,11 @@ class Agent_Agentflow implements INode {
     private buildModelInvocationConfig(
         abortController: AbortController | undefined,
         tokenUsageAuditMetadata: ITokenUsageAuditMetadata
-    ): ICommonObject {
-        const callbacks = createTokenUsageAuditCallbacks(tokenUsageAuditMetadata)
-        if (callbacks.length) {
-            return {
-                signal: abortController?.signal,
-                callbacks
-            }
-        }
-
-        return {
-            signal: abortController?.signal
-        }
+    ): { config: ICommonObject; tokenUsageCredentialCallId: string } {
+        return createTokenUsageAuditInvocationConfig({
+            signal: abortController?.signal,
+            ...tokenUsageAuditMetadata
+        })
     }
 
     /**
@@ -1840,18 +1829,17 @@ class Agent_Agentflow implements INode {
                 messages.push(...windowedMessages)
             } else if (memoryType === 'conversationSummary') {
                 // Summary memory: Summarize all past messages
-                const summary = await llmNodeInstance.invoke(
-                    [
-                        {
-                            role: 'user',
-                            content: DEFAULT_SUMMARIZER_TEMPLATE.replace(
-                                '{conversation}',
-                                pastMessages.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n')
-                            )
-                        }
-                    ],
-                    this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
-                )
+                const summaryPrompt = [
+                    {
+                        role: 'user',
+                        content: DEFAULT_SUMMARIZER_TEMPLATE.replace(
+                            '{conversation}',
+                            pastMessages.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n')
+                        )
+                    }
+                ]
+                const summaryInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+                const summary = await llmNodeInstance.invoke(summaryPrompt, summaryInvocation.config)
                 messages.push({ role: 'assistant', content: summary.content as string })
             } else if (memoryType === 'conversationSummaryBuffer') {
                 // Summary buffer: Summarize messages that exceed token limit
@@ -1908,15 +1896,14 @@ class Agent_Agentflow implements INode {
             // Summarize the messages that were removed
             const messagesToSummarizeString = messagesToSummarize.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n')
 
-            const summary = await llmNodeInstance.invoke(
-                [
-                    {
-                        role: 'user',
-                        content: DEFAULT_SUMMARIZER_TEMPLATE.replace('{conversation}', messagesToSummarizeString)
-                    }
-                ],
-                this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
-            )
+            const summaryPrompt = [
+                {
+                    role: 'user',
+                    content: DEFAULT_SUMMARIZER_TEMPLATE.replace('{conversation}', messagesToSummarizeString)
+                }
+            ]
+            const summaryInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+            const summary = await llmNodeInstance.invoke(summaryPrompt, summaryInvocation.config)
 
             // Add summary as a system message at the beginning, then add remaining messages
             messages.push({ role: 'system', content: `Previous conversation summary: ${summary.content}` })
@@ -1942,10 +1929,8 @@ class Agent_Agentflow implements INode {
         let response = new AIMessageChunk('')
 
         try {
-            for await (const chunk of await llmNodeInstance.stream(
-                messages,
-                this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
-            )) {
+            const streamInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+            for await (const chunk of await llmNodeInstance.stream(messages, streamInvocation.config)) {
                 if (sseStreamer && !isStructuredOutput) {
                     let content = ''
 
@@ -2031,18 +2016,15 @@ class Agent_Agentflow implements INode {
             output.calledTools = response.tool_calls
         }
 
-        // Include token usage metadata with accumulated tokens from tool calls
+        // Preserve provider token totals exactly as returned by the current call.
+        // Tool-call sub-invocations are audited separately and should not inflate this call's total_tokens.
         if (response.usage_metadata) {
-            const originalTokens = response.usage_metadata.total_tokens || 0
             output.usageMetadata = {
                 ...response.usage_metadata,
-                total_tokens: originalTokens + additionalTokens,
                 tool_call_tokens: additionalTokens
             }
         } else if (additionalTokens > 0) {
-            // If no original usage metadata but we have tool tokens
             output.usageMetadata = {
-                total_tokens: additionalTokens,
                 tool_call_tokens: additionalTokens
             }
         }
@@ -2388,7 +2370,8 @@ class Agent_Agentflow implements INode {
                 isStructuredOutput
             )
         } else {
-            newResponse = await llmNodeInstance.invoke(messages, this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata))
+            const modelInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+            newResponse = await llmNodeInstance.invoke(messages, modelInvocation.config)
 
             // Stream non-streaming response if this is the last node
             if (isLastNode && sseStreamer && !isStructuredOutput) {
@@ -2747,7 +2730,8 @@ class Agent_Agentflow implements INode {
                 isStructuredOutput
             )
         } else {
-            newResponse = await llmNodeInstance.invoke(messages, this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata))
+            const modelInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+            newResponse = await llmNodeInstance.invoke(messages, modelInvocation.config)
 
             // Stream non-streaming response if this is the last node
             if (isLastNode && sseStreamer && !isStructuredOutput) {

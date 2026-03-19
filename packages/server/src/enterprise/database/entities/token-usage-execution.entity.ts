@@ -32,6 +32,9 @@ export class TokenUsageExecution {
     @Column({ nullable: true, type: 'varchar', length: 255 })
     sessionId?: string
 
+    @Column({ nullable: true, type: 'varchar', length: 255 })
+    idempotencyKey?: string
+
     @Column({ type: 'int', default: 0 })
     inputTokens: number
 
@@ -61,6 +64,18 @@ export class TokenUsageExecution {
 
     @Column({ type: 'int', default: 0 })
     audioOutputTokens: number
+
+    @Column({ type: 'int', default: 0 })
+    imageCount: number
+
+    @Column({ type: 'int', default: 0 })
+    videoCount: number
+
+    @Column({ type: 'int', default: 0 })
+    seconds: number
+
+    @Column({ type: 'int', default: 0 })
+    characters: number
 
     @Column({ type: 'text', nullable: true })
     usageBreakdown?: string

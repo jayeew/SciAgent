@@ -1,20 +1,23 @@
+import { createHash } from 'crypto'
 import { DataSource, In } from 'typeorm'
 import { v4 as uuidv4 } from 'uuid'
+import { CredentialBillingMode, ICredentialBillingUsage } from '../../Interface'
+import { ChatFlow } from '../../database/entities/ChatFlow'
+import { Assistant } from '../../database/entities/Assistant'
+import logger from '../../utils/logger'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import { TokenUsageCredential } from '../database/entities/token-usage-credential.entity'
 import { TokenUsageCredentialCall } from '../database/entities/token-usage-credential-call.entity'
 import { TokenUsageExecution } from '../database/entities/token-usage-execution.entity'
 import { User } from '../database/entities/user.entity'
-import logger from '../../utils/logger'
-import { WorkspaceCreditService } from './workspace-credit.service'
-import { ChatFlow } from '../../database/entities/ChatFlow'
-import { Assistant } from '../../database/entities/Assistant'
 import { WorkspaceCreditTransaction } from '../database/entities/workspace-credit-transaction.entity'
+import { WorkspaceCreditService } from './workspace-credit.service'
+
+type NormalizedBillingMode = CredentialBillingMode | 'degraded'
 
 type TokenUsageMetricKeys =
     | 'inputTokens'
     | 'outputTokens'
-    | 'totalTokens'
     | 'cacheReadTokens'
     | 'cacheWriteTokens'
     | 'reasoningTokens'
@@ -22,6 +25,9 @@ type TokenUsageMetricKeys =
     | 'rejectedPredictionTokens'
     | 'audioInputTokens'
     | 'audioOutputTokens'
+
+const VALID_BILLING_MODES: CredentialBillingMode[] = ['token', 'image_count', 'video_count', 'seconds', 'characters']
+const BILLING_MODE_SET = new Set<CredentialBillingMode>(VALID_BILLING_MODES)
 
 export interface ITokenUsageMetrics {
     inputTokens: number
@@ -34,6 +40,10 @@ export interface ITokenUsageMetrics {
     rejectedPredictionTokens: number
     audioInputTokens: number
     audioOutputTokens: number
+    imageCount: number
+    videoCount: number
+    seconds: number
+    characters: number
     additionalBreakdown: Record<string, number>
 }
 
@@ -68,6 +78,7 @@ interface IRecordTokenUsageInput {
     chatId?: string
     chatMessageId?: string
     sessionId?: string
+    idempotencyKey?: string
     usagePayloads: any[]
     credentialAccesses?: ICredentialAccess[]
 }
@@ -82,7 +93,7 @@ export interface IUsageEntryMetrics {
     credentialName?: string
     source?: string
     billingSource?: string
-    billingMode?: string
+    billingMode?: NormalizedBillingMode
     tokenUsageCredentialCallId?: string
     auditSource?: string
 }
@@ -102,12 +113,11 @@ interface IAttributedUsageCall {
     id: string
     credentialId?: string
     credentialName: string
-    model?: string
     provider?: string
-    billingMode: string
+    model?: string
+    billingMode: NormalizedBillingMode
     metrics: ITokenUsageMetrics
     usageBreakdown: Record<string, number | string>
-    billUsingTotalTokens?: boolean
 }
 
 interface ICredentialGroup {
@@ -115,6 +125,7 @@ interface ICredentialGroup {
     credentialId?: string
     credentialName: string
     model?: string
+    billingMode: NormalizedBillingMode
     attributionMode: TokenUsageAttributionMode
     usageCount: number
     metrics: ITokenUsageMetrics
@@ -133,7 +144,29 @@ interface IUsageSummaryRow {
     rejectedPredictionTokens?: number
     audioInputTokens?: number
     audioOutputTokens?: number
+    imageCount?: number
+    videoCount?: number
+    seconds?: number
+    characters?: number
+    chargedCredit?: number
     usageBreakdown?: Record<string, any>
+}
+
+interface IUsageAuditContext {
+    model?: string
+    provider?: string
+    credentialId?: string
+    credentialName?: string
+    tokenUsageCredentialCallId?: string
+    auditSource?: string
+    billingSource?: string
+    billingMode?: string
+}
+
+interface IPersistedUsageRows {
+    execution: TokenUsageExecution
+    credentialRows: TokenUsageCredential[]
+    callRows: TokenUsageCredentialCall[]
 }
 
 const createEmptyMetrics = (): ITokenUsageMetrics => ({
@@ -147,6 +180,10 @@ const createEmptyMetrics = (): ITokenUsageMetrics => ({
     rejectedPredictionTokens: 0,
     audioInputTokens: 0,
     audioOutputTokens: 0,
+    imageCount: 0,
+    videoCount: 0,
+    seconds: 0,
+    characters: 0,
     additionalBreakdown: {}
 })
 
@@ -156,8 +193,11 @@ const safeToNumber = (value: any): number => {
     return 0
 }
 
+const isPositiveNumber = (value: any): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0
+
 const addAdditionalBreakdown = (target: Record<string, number>, source: Record<string, number>, multiplier = 1) => {
     for (const [key, value] of Object.entries(source)) {
+        if (!Number.isFinite(value)) continue
         target[key] = (target[key] || 0) + value * multiplier
     }
 }
@@ -173,6 +213,10 @@ const addMetrics = (target: ITokenUsageMetrics, source: ITokenUsageMetrics, mult
     target.rejectedPredictionTokens += source.rejectedPredictionTokens * multiplier
     target.audioInputTokens += source.audioInputTokens * multiplier
     target.audioOutputTokens += source.audioOutputTokens * multiplier
+    target.imageCount += source.imageCount * multiplier
+    target.videoCount += source.videoCount * multiplier
+    target.seconds += source.seconds * multiplier
+    target.characters += source.characters * multiplier
     addAdditionalBreakdown(target.additionalBreakdown, source.additionalBreakdown, multiplier)
 }
 
@@ -209,8 +253,6 @@ const tokenAliasMap: Record<string, TokenUsageMetricKeys> = {
     output_tokens: 'outputTokens',
     completion_tokens: 'outputTokens',
     outputtokencount: 'outputTokens',
-    total_tokens: 'totalTokens',
-    totaltokens: 'totalTokens',
     cache_read_tokens: 'cacheReadTokens',
     'prompt_tokens_details.cached_tokens': 'cacheReadTokens',
     'input_token_details.cache_read': 'cacheReadTokens',
@@ -241,19 +283,96 @@ const normalizeBreakdownKey = (key: string): string => {
         .replace(/^_/, '')
 }
 
-const deriveMetricsFromUsage = (usage: Record<string, any>): ITokenUsageMetrics => {
+const normalizeBillingMode = (value?: string): NormalizedBillingMode | undefined => {
+    if (typeof value !== 'string' || !value.trim()) return undefined
+    const normalized = value.trim().toLowerCase() as CredentialBillingMode
+    return BILLING_MODE_SET.has(normalized) ? normalized : 'degraded'
+}
+
+const getNonTokenUsageUnits = (usage: Record<string, any>, billingMode?: CredentialBillingMode) => {
+    switch (billingMode) {
+        case 'image_count':
+            return safeToNumber(usage.units) || safeToNumber(usage.generated_images) || safeToNumber(usage.generatedImages)
+        case 'video_count':
+            return safeToNumber(usage.units) || safeToNumber(usage.generated_videos) || safeToNumber(usage.generatedVideos)
+        case 'seconds':
+            return safeToNumber(usage.seconds)
+        case 'characters':
+            return safeToNumber(usage.characters) || safeToNumber(usage.inputCharacters) || safeToNumber(usage.input_characters)
+        default:
+            return 0
+    }
+}
+
+const inferBillingModeFromUsage = (usage: Record<string, any>, explicitBillingMode?: string): NormalizedBillingMode | undefined => {
+    const normalizedExplicitBillingMode = normalizeBillingMode(explicitBillingMode)
+    if (normalizedExplicitBillingMode) return normalizedExplicitBillingMode
+
+    if (
+        'input_tokens' in usage ||
+        'inputTokens' in usage ||
+        'output_tokens' in usage ||
+        'outputTokens' in usage ||
+        'prompt_tokens' in usage ||
+        'completion_tokens' in usage ||
+        'total_tokens' in usage ||
+        'totalTokens' in usage ||
+        'inputTokenCount' in usage ||
+        'outputTokenCount' in usage
+    ) {
+        return 'token'
+    }
+
+    return undefined
+}
+
+const deriveMetricsFromUsage = (usage: Record<string, any>, billingMode?: NormalizedBillingMode): ITokenUsageMetrics => {
     const metrics = createEmptyMetrics()
+    const normalizedBillingMode = inferBillingModeFromUsage(usage, billingMode)
     const flat = flattenNumericFields(usage)
+
+    if (normalizedBillingMode === 'image_count') {
+        metrics.imageCount = getNonTokenUsageUnits(usage, 'image_count')
+    } else if (normalizedBillingMode === 'video_count') {
+        metrics.videoCount = getNonTokenUsageUnits(usage, 'video_count')
+    } else if (normalizedBillingMode === 'seconds') {
+        metrics.seconds = getNonTokenUsageUnits(usage, 'seconds')
+    } else if (normalizedBillingMode === 'characters') {
+        metrics.characters = getNonTokenUsageUnits(usage, 'characters')
+    }
 
     for (const [rawKey, value] of Object.entries(flat)) {
         const key = normalizeBreakdownKey(rawKey)
         const metricKey = tokenAliasMap[key] || tokenAliasMap[key.split('.').pop() || '']
+        const isTokenMetric = Boolean(metricKey || key === 'total_tokens' || key === 'totaltokens')
 
-        if (metricKey) {
+        if (normalizedBillingMode === 'token' && metricKey) {
             metrics[metricKey] += value
-        } else {
-            metrics.additionalBreakdown[key] = (metrics.additionalBreakdown[key] || 0) + value
+            continue
         }
+
+        if (normalizedBillingMode && normalizedBillingMode !== 'token' && isTokenMetric) {
+            metrics.additionalBreakdown[`raw_${key}`] = (metrics.additionalBreakdown[`raw_${key}`] || 0) + value
+            continue
+        }
+
+        if (normalizedBillingMode === 'image_count' && (key === 'units' || key === 'generated_images' || key === 'generatedimages')) {
+            continue
+        }
+        if (normalizedBillingMode === 'video_count' && (key === 'units' || key === 'generated_videos' || key === 'generatedvideos')) {
+            continue
+        }
+        if (normalizedBillingMode === 'seconds' && key === 'seconds') continue
+        if (normalizedBillingMode === 'characters' && (key === 'characters' || key === 'input_characters' || key === 'inputcharacters')) {
+            continue
+        }
+
+        if (!Number.isFinite(value)) continue
+        metrics.additionalBreakdown[key] = (metrics.additionalBreakdown[key] || 0) + value
+    }
+
+    if (normalizedBillingMode !== 'token') {
+        return metrics
     }
 
     const directInput =
@@ -266,14 +385,21 @@ const deriveMetricsFromUsage = (usage: Record<string, any>): ITokenUsageMetrics 
         safeToNumber(usage.output_tokens) +
         safeToNumber(usage.completion_tokens) +
         safeToNumber(usage.outputTokenCount) +
-        safeToNumber(usage.completionTokens)
-    const directTotal = safeToNumber(usage.total_tokens) + safeToNumber(usage.totalTokens)
+        safeToNumber(usage.completionTokens) +
+        safeToNumber(usage.outputTokens)
+    const providerRawTotal = safeToNumber(usage.total_tokens) + safeToNumber(usage.totalTokens)
 
     if (directInput > 0) metrics.inputTokens = Math.max(metrics.inputTokens, directInput)
     if (directOutput > 0) metrics.outputTokens = Math.max(metrics.outputTokens, directOutput)
-    if (directTotal > 0) metrics.totalTokens = Math.max(metrics.totalTokens, directTotal)
-    if (!metrics.totalTokens && (metrics.inputTokens || metrics.outputTokens)) {
-        metrics.totalTokens = metrics.inputTokens + metrics.outputTokens
+
+    if (!metrics.inputTokens && !metrics.outputTokens && providerRawTotal > 0) {
+        metrics.inputTokens = providerRawTotal
+    }
+
+    metrics.totalTokens = metrics.inputTokens + metrics.outputTokens
+
+    if (providerRawTotal > 0 && providerRawTotal !== metrics.totalTokens) {
+        metrics.additionalBreakdown.raw_total_tokens = (metrics.additionalBreakdown.raw_total_tokens || 0) + providerRawTotal
     }
 
     return metrics
@@ -290,7 +416,13 @@ const usageContainerKeys = new Set([
     'amazon-bedrock-invocationmetrics'
 ])
 
-const actualUsageContainerKeys = new Set(['usage', 'usagemetadata', 'usage_metadata', 'amazon-bedrock-invocationmetrics'])
+const actualUsageContainerKeys = new Set([
+    'usage',
+    'usagemetadata',
+    'usage_metadata',
+    'amazon-bedrock-invocationmetrics',
+    'direct_usage_object'
+])
 const estimatedUsageContainerKeys = new Set(['estimatedtokenusage', 'estimated_token_usage', 'tokenusage', 'token_usage'])
 
 const modelKeys = ['model', 'modelName', 'model_name']
@@ -298,20 +430,10 @@ const providerKeys = ['provider', 'providerName', 'provider_name', 'llmModel', '
 const credentialIdKeys = ['credentialId', 'credential_id', 'FLOWISE_CREDENTIAL_ID', 'flowise_credential_id', 'credential']
 const credentialNameKeys = ['credentialName', 'credential_name']
 
-interface IUsageAuditContext {
-    model?: string
-    provider?: string
-    credentialId?: string
-    credentialName?: string
-    tokenUsageCredentialCallId?: string
-    auditSource?: string
-}
-
 const getStringValueFromKeys = (obj: Record<string, any>, keys: string[]): string | undefined => {
     for (const key of keys) {
         if (typeof obj[key] === 'string' && obj[key].trim()) return obj[key].trim()
     }
-
     return undefined
 }
 
@@ -372,14 +494,28 @@ const getCredentialIdFromObject = (obj: Record<string, any>, inheritedCredential
 const getCredentialNameFromObject = (obj: Record<string, any>, inheritedCredentialName?: string): string | undefined => {
     const directCredentialName = getStringValueFromKeys(obj, credentialNameKeys)
     if (directCredentialName) return directCredentialName
-
     return inheritedCredentialName
 }
 
 const getAuditSourceFromObject = (obj: Record<string, any>, inheritedAuditSource?: string): string | undefined => {
     if (typeof obj.auditSource === 'string' && obj.auditSource.trim()) return obj.auditSource.trim()
-
     return inheritedAuditSource
+}
+
+const getBillingSourceFromObject = (obj: Record<string, any>, inheritedBillingSource?: string): string | undefined => {
+    if (typeof obj.source === 'string' && obj.source.trim()) return obj.source.trim()
+    return inheritedBillingSource
+}
+
+const getBillingModeFromObject = (obj: Record<string, any>, inheritedBillingMode?: string): string | undefined => {
+    if (typeof obj.billingMode === 'string' && obj.billingMode.trim()) return obj.billingMode.trim()
+    return inheritedBillingMode
+}
+
+const getTokenUsageCredentialCallIdFromObject = (obj: Record<string, any>): string | undefined => {
+    if (typeof obj.tokenUsageCredentialCallId !== 'string') return undefined
+    const normalizedCallId = obj.tokenUsageCredentialCallId.trim()
+    return normalizedCallId || undefined
 }
 
 const resolveUsageAuditContext = (obj: Record<string, any>, currentContext: IUsageAuditContext = {}): IUsageAuditContext => ({
@@ -388,29 +524,10 @@ const resolveUsageAuditContext = (obj: Record<string, any>, currentContext: IUsa
     credentialId: getCredentialIdFromObject(obj, currentContext.credentialId),
     credentialName: getCredentialNameFromObject(obj, currentContext.credentialName),
     tokenUsageCredentialCallId: getTokenUsageCredentialCallIdFromObject(obj) || currentContext.tokenUsageCredentialCallId,
-    auditSource: getAuditSourceFromObject(obj, currentContext.auditSource)
+    auditSource: getAuditSourceFromObject(obj, currentContext.auditSource),
+    billingSource: getBillingSourceFromObject(obj, currentContext.billingSource),
+    billingMode: getBillingModeFromObject(obj, currentContext.billingMode)
 })
-
-const getBillingSourceFromObject = (obj: Record<string, any>): string | undefined => {
-    if (typeof obj.source !== 'string') return undefined
-
-    const normalizedSource = obj.source.trim()
-    return normalizedSource || undefined
-}
-
-const getBillingModeFromObject = (obj: Record<string, any>): string | undefined => {
-    if (typeof obj.billingMode !== 'string') return undefined
-
-    const normalizedBillingMode = obj.billingMode.trim()
-    return normalizedBillingMode || undefined
-}
-
-const getTokenUsageCredentialCallIdFromObject = (obj: Record<string, any>): string | undefined => {
-    if (typeof obj.tokenUsageCredentialCallId !== 'string') return undefined
-
-    const normalizedCallId = obj.tokenUsageCredentialCallId.trim()
-    return normalizedCallId || undefined
-}
 
 const hasUsageSignals = (obj: Record<string, any>): boolean => {
     return (
@@ -425,7 +542,10 @@ const hasUsageSignals = (obj: Record<string, any>): boolean => {
         'completionTokens' in obj ||
         'inputTokenCount' in obj ||
         'outputTokenCount' in obj ||
-        'totalTokens' in obj
+        'totalTokens' in obj ||
+        'units' in obj ||
+        'seconds' in obj ||
+        'characters' in obj
     )
 }
 
@@ -452,7 +572,7 @@ const pickPreferredUsageEntry = (obj: Record<string, any>, context: IUsageAuditC
         usage: Record<string, any>
         source: string
         priority: number
-        totalTokens: number
+        volume: number
     }
 
     const candidates: UsageCandidate[] = []
@@ -464,13 +584,20 @@ const pickPreferredUsageEntry = (obj: Record<string, any>, context: IUsageAuditC
         if (!usageContainerKeys.has(normalizedKey)) continue
 
         const usage = child as Record<string, any>
-        const metrics = deriveMetricsFromUsage(usage)
+        const metrics = deriveMetricsFromUsage(usage, normalizeBillingMode(context.billingMode))
 
         candidates.push({
             usage,
             source: normalizedKey,
             priority: getCandidatePriority(normalizedKey),
-            totalTokens: metrics.totalTokens
+            volume:
+                metrics.totalTokens +
+                metrics.imageCount +
+                metrics.videoCount +
+                metrics.seconds +
+                metrics.characters +
+                metrics.audioInputTokens +
+                metrics.audioOutputTokens
         })
     }
 
@@ -483,8 +610,8 @@ const pickPreferredUsageEntry = (obj: Record<string, any>, context: IUsageAuditC
                 credentialId: context.credentialId,
                 credentialName: context.credentialName,
                 source: 'direct_usage_object',
-                billingSource: getBillingSourceFromObject(obj),
-                billingMode: getBillingModeFromObject(obj),
+                billingSource: context.billingSource,
+                billingMode: context.billingMode,
                 tokenUsageCredentialCallId: context.tokenUsageCredentialCallId,
                 auditSource: context.auditSource
             }
@@ -494,7 +621,7 @@ const pickPreferredUsageEntry = (obj: Record<string, any>, context: IUsageAuditC
 
     candidates.sort((a, b) => {
         if (a.priority !== b.priority) return a.priority - b.priority
-        return b.totalTokens - a.totalTokens
+        return b.volume - a.volume
     })
 
     return {
@@ -504,37 +631,33 @@ const pickPreferredUsageEntry = (obj: Record<string, any>, context: IUsageAuditC
         credentialId: context.credentialId,
         credentialName: context.credentialName,
         source: candidates[0].source,
-        billingSource: getBillingSourceFromObject(obj),
-        billingMode: getBillingModeFromObject(obj),
+        billingSource: context.billingSource,
+        billingMode: context.billingMode,
         tokenUsageCredentialCallId: context.tokenUsageCredentialCallId,
         auditSource: context.auditSource
     }
 }
 
 const getSharedBillingSource = (sources: Array<string | undefined>): string | undefined => {
-    const normalizedSources = sources.map((source) => (typeof source === 'string' && source.trim().length > 0 ? source.trim() : undefined))
+    const normalizedSources = sources.map((source) => (typeof source === 'string' && source.trim() ? source.trim() : undefined))
     if (!normalizedSources.length || normalizedSources.some((source) => !source)) return undefined
 
     const uniqueSources = Array.from(new Set(normalizedSources as string[]))
-
     return uniqueSources.length === 1 ? uniqueSources[0] : undefined
 }
 
-const getSharedBillingMode = (billingModes: Array<string | undefined>): string | undefined => {
-    const normalizedBillingModes = billingModes.map((billingMode) =>
-        typeof billingMode === 'string' && billingMode.trim().length > 0 ? billingMode.trim() : undefined
-    )
-    if (!normalizedBillingModes.length || normalizedBillingModes.some((billingMode) => !billingMode)) return undefined
+const getSharedBillingMode = (billingModes: Array<NormalizedBillingMode | undefined>): NormalizedBillingMode | undefined => {
+    const normalizedBillingModes = billingModes.filter((billingMode): billingMode is NormalizedBillingMode => Boolean(billingMode))
+    if (!normalizedBillingModes.length || normalizedBillingModes.length !== billingModes.length) return undefined
 
-    const uniqueBillingModes = Array.from(new Set(normalizedBillingModes as string[]))
-
+    const uniqueBillingModes = Array.from(new Set(normalizedBillingModes))
     return uniqueBillingModes.length === 1 ? uniqueBillingModes[0] : undefined
 }
 
 const buildUsageBreakdown = (
     additionalBreakdown: Record<string, number>,
     billingSource?: string,
-    billingMode?: string
+    billingMode?: NormalizedBillingMode
 ): Record<string, number | string> => {
     const usageBreakdown: Record<string, number | string> = {
         ...additionalBreakdown
@@ -547,6 +670,15 @@ const buildUsageBreakdown = (
         usageBreakdown.generatedimages === undefined
     ) {
         usageBreakdown.generated_images = usageBreakdown.units
+    }
+
+    if (
+        billingMode === 'video_count' &&
+        typeof usageBreakdown.units === 'number' &&
+        usageBreakdown.generated_videos === undefined &&
+        usageBreakdown.generatedvideos === undefined
+    ) {
+        usageBreakdown.generated_videos = usageBreakdown.units
     }
 
     if (billingSource) {
@@ -577,8 +709,12 @@ const withUsageDiagnostics = (
     return nextUsageBreakdown
 }
 
-const buildCredentialGroupKey = (credentialId: string | undefined, credentialName: string, model: string | undefined): string =>
-    `${credentialId || ''}:${credentialName}:${model || '__unknown_model__'}`
+const buildCredentialGroupKey = (
+    credentialId: string | undefined,
+    credentialName: string,
+    model: string | undefined,
+    billingMode: NormalizedBillingMode
+): string => `${credentialId || ''}:${credentialName}:${model || '__unknown_model__'}:${billingMode}`
 
 const extractUsageEntriesFromPayload = (payload: any): IUsageEntry[] => {
     const entries: IUsageEntry[] = []
@@ -611,11 +747,149 @@ const extractUsageEntriesFromPayload = (payload: any): IUsageEntry[] => {
     return entries
 }
 
+const getEntryVolume = (metrics: ITokenUsageMetrics): number => {
+    return (
+        metrics.totalTokens +
+        metrics.imageCount +
+        metrics.videoCount +
+        metrics.seconds +
+        metrics.characters +
+        metrics.cacheReadTokens +
+        metrics.cacheWriteTokens +
+        metrics.reasoningTokens +
+        metrics.audioInputTokens +
+        metrics.audioOutputTokens
+    )
+}
+
+const getModelTotalWeight = (entry: IUsageEntryMetrics): number => {
+    return (
+        entry.metrics.totalTokens ||
+        entry.metrics.imageCount ||
+        entry.metrics.videoCount ||
+        entry.metrics.seconds ||
+        entry.metrics.characters ||
+        entry.metrics.audioInputTokens ||
+        entry.metrics.audioOutputTokens
+    )
+}
+
 const getTopModel = (modelTotals: Record<string, number>): string | undefined => {
     const entries = Object.entries(modelTotals)
     if (!entries.length) return undefined
     entries.sort((a, b) => b[1] - a[1])
     return entries[0][0]
+}
+
+const dedupeUsageEntryMetrics = (entries: IUsageEntryMetrics[]): IUsageEntryMetrics[] => {
+    const byCallId = new Map<string, IUsageEntryMetrics>()
+    const withoutCallId: IUsageEntryMetrics[] = []
+
+    const isPreferredEntry = (next: IUsageEntryMetrics, current: IUsageEntryMetrics): boolean => {
+        const nextIsActual = isActualUsageSource(next.source)
+        const currentIsActual = isActualUsageSource(current.source)
+        if (nextIsActual !== currentIsActual) return nextIsActual
+
+        const nextHasCredentialMetadata = Boolean(next.credentialId || next.credentialName)
+        const currentHasCredentialMetadata = Boolean(current.credentialId || current.credentialName)
+        if (nextHasCredentialMetadata !== currentHasCredentialMetadata) return nextHasCredentialMetadata
+
+        return getEntryVolume(next.metrics) > getEntryVolume(current.metrics)
+    }
+
+    for (const entry of entries) {
+        if (entry.tokenUsageCredentialCallId) {
+            const existing = byCallId.get(entry.tokenUsageCredentialCallId)
+            if (!existing || isPreferredEntry(entry, existing)) {
+                byCallId.set(entry.tokenUsageCredentialCallId, entry)
+            }
+            continue
+        }
+
+        withoutCallId.push(entry)
+    }
+
+    const dedupedByFingerprint = new Map<string, IUsageEntryMetrics>()
+    for (const entry of withoutCallId) {
+        const fingerprint = JSON.stringify({
+            credentialId: entry.credentialId,
+            credentialName: entry.credentialName,
+            model: entry.model,
+            provider: entry.provider,
+            billingSource: entry.billingSource,
+            billingMode: entry.billingMode,
+            metrics: {
+                inputTokens: entry.metrics.inputTokens,
+                outputTokens: entry.metrics.outputTokens,
+                totalTokens: entry.metrics.totalTokens,
+                imageCount: entry.metrics.imageCount,
+                videoCount: entry.metrics.videoCount,
+                seconds: entry.metrics.seconds,
+                characters: entry.metrics.characters,
+                audioInputTokens: entry.metrics.audioInputTokens,
+                audioOutputTokens: entry.metrics.audioOutputTokens,
+                additionalBreakdown: entry.metrics.additionalBreakdown
+            }
+        })
+
+        const existing = dedupedByFingerprint.get(fingerprint)
+        if (!existing || isPreferredEntry(entry, existing)) {
+            dedupedByFingerprint.set(fingerprint, entry)
+        }
+    }
+
+    const dedupedCallFingerprints = new Set(
+        Array.from(byCallId.values()).map((entry) =>
+            JSON.stringify({
+                credentialId: entry.credentialId,
+                credentialName: entry.credentialName,
+                model: entry.model,
+                provider: entry.provider,
+                billingSource: entry.billingSource,
+                billingMode: entry.billingMode,
+                metrics: {
+                    inputTokens: entry.metrics.inputTokens,
+                    outputTokens: entry.metrics.outputTokens,
+                    totalTokens: entry.metrics.totalTokens,
+                    imageCount: entry.metrics.imageCount,
+                    videoCount: entry.metrics.videoCount,
+                    seconds: entry.metrics.seconds,
+                    characters: entry.metrics.characters,
+                    audioInputTokens: entry.metrics.audioInputTokens,
+                    audioOutputTokens: entry.metrics.audioOutputTokens,
+                    additionalBreakdown: entry.metrics.additionalBreakdown
+                }
+            })
+        )
+    )
+
+    return [
+        ...Array.from(byCallId.values()),
+        ...Array.from(dedupedByFingerprint.values()).filter((entry) => {
+            const fingerprint = JSON.stringify({
+                credentialId: entry.credentialId,
+                credentialName: entry.credentialName,
+                model: entry.model,
+                provider: entry.provider,
+                billingSource: entry.billingSource,
+                billingMode: entry.billingMode,
+                metrics: {
+                    inputTokens: entry.metrics.inputTokens,
+                    outputTokens: entry.metrics.outputTokens,
+                    totalTokens: entry.metrics.totalTokens,
+                    imageCount: entry.metrics.imageCount,
+                    videoCount: entry.metrics.videoCount,
+                    seconds: entry.metrics.seconds,
+                    characters: entry.metrics.characters,
+                    audioInputTokens: entry.metrics.audioInputTokens,
+                    audioOutputTokens: entry.metrics.audioOutputTokens,
+                    additionalBreakdown: entry.metrics.additionalBreakdown
+                }
+            })
+
+            return !dedupedCallFingerprints.has(fingerprint)
+        })
+    ]
 }
 
 const distributeIntegerByWeights = (total: number, weights: number[]): number[] => {
@@ -661,6 +935,7 @@ const hasAnyUsage = (metrics: ITokenUsageMetrics): boolean => {
         (sum, value) => sum + (Number.isFinite(value) ? value : 0),
         0
     )
+
     return (
         metrics.inputTokens > 0 ||
         metrics.outputTokens > 0 ||
@@ -672,6 +947,10 @@ const hasAnyUsage = (metrics: ITokenUsageMetrics): boolean => {
         metrics.rejectedPredictionTokens > 0 ||
         metrics.audioInputTokens > 0 ||
         metrics.audioOutputTokens > 0 ||
+        metrics.imageCount > 0 ||
+        metrics.videoCount > 0 ||
+        metrics.seconds > 0 ||
+        metrics.characters > 0 ||
         additionalBreakdownTotal > 0
     )
 }
@@ -686,21 +965,28 @@ export const extractUsageEntryMetricsFromPayloads = (usagePayloads: any[]): IExt
         return acc
     }, {} as Record<string, number>)
 
-    const usageEntryMetrics = selectedUsageEntries.map((entry) => ({
-        metrics: deriveMetricsFromUsage(entry.usage),
-        model: typeof entry.model === 'string' && entry.model.trim() ? entry.model.trim() : undefined,
-        provider: typeof entry.provider === 'string' && entry.provider.trim() ? entry.provider.trim() : undefined,
-        credentialId: typeof entry.credentialId === 'string' && entry.credentialId.trim() ? entry.credentialId.trim() : undefined,
-        credentialName: typeof entry.credentialName === 'string' && entry.credentialName.trim() ? entry.credentialName.trim() : undefined,
-        source: typeof entry.source === 'string' && entry.source.trim() ? entry.source.trim() : undefined,
-        billingSource: typeof entry.billingSource === 'string' && entry.billingSource.trim() ? entry.billingSource.trim() : undefined,
-        billingMode: typeof entry.billingMode === 'string' && entry.billingMode.trim() ? entry.billingMode.trim() : undefined,
-        tokenUsageCredentialCallId:
-            typeof entry.tokenUsageCredentialCallId === 'string' && entry.tokenUsageCredentialCallId.trim()
-                ? entry.tokenUsageCredentialCallId.trim()
-                : undefined,
-        auditSource: typeof entry.auditSource === 'string' && entry.auditSource.trim() ? entry.auditSource.trim() : undefined
-    })) as IUsageEntryMetrics[]
+    const usageEntryMetrics = dedupeUsageEntryMetrics(
+        selectedUsageEntries.map((entry) => {
+            const normalizedBillingMode = inferBillingModeFromUsage(entry.usage, entry.billingMode)
+            return {
+                metrics: deriveMetricsFromUsage(entry.usage, normalizedBillingMode),
+                model: typeof entry.model === 'string' && entry.model.trim() ? entry.model.trim() : undefined,
+                provider: typeof entry.provider === 'string' && entry.provider.trim() ? entry.provider.trim() : undefined,
+                credentialId: typeof entry.credentialId === 'string' && entry.credentialId.trim() ? entry.credentialId.trim() : undefined,
+                credentialName:
+                    typeof entry.credentialName === 'string' && entry.credentialName.trim() ? entry.credentialName.trim() : undefined,
+                source: typeof entry.source === 'string' && entry.source.trim() ? entry.source.trim() : undefined,
+                billingSource:
+                    typeof entry.billingSource === 'string' && entry.billingSource.trim() ? entry.billingSource.trim() : undefined,
+                billingMode: normalizedBillingMode,
+                tokenUsageCredentialCallId:
+                    typeof entry.tokenUsageCredentialCallId === 'string' && entry.tokenUsageCredentialCallId.trim()
+                        ? entry.tokenUsageCredentialCallId.trim()
+                        : undefined,
+                auditSource: typeof entry.auditSource === 'string' && entry.auditSource.trim() ? entry.auditSource.trim() : undefined
+            } as IUsageEntryMetrics
+        })
+    )
 
     const aggregatedMetrics = createEmptyMetrics()
     const modelTotals: Record<string, number> = {}
@@ -708,12 +994,12 @@ export const extractUsageEntryMetricsFromPayloads = (usagePayloads: any[]): IExt
     for (const entry of usageEntryMetrics) {
         addMetrics(aggregatedMetrics, entry.metrics)
         const modelKey = entry.model || 'unknown'
-        modelTotals[modelKey] = (modelTotals[modelKey] || 0) + entry.metrics.totalTokens
+        modelTotals[modelKey] = (modelTotals[modelKey] || 0) + getModelTotalWeight(entry)
     }
 
     return {
         extractedEntries: usageEntries.length,
-        selectedEntries: selectedUsageEntries.length,
+        selectedEntries: usageEntryMetrics.length,
         hasActualUsageEntry,
         hasAnyUsage: hasAnyUsage(aggregatedMetrics),
         sourceCounts,
@@ -746,6 +1032,11 @@ const summarizeUsageRows = (rows: IUsageSummaryRow[]): IUsageSummaryRow => {
         rejectedPredictionTokens: 0,
         audioInputTokens: 0,
         audioOutputTokens: 0,
+        imageCount: 0,
+        videoCount: 0,
+        seconds: 0,
+        characters: 0,
+        chargedCredit: 0,
         usageBreakdown: {}
     }
     const breakdownSources = new Set<string>()
@@ -761,6 +1052,11 @@ const summarizeUsageRows = (rows: IUsageSummaryRow[]): IUsageSummaryRow => {
         summary.rejectedPredictionTokens = safeToNumber(summary.rejectedPredictionTokens) + safeToNumber(row.rejectedPredictionTokens)
         summary.audioInputTokens = safeToNumber(summary.audioInputTokens) + safeToNumber(row.audioInputTokens)
         summary.audioOutputTokens = safeToNumber(summary.audioOutputTokens) + safeToNumber(row.audioOutputTokens)
+        summary.imageCount = safeToNumber(summary.imageCount) + safeToNumber(row.imageCount)
+        summary.videoCount = safeToNumber(summary.videoCount) + safeToNumber(row.videoCount)
+        summary.seconds = safeToNumber(summary.seconds) + safeToNumber(row.seconds)
+        summary.characters = safeToNumber(summary.characters) + safeToNumber(row.characters)
+        summary.chargedCredit = safeToNumber(summary.chargedCredit) + safeToNumber(row.chargedCredit)
 
         for (const [key, value] of Object.entries(row.usageBreakdown || {})) {
             if (key === 'source') {
@@ -783,6 +1079,24 @@ const summarizeUsageRows = (rows: IUsageSummaryRow[]): IUsageSummaryRow => {
     return summary
 }
 
+const metricsFromSummaryRow = (row: IUsageSummaryRow | Record<string, any>): ITokenUsageMetrics => ({
+    inputTokens: safeToNumber(row.inputTokens),
+    outputTokens: safeToNumber(row.outputTokens),
+    totalTokens: safeToNumber(row.totalTokens),
+    cacheReadTokens: safeToNumber(row.cacheReadTokens),
+    cacheWriteTokens: safeToNumber(row.cacheWriteTokens),
+    reasoningTokens: safeToNumber(row.reasoningTokens),
+    acceptedPredictionTokens: safeToNumber(row.acceptedPredictionTokens),
+    rejectedPredictionTokens: safeToNumber(row.rejectedPredictionTokens),
+    audioInputTokens: safeToNumber(row.audioInputTokens),
+    audioOutputTokens: safeToNumber(row.audioOutputTokens),
+    imageCount: safeToNumber(row.imageCount),
+    videoCount: safeToNumber(row.videoCount),
+    seconds: safeToNumber(row.seconds),
+    characters: safeToNumber(row.characters),
+    additionalBreakdown: {}
+})
+
 const getAssistantName = (assistant?: Assistant): string | undefined => {
     if (!assistant?.details) return undefined
     try {
@@ -797,6 +1111,145 @@ const getAssistantName = (assistant?: Assistant): string | undefined => {
     }
 }
 
+const buildDeterministicCallId = (seed: string) => {
+    const hex = createHash('sha1').update(seed).digest('hex').slice(0, 32)
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
+}
+
+const buildUsagePayloadFingerprint = (usagePayloads: any[]): string => {
+    const serializedPayloads = usagePayloads
+        .map((payload) => {
+            try {
+                return JSON.stringify(payload)
+            } catch {
+                return String(payload)
+            }
+        })
+        .sort()
+
+    if (!serializedPayloads.length) return 'empty'
+
+    return createHash('sha1').update(serializedPayloads.join('|')).digest('hex')
+}
+
+const mergeNumericBreakdown = (current: Record<string, any>, delta: Record<string, number>): Record<string, number> => {
+    const merged: Record<string, number> = {}
+
+    for (const [key, value] of Object.entries(current || {})) {
+        const numericValue = safeToNumber(value)
+        if (numericValue !== 0) {
+            merged[key] = numericValue
+        }
+    }
+
+    for (const [key, value] of Object.entries(delta || {})) {
+        const numericValue = safeToNumber(value)
+        if (numericValue === 0 && merged[key] === undefined) continue
+        merged[key] = safeToNumber(merged[key]) + numericValue
+    }
+
+    return merged
+}
+
+const normalizeCredentialAccesses = (credentialAccesses: ICredentialAccess[]) =>
+    credentialAccesses.map((access) => ({
+        credentialId: typeof access.credentialId === 'string' && access.credentialId.trim() ? access.credentialId.trim() : undefined,
+        credentialName:
+            typeof access.credentialName === 'string' && access.credentialName.trim() ? access.credentialName.trim() : 'Unknown Credential',
+        model: typeof access.model === 'string' && access.model.trim() ? access.model.trim() : undefined,
+        provider: typeof access.provider === 'string' && access.provider.trim() ? access.provider.trim() : undefined,
+        tokenUsageCredentialCallId:
+            typeof access.tokenUsageCredentialCallId === 'string' && access.tokenUsageCredentialCallId.trim()
+                ? access.tokenUsageCredentialCallId.trim()
+                : undefined
+    }))
+
+const isChargeableBillingMode = (billingMode?: string): billingMode is CredentialBillingMode =>
+    typeof billingMode === 'string' && BILLING_MODE_SET.has(billingMode as CredentialBillingMode)
+
+const buildBillingUsageFromMetrics = ({
+    credentialId,
+    credentialName,
+    provider,
+    model,
+    billingMode,
+    tokenUsageCredentialCallId,
+    metrics,
+    usageBreakdown
+}: {
+    credentialId?: string
+    credentialName?: string
+    provider?: string
+    model?: string
+    billingMode?: string
+    tokenUsageCredentialCallId?: string
+    metrics: ITokenUsageMetrics
+    usageBreakdown?: Record<string, any>
+}): ICredentialBillingUsage | undefined => {
+    if (!isChargeableBillingMode(billingMode)) return undefined
+
+    const baseUsage = {
+        credentialId,
+        credentialName,
+        provider,
+        model,
+        source: typeof usageBreakdown?.source === 'string' ? usageBreakdown.source : undefined,
+        tokenUsageCredentialCallId,
+        billingMode
+    }
+
+    switch (billingMode) {
+        case 'token':
+            if (metrics.totalTokens <= 0 && metrics.inputTokens <= 0 && metrics.outputTokens <= 0) return undefined
+            return {
+                ...baseUsage,
+                usage: {
+                    inputTokens: metrics.inputTokens,
+                    outputTokens: metrics.outputTokens,
+                    totalTokens: metrics.totalTokens
+                }
+            }
+        case 'image_count':
+            if (metrics.imageCount <= 0) return undefined
+            return {
+                ...baseUsage,
+                usage: {
+                    units: metrics.imageCount
+                }
+            }
+        case 'video_count':
+            if (metrics.videoCount <= 0) return undefined
+            return {
+                ...baseUsage,
+                usage: {
+                    units: metrics.videoCount
+                }
+            }
+        case 'seconds':
+            if (metrics.seconds <= 0) return undefined
+            return {
+                ...baseUsage,
+                usage: {
+                    seconds: metrics.seconds
+                }
+            }
+        case 'characters':
+            if (metrics.characters <= 0) return undefined
+            return {
+                ...baseUsage,
+                usage: {
+                    characters: metrics.characters
+                }
+            }
+        default:
+            return undefined
+    }
+}
+
+const getUsageMetricForWeight = (metrics: ITokenUsageMetrics) => {
+    return metrics.totalTokens || metrics.imageCount || metrics.videoCount || metrics.seconds || metrics.characters || 1
+}
+
 export class TokenUsageService {
     private dataSource: DataSource
 
@@ -805,16 +1258,835 @@ export class TokenUsageService {
         this.dataSource = appServer.AppDataSource
     }
 
+    private async findExecutionByIdempotencyKey(
+        workspaceId: string,
+        organizationId: string,
+        idempotencyKey?: string
+    ): Promise<TokenUsageExecution | null> {
+        if (!idempotencyKey) return null
+
+        return this.dataSource.getRepository(TokenUsageExecution).findOneBy({
+            workspaceId,
+            organizationId,
+            idempotencyKey
+        })
+    }
+
+    private async loadPersistedRows(executionId: string): Promise<IPersistedUsageRows> {
+        const executionRepository = this.dataSource.getRepository(TokenUsageExecution)
+        const credentialRepository = this.dataSource.getRepository(TokenUsageCredential)
+        const callRepository = this.dataSource.getRepository(TokenUsageCredentialCall)
+
+        const execution = await executionRepository.findOneBy({ id: executionId })
+        if (!execution) {
+            throw new Error(`Token usage execution ${executionId} not found`)
+        }
+        const credentialRows = await credentialRepository.findBy({ usageExecutionId: executionId })
+        const credentialIds = credentialRows.map((row) => row.id)
+        const callRows = credentialIds.length
+            ? await callRepository.findBy({
+                  tokenUsageCredentialId: In(credentialIds)
+              })
+            : []
+
+        return {
+            execution,
+            credentialRows,
+            callRows
+        }
+    }
+
+    private buildAttributionGroups(
+        input: IRecordTokenUsageInput,
+        usageEntryMetrics: IUsageEntryMetrics[],
+        normalizedCredentialAccesses: ReturnType<typeof normalizeCredentialAccesses>,
+        aggregatedMetrics: ITokenUsageMetrics,
+        modelTotals: Record<string, number>
+    ) {
+        const topModel = getTopModel(modelTotals)
+        const usagePayloadFingerprint = buildUsagePayloadFingerprint(input.usagePayloads || [])
+        const credentialGroups = new Map<string, ICredentialGroup>()
+
+        const credentialAccessByCallId = normalizedCredentialAccesses.reduce((acc, access) => {
+            if (access.tokenUsageCredentialCallId) {
+                acc.set(access.tokenUsageCredentialCallId, access)
+            }
+            return acc
+        }, new Map<string, (typeof normalizedCredentialAccesses)[number]>())
+
+        const singleCredentialAccessMap = normalizedCredentialAccesses.reduce((acc, access) => {
+            const key = `${access.credentialId || ''}:${access.credentialName}`
+            if (!acc.has(key)) {
+                acc.set(key, access)
+            }
+            return acc
+        }, new Map<string, (typeof normalizedCredentialAccesses)[number]>())
+        const singleCredentialAccess = singleCredentialAccessMap.size === 1 ? Array.from(singleCredentialAccessMap.values())[0] : undefined
+
+        const canAttributeByCallId =
+            usageEntryMetrics.length > 0 &&
+            usageEntryMetrics.every(
+                (entry) =>
+                    !!entry.tokenUsageCredentialCallId &&
+                    (credentialAccessByCallId.has(entry.tokenUsageCredentialCallId) || Boolean(entry.credentialId || entry.credentialName))
+            )
+        const canAttributeByUsageEntryMetadata =
+            usageEntryMetrics.length > 0 && usageEntryMetrics.every((entry) => !!entry.credentialId || !!entry.credentialName)
+        const canAttributeByAccessOrder = normalizedCredentialAccesses.length === usageEntryMetrics.length && usageEntryMetrics.length > 0
+        const canAttributeBySingleCredential =
+            !canAttributeByCallId && !canAttributeByUsageEntryMetadata && !canAttributeByAccessOrder && !!singleCredentialAccess
+
+        const appendAttributedUsage = (
+            usageEntry: IUsageEntryMetrics,
+            access: {
+                credentialId?: string
+                credentialName?: string
+                model?: string
+                provider?: string
+            }
+        ) => {
+            const resolvedCredentialId = access.credentialId || usageEntry.credentialId
+            const resolvedCredentialName = access.credentialName || usageEntry.credentialName
+            if (!resolvedCredentialId && !resolvedCredentialName) {
+                return
+            }
+
+            const resolvedModel = access.model || usageEntry.model || topModel
+            const resolvedProvider = access.provider || usageEntry.provider
+            const billingMode =
+                usageEntry.billingMode ||
+                (usageEntry.metrics.totalTokens > 0 ? 'token' : getSharedBillingMode([usageEntry.billingMode]) || 'degraded')
+            const usageBreakdown = withUsageDiagnostics(
+                buildUsageBreakdown(usageEntry.metrics.additionalBreakdown, usageEntry.billingSource, billingMode),
+                usageEntry.metrics
+            )
+            const callId =
+                usageEntry.tokenUsageCredentialCallId ||
+                buildDeterministicCallId(
+                    `${input.idempotencyKey || input.executionId || input.chatId || uuidv4()}:${usagePayloadFingerprint}:${
+                        resolvedCredentialId || resolvedCredentialName
+                    }:${resolvedModel || 'unknown'}:${billingMode}:${credentialGroups.size}:${getEntryVolume(usageEntry.metrics)}`
+                )
+            const groupKey = buildCredentialGroupKey(
+                resolvedCredentialId,
+                resolvedCredentialName || 'Unknown Credential',
+                resolvedModel,
+                billingMode
+            )
+
+            if (!credentialGroups.has(groupKey)) {
+                credentialGroups.set(groupKey, {
+                    key: groupKey,
+                    credentialId: resolvedCredentialId,
+                    credentialName: resolvedCredentialName || 'Unknown Credential',
+                    model: resolvedModel,
+                    billingMode,
+                    attributionMode: 'ordered',
+                    usageCount: 0,
+                    metrics: createEmptyMetrics(),
+                    usageBreakdown: {},
+                    calls: []
+                })
+            }
+
+            const group = credentialGroups.get(groupKey)
+            if (!group) return
+
+            group.usageCount += 1
+            addMetrics(group.metrics, usageEntry.metrics)
+            group.calls.push({
+                id: callId,
+                credentialId: resolvedCredentialId,
+                credentialName: resolvedCredentialName || 'Unknown Credential',
+                provider: resolvedProvider,
+                model: resolvedModel,
+                billingMode,
+                metrics: usageEntry.metrics,
+                usageBreakdown
+            })
+            group.usageBreakdown = withUsageDiagnostics(
+                buildUsageBreakdown(
+                    group.metrics.additionalBreakdown,
+                    getSharedBillingSource(
+                        group.calls.map((call) => (typeof call.usageBreakdown.source === 'string' ? call.usageBreakdown.source : undefined))
+                    ),
+                    group.billingMode
+                ),
+                group.metrics
+            )
+        }
+
+        if (canAttributeByCallId) {
+            logger.info(
+                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length} reason=call_id`
+            )
+
+            for (const usageEntry of usageEntryMetrics) {
+                const access = credentialAccessByCallId.get(usageEntry.tokenUsageCredentialCallId || '') || {
+                    credentialId: usageEntry.credentialId,
+                    credentialName: usageEntry.credentialName,
+                    model: usageEntry.model,
+                    provider: usageEntry.provider
+                }
+                appendAttributedUsage(usageEntry, access)
+            }
+        } else if (canAttributeByUsageEntryMetadata) {
+            logger.info(
+                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length} reason=entry_metadata`
+            )
+
+            for (const usageEntry of usageEntryMetrics) {
+                const matchingAccess =
+                    normalizedCredentialAccesses.find(
+                        (access) =>
+                            (!!usageEntry.credentialId && access.credentialId === usageEntry.credentialId) ||
+                            (!!usageEntry.credentialName && access.credentialName === usageEntry.credentialName)
+                    ) || usageEntry
+
+                appendAttributedUsage(usageEntry, matchingAccess)
+            }
+        } else if (canAttributeByAccessOrder) {
+            logger.info(
+                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length} reason=access_order`
+            )
+
+            for (let index = 0; index < normalizedCredentialAccesses.length; index += 1) {
+                appendAttributedUsage(usageEntryMetrics[index], normalizedCredentialAccesses[index])
+            }
+        } else if (canAttributeBySingleCredential && singleCredentialAccess) {
+            logger.info(
+                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length} reason=single_credential`
+            )
+
+            for (const usageEntry of usageEntryMetrics) {
+                appendAttributedUsage(usageEntry, singleCredentialAccess)
+            }
+        } else if (normalizedCredentialAccesses.length > 0) {
+            logger.info(
+                `[token-usage] attribution strategy=weighted flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length}`
+            )
+
+            const groupedCredentialAccess = new Map<
+                string,
+                {
+                    credentialId?: string
+                    credentialName: string
+                    model?: string
+                    usageCount: number
+                }
+            >()
+
+            for (const access of normalizedCredentialAccesses) {
+                const key = `${access.credentialId || ''}:${access.credentialName}:${access.model || '__unknown_model__'}`
+                const existing = groupedCredentialAccess.get(key)
+                if (existing) {
+                    existing.usageCount += 1
+                } else {
+                    groupedCredentialAccess.set(key, {
+                        credentialId: access.credentialId,
+                        credentialName: access.credentialName,
+                        model: access.model,
+                        usageCount: 1
+                    })
+                }
+            }
+
+            const groups = Array.from(groupedCredentialAccess.values())
+            const weights = groups.map((group) => group.usageCount)
+            const sharedBillingSource = getSharedBillingSource(usageEntryMetrics.map((entry) => entry.billingSource))
+            const sharedBillingMode = getSharedBillingMode(usageEntryMetrics.map((entry) => entry.billingMode)) || 'token'
+
+            const distributedMetrics = {
+                inputTokens: distributeIntegerByWeights(aggregatedMetrics.inputTokens, weights),
+                outputTokens: distributeIntegerByWeights(aggregatedMetrics.outputTokens, weights),
+                totalTokens: distributeIntegerByWeights(aggregatedMetrics.totalTokens, weights),
+                cacheReadTokens: distributeIntegerByWeights(aggregatedMetrics.cacheReadTokens, weights),
+                cacheWriteTokens: distributeIntegerByWeights(aggregatedMetrics.cacheWriteTokens, weights),
+                reasoningTokens: distributeIntegerByWeights(aggregatedMetrics.reasoningTokens, weights),
+                acceptedPredictionTokens: distributeIntegerByWeights(aggregatedMetrics.acceptedPredictionTokens, weights),
+                rejectedPredictionTokens: distributeIntegerByWeights(aggregatedMetrics.rejectedPredictionTokens, weights),
+                audioInputTokens: distributeIntegerByWeights(aggregatedMetrics.audioInputTokens, weights),
+                audioOutputTokens: distributeIntegerByWeights(aggregatedMetrics.audioOutputTokens, weights),
+                imageCount: distributeIntegerByWeights(aggregatedMetrics.imageCount, weights),
+                videoCount: distributeIntegerByWeights(aggregatedMetrics.videoCount, weights),
+                seconds: distributeIntegerByWeights(aggregatedMetrics.seconds, weights),
+                characters: distributeIntegerByWeights(aggregatedMetrics.characters, weights)
+            }
+
+            const additionalBreakdownKeys = Object.keys(aggregatedMetrics.additionalBreakdown)
+            const distributedAdditionalBreakdown: Record<string, number[]> = {}
+            for (const key of additionalBreakdownKeys) {
+                distributedAdditionalBreakdown[key] = distributeIntegerByWeights(aggregatedMetrics.additionalBreakdown[key], weights)
+            }
+
+            groups.forEach((group, index) => {
+                const metrics = createEmptyMetrics()
+                metrics.inputTokens = distributedMetrics.inputTokens[index] || 0
+                metrics.outputTokens = distributedMetrics.outputTokens[index] || 0
+                metrics.totalTokens = metrics.inputTokens + metrics.outputTokens
+                metrics.cacheReadTokens = distributedMetrics.cacheReadTokens[index] || 0
+                metrics.cacheWriteTokens = distributedMetrics.cacheWriteTokens[index] || 0
+                metrics.reasoningTokens = distributedMetrics.reasoningTokens[index] || 0
+                metrics.acceptedPredictionTokens = distributedMetrics.acceptedPredictionTokens[index] || 0
+                metrics.rejectedPredictionTokens = distributedMetrics.rejectedPredictionTokens[index] || 0
+                metrics.audioInputTokens = distributedMetrics.audioInputTokens[index] || 0
+                metrics.audioOutputTokens = distributedMetrics.audioOutputTokens[index] || 0
+                metrics.imageCount = distributedMetrics.imageCount[index] || 0
+                metrics.videoCount = distributedMetrics.videoCount[index] || 0
+                metrics.seconds = distributedMetrics.seconds[index] || 0
+                metrics.characters = distributedMetrics.characters[index] || 0
+
+                const additionalBreakdown: Record<string, number> = {}
+                for (const key of additionalBreakdownKeys) {
+                    additionalBreakdown[key] = distributedAdditionalBreakdown[key][index] || 0
+                }
+                metrics.additionalBreakdown = additionalBreakdown
+
+                const resolvedModel = group.model || topModel
+                const groupKey = buildCredentialGroupKey(group.credentialId, group.credentialName, resolvedModel, sharedBillingMode)
+                const usageBreakdown = withUsageDiagnostics(
+                    buildUsageBreakdown(additionalBreakdown, sharedBillingSource, sharedBillingMode),
+                    metrics
+                )
+                const callId = buildDeterministicCallId(
+                    `${input.idempotencyKey || input.executionId || input.chatId || uuidv4()}:${usagePayloadFingerprint}:${groupKey}:${
+                        index + 1
+                    }`
+                )
+
+                credentialGroups.set(groupKey, {
+                    key: groupKey,
+                    credentialId: group.credentialId,
+                    credentialName: group.credentialName,
+                    model: resolvedModel,
+                    billingMode: sharedBillingMode,
+                    attributionMode: 'estimated',
+                    usageCount: group.usageCount,
+                    metrics,
+                    usageBreakdown,
+                    calls: [
+                        {
+                            id: callId,
+                            credentialId: group.credentialId,
+                            credentialName: group.credentialName,
+                            provider: undefined,
+                            model: resolvedModel,
+                            billingMode: sharedBillingMode,
+                            metrics,
+                            usageBreakdown
+                        }
+                    ]
+                })
+            })
+        }
+
+        return Array.from(credentialGroups.values())
+    }
+
+    private async persistUsageRows(
+        input: IRecordTokenUsageInput,
+        usageEntryMetrics: IUsageEntryMetrics[],
+        aggregatedMetrics: ITokenUsageMetrics,
+        modelTotals: Record<string, number>,
+        normalizedCredentialAccesses: ReturnType<typeof normalizeCredentialAccesses>
+    ): Promise<IPersistedUsageRows | null> {
+        const executionRepository = this.dataSource.getRepository(TokenUsageExecution)
+        const credentialRepository = this.dataSource.getRepository(TokenUsageCredential)
+        const credentialCallRepository = this.dataSource.getRepository(TokenUsageCredentialCall)
+
+        const execution = executionRepository.create({
+            workspaceId: input.workspaceId,
+            organizationId: input.organizationId,
+            userId: input.userId,
+            flowType: input.flowType,
+            flowId: input.flowId,
+            executionId: input.executionId,
+            chatId: input.chatId,
+            chatMessageId: input.chatMessageId,
+            sessionId: input.sessionId,
+            idempotencyKey: input.idempotencyKey,
+            inputTokens: aggregatedMetrics.inputTokens,
+            outputTokens: aggregatedMetrics.outputTokens,
+            totalTokens: aggregatedMetrics.totalTokens,
+            cacheReadTokens: aggregatedMetrics.cacheReadTokens,
+            cacheWriteTokens: aggregatedMetrics.cacheWriteTokens,
+            reasoningTokens: aggregatedMetrics.reasoningTokens,
+            acceptedPredictionTokens: aggregatedMetrics.acceptedPredictionTokens,
+            rejectedPredictionTokens: aggregatedMetrics.rejectedPredictionTokens,
+            audioInputTokens: aggregatedMetrics.audioInputTokens,
+            audioOutputTokens: aggregatedMetrics.audioOutputTokens,
+            imageCount: aggregatedMetrics.imageCount,
+            videoCount: aggregatedMetrics.videoCount,
+            seconds: aggregatedMetrics.seconds,
+            characters: aggregatedMetrics.characters,
+            usageBreakdown: JSON.stringify(aggregatedMetrics.additionalBreakdown),
+            modelBreakdown: JSON.stringify(modelTotals)
+        })
+
+        const savedExecution = await executionRepository.save(execution)
+        logger.info(`[token-usage] execution inserted id=${savedExecution.id} flowType=${input.flowType} chatId=${input.chatId || '-'}`)
+
+        const credentialGroups = this.buildAttributionGroups(
+            input,
+            usageEntryMetrics,
+            normalizedCredentialAccesses,
+            aggregatedMetrics,
+            modelTotals
+        )
+
+        if (!credentialGroups.length) {
+            logger.info(`[token-usage] no attributable credential groups executionId=${savedExecution.id}`)
+            return {
+                execution: savedExecution,
+                credentialRows: [],
+                callRows: []
+            }
+        }
+
+        const credentialRows = await credentialRepository.save(
+            credentialGroups.map((group) =>
+                credentialRepository.create({
+                    usageExecutionId: savedExecution.id,
+                    workspaceId: input.workspaceId,
+                    organizationId: input.organizationId,
+                    userId: input.userId,
+                    credentialId: group.credentialId,
+                    credentialName: group.credentialName,
+                    model: group.model,
+                    usageCount: group.usageCount,
+                    attributionMode: group.attributionMode,
+                    inputTokens: group.metrics.inputTokens,
+                    outputTokens: group.metrics.outputTokens,
+                    totalTokens: group.metrics.totalTokens,
+                    cacheReadTokens: group.metrics.cacheReadTokens,
+                    cacheWriteTokens: group.metrics.cacheWriteTokens,
+                    reasoningTokens: group.metrics.reasoningTokens,
+                    acceptedPredictionTokens: group.metrics.acceptedPredictionTokens,
+                    rejectedPredictionTokens: group.metrics.rejectedPredictionTokens,
+                    audioInputTokens: group.metrics.audioInputTokens,
+                    audioOutputTokens: group.metrics.audioOutputTokens,
+                    imageCount: group.metrics.imageCount,
+                    videoCount: group.metrics.videoCount,
+                    seconds: group.metrics.seconds,
+                    characters: group.metrics.characters,
+                    usageBreakdown: JSON.stringify(group.usageBreakdown),
+                    chargedCredit: 0
+                })
+            )
+        )
+
+        const credentialRowByKey = new Map(credentialRows.map((row, index) => [credentialGroups[index].key, row]))
+
+        const callRows = await credentialCallRepository.save(
+            credentialGroups.flatMap((group) => {
+                const parentRow = credentialRowByKey.get(group.key)
+                if (!parentRow) return []
+
+                return group.calls.map((call, index) =>
+                    credentialCallRepository.create({
+                        id: call.id,
+                        usageExecutionId: savedExecution.id,
+                        tokenUsageCredentialId: parentRow.id,
+                        workspaceId: input.workspaceId,
+                        organizationId: input.organizationId,
+                        userId: input.userId,
+                        sequenceIndex: index + 1,
+                        attributionMode: group.attributionMode,
+                        billingMode: call.billingMode,
+                        inputTokens: call.metrics.inputTokens,
+                        outputTokens: call.metrics.outputTokens,
+                        totalTokens: call.metrics.totalTokens,
+                        cacheReadTokens: call.metrics.cacheReadTokens,
+                        cacheWriteTokens: call.metrics.cacheWriteTokens,
+                        reasoningTokens: call.metrics.reasoningTokens,
+                        acceptedPredictionTokens: call.metrics.acceptedPredictionTokens,
+                        rejectedPredictionTokens: call.metrics.rejectedPredictionTokens,
+                        audioInputTokens: call.metrics.audioInputTokens,
+                        audioOutputTokens: call.metrics.audioOutputTokens,
+                        imageCount: call.metrics.imageCount,
+                        videoCount: call.metrics.videoCount,
+                        seconds: call.metrics.seconds,
+                        characters: call.metrics.characters,
+                        usageBreakdown: JSON.stringify(call.usageBreakdown),
+                        chargedCredit: 0
+                    })
+                )
+            })
+        )
+
+        logger.info(`[token-usage] credential rows inserted count=${credentialRows.length} executionId=${savedExecution.id}`)
+        logger.info(`[token-usage] credential call rows inserted count=${callRows.length} executionId=${savedExecution.id}`)
+
+        return {
+            execution: savedExecution,
+            credentialRows,
+            callRows
+        }
+    }
+
+    private rebuildCredentialGroupWithCalls(group: ICredentialGroup, calls: IAttributedUsageCall[]): ICredentialGroup | null {
+        if (!calls.length) return null
+
+        const metrics = createEmptyMetrics()
+        calls.forEach((call) => addMetrics(metrics, call.metrics))
+
+        return {
+            ...group,
+            usageCount: calls.length,
+            metrics,
+            usageBreakdown: withUsageDiagnostics(
+                buildUsageBreakdown(
+                    metrics.additionalBreakdown,
+                    getSharedBillingSource(
+                        calls.map((call) => (typeof call.usageBreakdown.source === 'string' ? call.usageBreakdown.source : undefined))
+                    ),
+                    group.billingMode
+                ),
+                metrics
+            ),
+            calls
+        }
+    }
+
+    private async appendUsageMetricsToExecution(
+        execution: TokenUsageExecution,
+        aggregatedMetrics: ITokenUsageMetrics,
+        modelTotals: Record<string, number>
+    ): Promise<TokenUsageExecution> {
+        const executionRepository = this.dataSource.getRepository(TokenUsageExecution)
+        const mergedExecution = executionRepository.create({
+            ...execution,
+            inputTokens: safeToNumber(execution.inputTokens) + aggregatedMetrics.inputTokens,
+            outputTokens: safeToNumber(execution.outputTokens) + aggregatedMetrics.outputTokens,
+            totalTokens:
+                safeToNumber(execution.inputTokens) +
+                aggregatedMetrics.inputTokens +
+                safeToNumber(execution.outputTokens) +
+                aggregatedMetrics.outputTokens,
+            cacheReadTokens: safeToNumber(execution.cacheReadTokens) + aggregatedMetrics.cacheReadTokens,
+            cacheWriteTokens: safeToNumber(execution.cacheWriteTokens) + aggregatedMetrics.cacheWriteTokens,
+            reasoningTokens: safeToNumber(execution.reasoningTokens) + aggregatedMetrics.reasoningTokens,
+            acceptedPredictionTokens: safeToNumber(execution.acceptedPredictionTokens) + aggregatedMetrics.acceptedPredictionTokens,
+            rejectedPredictionTokens: safeToNumber(execution.rejectedPredictionTokens) + aggregatedMetrics.rejectedPredictionTokens,
+            audioInputTokens: safeToNumber(execution.audioInputTokens) + aggregatedMetrics.audioInputTokens,
+            audioOutputTokens: safeToNumber(execution.audioOutputTokens) + aggregatedMetrics.audioOutputTokens,
+            imageCount: safeToNumber(execution.imageCount) + aggregatedMetrics.imageCount,
+            videoCount: safeToNumber(execution.videoCount) + aggregatedMetrics.videoCount,
+            seconds: safeToNumber(execution.seconds) + aggregatedMetrics.seconds,
+            characters: safeToNumber(execution.characters) + aggregatedMetrics.characters,
+            usageBreakdown: JSON.stringify(
+                mergeNumericBreakdown(parseJsonRecord(execution.usageBreakdown), aggregatedMetrics.additionalBreakdown)
+            ),
+            modelBreakdown: JSON.stringify(mergeNumericBreakdown(parseJsonRecord(execution.modelBreakdown), modelTotals))
+        })
+
+        return executionRepository.save(mergedExecution)
+    }
+
+    private async ensureRecoveryCallRows(persistedRows: IPersistedUsageRows, input: IRecordTokenUsageInput): Promise<IPersistedUsageRows> {
+        if (persistedRows.callRows.length || !persistedRows.credentialRows.length) {
+            return persistedRows
+        }
+
+        const callRepository = this.dataSource.getRepository(TokenUsageCredentialCall)
+        const callRows = await callRepository.save(
+            persistedRows.credentialRows.map((row, index) =>
+                callRepository.create({
+                    id: buildDeterministicCallId(`${persistedRows.execution.id}:${row.id}:${input.idempotencyKey || 'recovery'}:${index}`),
+                    usageExecutionId: persistedRows.execution.id,
+                    tokenUsageCredentialId: row.id,
+                    workspaceId: row.workspaceId,
+                    organizationId: row.organizationId,
+                    userId: row.userId,
+                    sequenceIndex: 1,
+                    attributionMode: row.attributionMode || 'estimated',
+                    billingMode: inferBillingModeFromUsage(parseJsonRecord(row.usageBreakdown), 'token') || 'token',
+                    inputTokens: row.inputTokens || 0,
+                    outputTokens: row.outputTokens || 0,
+                    totalTokens: row.totalTokens || 0,
+                    cacheReadTokens: row.cacheReadTokens || 0,
+                    cacheWriteTokens: row.cacheWriteTokens || 0,
+                    reasoningTokens: row.reasoningTokens || 0,
+                    acceptedPredictionTokens: row.acceptedPredictionTokens || 0,
+                    rejectedPredictionTokens: row.rejectedPredictionTokens || 0,
+                    audioInputTokens: row.audioInputTokens || 0,
+                    audioOutputTokens: row.audioOutputTokens || 0,
+                    imageCount: row.imageCount || 0,
+                    videoCount: row.videoCount || 0,
+                    seconds: row.seconds || 0,
+                    characters: row.characters || 0,
+                    usageBreakdown: row.usageBreakdown,
+                    chargedCredit: 0
+                })
+            )
+        )
+
+        return {
+            ...persistedRows,
+            callRows
+        }
+    }
+
+    private async ensurePersistedUsageRowsForExistingExecution(
+        execution: TokenUsageExecution,
+        input: IRecordTokenUsageInput
+    ): Promise<IPersistedUsageRows> {
+        let persistedRows = await this.loadPersistedRows(execution.id)
+        persistedRows = await this.ensureRecoveryCallRows(persistedRows, input)
+
+        const usagePayloads = input.usagePayloads || []
+        if (!usagePayloads.length) {
+            return persistedRows
+        }
+
+        const usageExtraction = extractUsageEntryMetricsFromPayloads(usagePayloads)
+        if (!usageExtraction.hasAnyUsage || !usageExtraction.selectedEntries) {
+            return persistedRows
+        }
+
+        const normalizedCredentialAccesses = normalizeCredentialAccesses(input.credentialAccesses || [])
+        const credentialRepository = this.dataSource.getRepository(TokenUsageCredential)
+        const callRepository = this.dataSource.getRepository(TokenUsageCredentialCall)
+        const credentialGroups = this.buildAttributionGroups(
+            input,
+            usageExtraction.usageEntryMetrics,
+            normalizedCredentialAccesses,
+            usageExtraction.aggregatedMetrics,
+            usageExtraction.modelTotals
+        )
+
+        if (!credentialGroups.length) {
+            return persistedRows
+        }
+
+        const existingCallIds = new Set(persistedRows.callRows.map((row) => row.id))
+        const filteredCredentialGroups = credentialGroups
+            .map((group) =>
+                this.rebuildCredentialGroupWithCalls(
+                    group,
+                    group.calls.filter((call) => !existingCallIds.has(call.id))
+                )
+            )
+            .filter((group): group is ICredentialGroup => Boolean(group))
+
+        if (!filteredCredentialGroups.length) {
+            return persistedRows
+        }
+
+        const newAggregatedMetrics = createEmptyMetrics()
+        const newModelTotals: Record<string, number> = {}
+        for (const group of filteredCredentialGroups) {
+            addMetrics(newAggregatedMetrics, group.metrics)
+            const modelKey = group.model || 'unknown'
+            newModelTotals[modelKey] = (newModelTotals[modelKey] || 0) + getUsageMetricForWeight(group.metrics)
+        }
+
+        if (!hasAnyUsage(newAggregatedMetrics)) {
+            return persistedRows
+        }
+
+        await this.appendUsageMetricsToExecution(execution, newAggregatedMetrics, newModelTotals)
+
+        const credentialRows = await credentialRepository.save(
+            filteredCredentialGroups.map((group) =>
+                credentialRepository.create({
+                    usageExecutionId: execution.id,
+                    workspaceId: execution.workspaceId,
+                    organizationId: execution.organizationId,
+                    userId: execution.userId,
+                    credentialId: group.credentialId,
+                    credentialName: group.credentialName,
+                    model: group.model,
+                    usageCount: group.usageCount,
+                    attributionMode: group.attributionMode,
+                    inputTokens: group.metrics.inputTokens,
+                    outputTokens: group.metrics.outputTokens,
+                    totalTokens: group.metrics.totalTokens,
+                    cacheReadTokens: group.metrics.cacheReadTokens,
+                    cacheWriteTokens: group.metrics.cacheWriteTokens,
+                    reasoningTokens: group.metrics.reasoningTokens,
+                    acceptedPredictionTokens: group.metrics.acceptedPredictionTokens,
+                    rejectedPredictionTokens: group.metrics.rejectedPredictionTokens,
+                    audioInputTokens: group.metrics.audioInputTokens,
+                    audioOutputTokens: group.metrics.audioOutputTokens,
+                    imageCount: group.metrics.imageCount,
+                    videoCount: group.metrics.videoCount,
+                    seconds: group.metrics.seconds,
+                    characters: group.metrics.characters,
+                    usageBreakdown: JSON.stringify(group.usageBreakdown),
+                    chargedCredit: 0
+                })
+            )
+        )
+
+        const credentialRowByKey = new Map(credentialRows.map((row, index) => [filteredCredentialGroups[index].key, row]))
+        const callRows = await callRepository.save(
+            filteredCredentialGroups.flatMap((group) => {
+                const parentRow = credentialRowByKey.get(group.key)
+                if (!parentRow) return []
+
+                return group.calls.map((call, index) =>
+                    callRepository.create({
+                        id: call.id,
+                        usageExecutionId: execution.id,
+                        tokenUsageCredentialId: parentRow.id,
+                        workspaceId: execution.workspaceId,
+                        organizationId: execution.organizationId,
+                        userId: execution.userId,
+                        sequenceIndex: index + 1,
+                        attributionMode: group.attributionMode,
+                        billingMode: call.billingMode,
+                        inputTokens: call.metrics.inputTokens,
+                        outputTokens: call.metrics.outputTokens,
+                        totalTokens: call.metrics.totalTokens,
+                        cacheReadTokens: call.metrics.cacheReadTokens,
+                        cacheWriteTokens: call.metrics.cacheWriteTokens,
+                        reasoningTokens: call.metrics.reasoningTokens,
+                        acceptedPredictionTokens: call.metrics.acceptedPredictionTokens,
+                        rejectedPredictionTokens: call.metrics.rejectedPredictionTokens,
+                        audioInputTokens: call.metrics.audioInputTokens,
+                        audioOutputTokens: call.metrics.audioOutputTokens,
+                        imageCount: call.metrics.imageCount,
+                        videoCount: call.metrics.videoCount,
+                        seconds: call.metrics.seconds,
+                        characters: call.metrics.characters,
+                        usageBreakdown: JSON.stringify(call.usageBreakdown),
+                        chargedCredit: 0
+                    })
+                )
+            })
+        )
+
+        persistedRows = await this.loadPersistedRows(execution.id)
+        return {
+            ...persistedRows,
+            credentialRows: persistedRows.credentialRows.length ? persistedRows.credentialRows : credentialRows,
+            callRows: persistedRows.callRows.length ? persistedRows.callRows : callRows
+        }
+    }
+
+    private async settlePersistedUsageRows(persistedRows: IPersistedUsageRows, workspaceId: string, userId?: string) {
+        if (!userId) {
+            logger.info(`[token-usage] skip credit consumption: missing userId executionId=${persistedRows.execution.id}`)
+            return {
+                creditConsumed: 0,
+                creditBalance: undefined
+            }
+        }
+
+        const callRepository = this.dataSource.getRepository(TokenUsageCredentialCall)
+        const credentialRepository = this.dataSource.getRepository(TokenUsageCredential)
+        const transactionRepository = this.dataSource.getRepository(WorkspaceCreditTransaction)
+
+        const credentialById = new Map(persistedRows.credentialRows.map((row) => [row.id, row]))
+        const billableUsages = persistedRows.callRows
+            .filter((row) => safeToNumber(row.chargedCredit) <= 0)
+            .map((row) =>
+                buildBillingUsageFromMetrics({
+                    credentialId: credentialById.get(row.tokenUsageCredentialId)?.credentialId,
+                    credentialName: credentialById.get(row.tokenUsageCredentialId)?.credentialName,
+                    model: credentialById.get(row.tokenUsageCredentialId)?.model,
+                    billingMode: row.billingMode,
+                    tokenUsageCredentialCallId: row.id,
+                    metrics: {
+                        inputTokens: row.inputTokens || 0,
+                        outputTokens: row.outputTokens || 0,
+                        totalTokens: row.totalTokens || 0,
+                        cacheReadTokens: row.cacheReadTokens || 0,
+                        cacheWriteTokens: row.cacheWriteTokens || 0,
+                        reasoningTokens: row.reasoningTokens || 0,
+                        acceptedPredictionTokens: row.acceptedPredictionTokens || 0,
+                        rejectedPredictionTokens: row.rejectedPredictionTokens || 0,
+                        audioInputTokens: row.audioInputTokens || 0,
+                        audioOutputTokens: row.audioOutputTokens || 0,
+                        imageCount: row.imageCount || 0,
+                        videoCount: row.videoCount || 0,
+                        seconds: row.seconds || 0,
+                        characters: row.characters || 0,
+                        additionalBreakdown: {}
+                    },
+                    usageBreakdown: parseJsonRecord(row.usageBreakdown)
+                })
+            )
+            .filter((usage): usage is ICredentialBillingUsage => Boolean(usage))
+
+        const workspaceCreditService = new WorkspaceCreditService()
+        const creditResult = billableUsages.length
+            ? await workspaceCreditService.consumeCreditByBillingUsages(workspaceId, userId, billableUsages)
+            : {
+                  creditConsumed: 0,
+                  creditBalance: undefined,
+                  transactions: [],
+                  usageResults: []
+              }
+
+        const callIds = persistedRows.callRows.map((row) => row.id).filter((id): id is string => !!id)
+        const transactions = callIds.length
+            ? await transactionRepository.findBy({
+                  tokenUsageCredentialCallId: In(callIds)
+              })
+            : []
+        const transactionByCallId = new Map(
+            transactions
+                .filter(
+                    (transaction): transaction is WorkspaceCreditTransaction & { tokenUsageCredentialCallId: string } =>
+                        typeof transaction.tokenUsageCredentialCallId === 'string' && transaction.tokenUsageCredentialCallId.length > 0
+                )
+                .map((transaction) => [transaction.tokenUsageCredentialCallId, transaction])
+        )
+
+        const updatedCallRows = persistedRows.callRows.map((row) => {
+            const transaction = transactionByCallId.get(row.id)
+            const chargedCredit = transaction ? Math.abs(transaction.amount || 0) : 0
+            return callRepository.create({
+                ...row,
+                chargedCredit,
+                creditTransactionId: transaction?.id,
+                creditedAt: transaction?.createdDate
+            })
+        })
+
+        const savedCallRows = updatedCallRows.length ? await callRepository.save(updatedCallRows) : persistedRows.callRows
+
+        const chargedCreditByCredentialId = savedCallRows.reduce((acc, row) => {
+            acc.set(row.tokenUsageCredentialId, (acc.get(row.tokenUsageCredentialId) || 0) + safeToNumber(row.chargedCredit))
+            return acc
+        }, new Map<string, number>())
+
+        const savedCredentialRows = persistedRows.credentialRows.length
+            ? await credentialRepository.save(
+                  persistedRows.credentialRows.map((row) =>
+                      credentialRepository.create({
+                          ...row,
+                          chargedCredit: chargedCreditByCredentialId.get(row.id) || 0
+                      })
+                  )
+              )
+            : persistedRows.credentialRows
+
+        logger.info(
+            `[token-usage] credit consumed=${safeToNumber((creditResult as Record<string, any>).creditConsumed)} executionId=${
+                persistedRows.execution.id
+            }`
+        )
+
+        return {
+            ...creditResult,
+            callRows: savedCallRows,
+            credentialRows: savedCredentialRows
+        }
+    }
+
     public async recordTokenUsage(input: IRecordTokenUsageInput) {
-        const { usagePayloads, credentialAccesses = [] } = input
+        const { usagePayloads = [], credentialAccesses = [] } = input
 
         logger.info(
             `[token-usage] start record flowType=${input.flowType} flowId=${input.flowId || '-'} chatId=${input.chatId || '-'} userId=${
                 input.userId || '-'
-            } payloads=${usagePayloads?.length || 0} credentials=${credentialAccesses.length}`
+            } payloads=${usagePayloads.length} credentials=${credentialAccesses.length} idempotencyKey=${input.idempotencyKey || '-'}`
         )
 
-        if (!usagePayloads?.length) {
+        if (!usagePayloads.length) {
             logger.warn('[token-usage] skip: empty usagePayloads')
             return
         }
@@ -822,7 +2094,7 @@ export class TokenUsageService {
         const usageExtraction = extractUsageEntryMetricsFromPayloads(usagePayloads)
         if (!usageExtraction.extractedEntries) {
             const firstPayloadKeys =
-                usagePayloads?.[0] && typeof usagePayloads[0] === 'object' ? Object.keys(usagePayloads[0]).slice(0, 30) : []
+                usagePayloads[0] && typeof usagePayloads[0] === 'object' ? Object.keys(usagePayloads[0]).slice(0, 30) : []
             logger.warn(
                 `[token-usage] skip: no usage entries extracted. firstPayloadKeys=${JSON.stringify(firstPayloadKeys)} flowType=${
                     input.flowType
@@ -836,6 +2108,15 @@ export class TokenUsageService {
                 `[token-usage] skip: usage entries extracted=${
                     usageExtraction.extractedEntries
                 }, but all entries were filtered out. flowType=${input.flowType} chatId=${input.chatId || '-'}`
+            )
+            return
+        }
+
+        if (!usageExtraction.hasActualUsageEntry) {
+            logger.warn(
+                `[token-usage] degraded audit only: estimated-only usage extracted=${usageExtraction.selectedEntries} flowType=${
+                    input.flowType
+                } chatId=${input.chatId || '-'}`
             )
             return
         }
@@ -861,487 +2142,34 @@ export class TokenUsageService {
             return
         }
 
-        logger.info(
-            `[token-usage] extracted entries=${usageExtraction.selectedEntries} total=${aggregatedMetrics.totalTokens} input=${
-                aggregatedMetrics.inputTokens
-            } output=${aggregatedMetrics.outputTokens} models=${JSON.stringify(modelTotals)}`
-        )
-
-        const execution = this.dataSource.getRepository(TokenUsageExecution).create({
-            workspaceId: input.workspaceId,
-            organizationId: input.organizationId,
-            userId: input.userId,
-            flowType: input.flowType,
-            flowId: input.flowId,
-            executionId: input.executionId,
-            chatId: input.chatId,
-            chatMessageId: input.chatMessageId,
-            sessionId: input.sessionId,
-            inputTokens: aggregatedMetrics.inputTokens,
-            outputTokens: aggregatedMetrics.outputTokens,
-            totalTokens: aggregatedMetrics.totalTokens,
-            cacheReadTokens: aggregatedMetrics.cacheReadTokens,
-            cacheWriteTokens: aggregatedMetrics.cacheWriteTokens,
-            reasoningTokens: aggregatedMetrics.reasoningTokens,
-            acceptedPredictionTokens: aggregatedMetrics.acceptedPredictionTokens,
-            rejectedPredictionTokens: aggregatedMetrics.rejectedPredictionTokens,
-            audioInputTokens: aggregatedMetrics.audioInputTokens,
-            audioOutputTokens: aggregatedMetrics.audioOutputTokens,
-            usageBreakdown: JSON.stringify(aggregatedMetrics.additionalBreakdown),
-            modelBreakdown: JSON.stringify(modelTotals)
-        })
-
-        const savedExecution = await this.dataSource.getRepository(TokenUsageExecution).save(execution)
-        logger.info(`[token-usage] execution inserted id=${savedExecution.id} flowType=${input.flowType} chatId=${input.chatId || '-'}`)
-
-        if (!credentialAccesses.length) return
-
-        const normalizedCredentialAccesses = credentialAccesses.map((access) => ({
-            credentialId: access.credentialId,
-            credentialName: access.credentialName || 'Unknown Credential',
-            model: typeof access.model === 'string' && access.model.trim() ? access.model.trim() : undefined,
-            provider: typeof access.provider === 'string' && access.provider.trim() ? access.provider.trim() : undefined,
-            tokenUsageCredentialCallId:
-                typeof access.tokenUsageCredentialCallId === 'string' && access.tokenUsageCredentialCallId.trim()
-                    ? access.tokenUsageCredentialCallId.trim()
-                    : undefined
-        }))
-
-        const topModel = getTopModel(modelTotals)
-
-        const credentialRepository = this.dataSource.getRepository(TokenUsageCredential)
-        const credentialCallRepository = this.dataSource.getRepository(TokenUsageCredentialCall)
-        const workspaceCreditTransactionRepository = this.dataSource.getRepository(WorkspaceCreditTransaction)
-
-        const credentialGroups = new Map<string, ICredentialGroup>()
-        const orderedChargeUsages: Array<{
-            tokenUsageCredentialCallId: string
-            credentialId?: string
-            credentialName?: string
-            provider?: string
-            model?: string
-            totalTokens: number
-            inputTokens?: number
-            outputTokens?: number
-            usageBreakdown?: Record<string, number | string>
-            billUsingTotalTokens?: boolean
-        }> = []
-
-        const credentialAccessByCallId = normalizedCredentialAccesses.reduce((acc, access) => {
-            if (access.tokenUsageCredentialCallId) {
-                acc.set(access.tokenUsageCredentialCallId, access)
-            }
-            return acc
-        }, new Map<string, (typeof normalizedCredentialAccesses)[number]>())
-
-        const singleCredentialAccessMap = normalizedCredentialAccesses.reduce((acc, access) => {
-            const key = `${access.credentialId || ''}:${access.credentialName}`
-            if (!acc.has(key)) {
-                acc.set(key, access)
-            }
-            return acc
-        }, new Map<string, (typeof normalizedCredentialAccesses)[number]>())
-        const singleCredentialAccess = singleCredentialAccessMap.size === 1 ? Array.from(singleCredentialAccessMap.values())[0] : undefined
-
-        const canAttributeByCallId =
-            usageEntryMetrics.length > 0 &&
-            usageEntryMetrics.every(
-                (entry) => !!entry.tokenUsageCredentialCallId && credentialAccessByCallId.has(entry.tokenUsageCredentialCallId)
-            )
-        const canAttributeByUsageEntryMetadata =
-            usageEntryMetrics.length > 0 && usageEntryMetrics.every((entry) => !!entry.credentialId || !!entry.credentialName)
-        const canAttributeByAccessOrder = normalizedCredentialAccesses.length === usageEntryMetrics.length && usageEntryMetrics.length > 0
-        const canAttributeBySingleCredential =
-            !canAttributeByCallId && !canAttributeByUsageEntryMetadata && !canAttributeByAccessOrder && !!singleCredentialAccess
-
-        const appendOrderedAttributedUsage = (
-            usageEntry: IUsageEntryMetrics,
-            access: {
-                credentialId?: string
-                credentialName?: string
-                model?: string
-                provider?: string
-            }
-        ) => {
-            const resolvedCredentialId = access.credentialId || usageEntry.credentialId
-            const resolvedCredentialName = access.credentialName || usageEntry.credentialName || 'Unknown Credential'
-            const resolvedModel = access.model || usageEntry.model || topModel
-            const resolvedProvider = access.provider || usageEntry.provider
-            const billingMode = usageEntry.billingMode || 'token'
-            const usageBreakdown = withUsageDiagnostics(
-                buildUsageBreakdown(usageEntry.metrics.additionalBreakdown, usageEntry.billingSource, usageEntry.billingMode),
-                usageEntry.metrics
-            )
-            const callId = usageEntry.tokenUsageCredentialCallId || uuidv4()
-            const useTotalTokensForBilling = usageEntry.auditSource !== 'llm_callback' && getUnclassifiedTokens(usageEntry.metrics) > 0
-            const groupKey = buildCredentialGroupKey(resolvedCredentialId, resolvedCredentialName, resolvedModel)
-
-            if (useTotalTokensForBilling) {
-                logger.info(
-                    `[token-usage] fallback usage billing by total tokens callId=${callId} model=${resolvedModel || 'unknown'} total=${
-                        usageEntry.metrics.totalTokens
-                    } input=${usageEntry.metrics.inputTokens} output=${usageEntry.metrics.outputTokens} unclassified=${
-                        usageBreakdown.unclassified_tokens || 0
-                    }`
-                )
-            }
-
-            if (!credentialGroups.has(groupKey)) {
-                const metrics = createEmptyMetrics()
-                credentialGroups.set(groupKey, {
-                    key: groupKey,
-                    credentialId: resolvedCredentialId,
-                    credentialName: resolvedCredentialName,
-                    model: resolvedModel,
-                    attributionMode: 'ordered',
-                    usageCount: 0,
-                    metrics,
-                    usageBreakdown: {},
-                    calls: []
-                })
-            }
-
-            const group = credentialGroups.get(groupKey)
-            if (!group) return
-
-            group.usageCount += 1
-            addMetrics(group.metrics, usageEntry.metrics)
-            group.calls.push({
-                id: callId,
-                credentialId: resolvedCredentialId,
-                credentialName: resolvedCredentialName,
-                provider: resolvedProvider,
-                model: resolvedModel,
-                billingMode,
-                metrics: usageEntry.metrics,
-                usageBreakdown,
-                billUsingTotalTokens: useTotalTokensForBilling
-            })
-            group.usageBreakdown = withUsageDiagnostics(
-                buildUsageBreakdown(
-                    group.metrics.additionalBreakdown,
-                    getSharedBillingSource(
-                        group.calls.map((call) => (typeof call.usageBreakdown.source === 'string' ? call.usageBreakdown.source : undefined))
-                    ),
-                    getSharedBillingMode(group.calls.map((call) => call.billingMode))
-                ),
-                group.metrics
-            )
-
-            orderedChargeUsages.push({
-                tokenUsageCredentialCallId: callId,
-                credentialId: resolvedCredentialId,
-                credentialName: resolvedCredentialName,
-                provider: resolvedProvider,
-                model: resolvedModel,
-                totalTokens: usageEntry.metrics.totalTokens,
-                inputTokens: usageEntry.metrics.inputTokens,
-                outputTokens: usageEntry.metrics.outputTokens,
-                usageBreakdown,
-                billUsingTotalTokens: useTotalTokensForBilling
-            })
-        }
-
-        if (canAttributeByCallId) {
-            logger.info(
-                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length} reason=call_id`
-            )
-
-            for (const usageEntry of usageEntryMetrics) {
-                const access = credentialAccessByCallId.get(usageEntry.tokenUsageCredentialCallId || '')
-                if (!access) continue
-                appendOrderedAttributedUsage(usageEntry, access)
-            }
-        } else if (canAttributeByUsageEntryMetadata) {
-            logger.info(
-                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length} reason=entry_metadata`
-            )
-
-            for (const usageEntry of usageEntryMetrics) {
-                const matchingAccess =
-                    normalizedCredentialAccesses.find(
-                        (access) =>
-                            (!!usageEntry.credentialId && access.credentialId === usageEntry.credentialId) ||
-                            (!!usageEntry.credentialName && access.credentialName === usageEntry.credentialName)
-                    ) || usageEntry
-
-                appendOrderedAttributedUsage(usageEntry, matchingAccess)
-            }
-        } else if (canAttributeByAccessOrder) {
-            logger.info(
-                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length} reason=access_order`
-            )
-
-            for (let index = 0; index < normalizedCredentialAccesses.length; index += 1) {
-                appendOrderedAttributedUsage(usageEntryMetrics[index], normalizedCredentialAccesses[index])
-            }
-        } else if (canAttributeBySingleCredential && singleCredentialAccess) {
-            logger.info(
-                `[token-usage] attribution strategy=ordered flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length} reason=single_credential`
-            )
-
-            for (const usageEntry of usageEntryMetrics) {
-                appendOrderedAttributedUsage(usageEntry, singleCredentialAccess)
-            }
-        } else {
-            logger.info(
-                `[token-usage] attribution strategy=weighted flowType=${input.flowType} credentials=${normalizedCredentialAccesses.length} entries=${usageEntryMetrics.length}`
-            )
-
-            const groupedCredentialAccess = new Map<
-                string,
-                {
-                    credentialId?: string
-                    credentialName: string
-                    model?: string
-                    usageCount: number
-                }
-            >()
-
-            for (const access of normalizedCredentialAccesses) {
-                const groupKey = buildCredentialGroupKey(access.credentialId, access.credentialName, access.model)
-                const existing = groupedCredentialAccess.get(groupKey)
-                if (existing) {
-                    existing.usageCount += 1
-                } else {
-                    groupedCredentialAccess.set(groupKey, {
-                        credentialId: access.credentialId,
-                        credentialName: access.credentialName,
-                        model: access.model,
-                        usageCount: 1
-                    })
-                }
-            }
-
-            const groups = Array.from(groupedCredentialAccess.values())
-            const weights = groups.map((group) => group.usageCount)
-            const sharedBillingSource = getSharedBillingSource(usageEntryMetrics.map((entry) => entry.billingSource))
-            const sharedBillingMode = getSharedBillingMode(usageEntryMetrics.map((entry) => entry.billingMode))
-
-            const distributedMetrics = {
-                inputTokens: distributeIntegerByWeights(aggregatedMetrics.inputTokens, weights),
-                outputTokens: distributeIntegerByWeights(aggregatedMetrics.outputTokens, weights),
-                totalTokens: distributeIntegerByWeights(aggregatedMetrics.totalTokens, weights),
-                cacheReadTokens: distributeIntegerByWeights(aggregatedMetrics.cacheReadTokens, weights),
-                cacheWriteTokens: distributeIntegerByWeights(aggregatedMetrics.cacheWriteTokens, weights),
-                reasoningTokens: distributeIntegerByWeights(aggregatedMetrics.reasoningTokens, weights),
-                acceptedPredictionTokens: distributeIntegerByWeights(aggregatedMetrics.acceptedPredictionTokens, weights),
-                rejectedPredictionTokens: distributeIntegerByWeights(aggregatedMetrics.rejectedPredictionTokens, weights),
-                audioInputTokens: distributeIntegerByWeights(aggregatedMetrics.audioInputTokens, weights),
-                audioOutputTokens: distributeIntegerByWeights(aggregatedMetrics.audioOutputTokens, weights)
-            }
-
-            const additionalBreakdownKeys = Object.keys(aggregatedMetrics.additionalBreakdown)
-            const distributedAdditionalBreakdown: Record<string, number[]> = {}
-            for (const key of additionalBreakdownKeys) {
-                distributedAdditionalBreakdown[key] = distributeIntegerByWeights(aggregatedMetrics.additionalBreakdown[key], weights)
-            }
-
-            groups.forEach((group, index) => {
-                const metrics = createEmptyMetrics()
-                metrics.inputTokens = distributedMetrics.inputTokens[index] || 0
-                metrics.outputTokens = distributedMetrics.outputTokens[index] || 0
-                metrics.totalTokens = distributedMetrics.totalTokens[index] || 0
-                metrics.cacheReadTokens = distributedMetrics.cacheReadTokens[index] || 0
-                metrics.cacheWriteTokens = distributedMetrics.cacheWriteTokens[index] || 0
-                metrics.reasoningTokens = distributedMetrics.reasoningTokens[index] || 0
-                metrics.acceptedPredictionTokens = distributedMetrics.acceptedPredictionTokens[index] || 0
-                metrics.rejectedPredictionTokens = distributedMetrics.rejectedPredictionTokens[index] || 0
-                metrics.audioInputTokens = distributedMetrics.audioInputTokens[index] || 0
-                metrics.audioOutputTokens = distributedMetrics.audioOutputTokens[index] || 0
-
-                const additionalBreakdown: Record<string, number> = {}
-                for (const key of additionalBreakdownKeys) {
-                    additionalBreakdown[key] = distributedAdditionalBreakdown[key][index] || 0
-                }
-                metrics.additionalBreakdown = additionalBreakdown
-
-                const resolvedModel = group.model || topModel
-                const groupKey = buildCredentialGroupKey(group.credentialId, group.credentialName, resolvedModel)
-                credentialGroups.set(groupKey, {
-                    key: groupKey,
-                    credentialId: group.credentialId,
-                    credentialName: group.credentialName,
-                    model: resolvedModel,
-                    attributionMode: 'estimated',
-                    usageCount: group.usageCount,
-                    metrics,
-                    usageBreakdown: withUsageDiagnostics(
-                        buildUsageBreakdown(additionalBreakdown, sharedBillingSource, sharedBillingMode),
-                        metrics
-                    ),
-                    calls: []
-                })
-            })
-        }
-
-        const credentialGroupList = Array.from(credentialGroups.values())
-        const credentialRows = credentialGroupList.map((group) =>
-            credentialRepository.create({
-                usageExecutionId: savedExecution.id,
-                workspaceId: input.workspaceId,
-                organizationId: input.organizationId,
-                userId: input.userId,
-                credentialId: group.credentialId,
-                credentialName: group.credentialName,
-                model: group.model || topModel,
-                usageCount: group.usageCount,
-                attributionMode: group.attributionMode,
-                inputTokens: group.metrics.inputTokens,
-                outputTokens: group.metrics.outputTokens,
-                totalTokens: group.metrics.totalTokens,
-                cacheReadTokens: group.metrics.cacheReadTokens,
-                cacheWriteTokens: group.metrics.cacheWriteTokens,
-                reasoningTokens: group.metrics.reasoningTokens,
-                acceptedPredictionTokens: group.metrics.acceptedPredictionTokens,
-                rejectedPredictionTokens: group.metrics.rejectedPredictionTokens,
-                audioInputTokens: group.metrics.audioInputTokens,
-                audioOutputTokens: group.metrics.audioOutputTokens,
-                usageBreakdown: JSON.stringify(group.usageBreakdown),
-                chargedCredit: 0
-            })
-        )
-
-        let savedCredentialRows = await credentialRepository.save(credentialRows)
-        logger.info(`[token-usage] credential rows inserted count=${credentialRows.length} executionId=${savedExecution.id}`)
-
-        let savedCredentialCallRows: TokenUsageCredentialCall[] = []
-
-        if (orderedChargeUsages.length && credentialGroupList.length) {
-            const credentialRowByKey = new Map(
-                savedCredentialRows.map((row) => [
-                    buildCredentialGroupKey(row.credentialId, row.credentialName || 'Unknown Credential', row.model),
-                    row
-                ])
-            )
-            const callRows = credentialGroupList.flatMap((group) => {
-                const parentRow = credentialRowByKey.get(group.key)
-                if (!parentRow) return []
-
-                return group.calls.map((call, index) =>
-                    credentialCallRepository.create({
-                        id: call.id,
-                        usageExecutionId: savedExecution.id,
-                        tokenUsageCredentialId: parentRow.id,
-                        workspaceId: input.workspaceId,
-                        organizationId: input.organizationId,
-                        userId: input.userId,
-                        sequenceIndex: index + 1,
-                        attributionMode: 'ordered',
-                        billingMode: call.billingMode,
-                        inputTokens: call.metrics.inputTokens,
-                        outputTokens: call.metrics.outputTokens,
-                        totalTokens: call.metrics.totalTokens,
-                        cacheReadTokens: call.metrics.cacheReadTokens,
-                        cacheWriteTokens: call.metrics.cacheWriteTokens,
-                        reasoningTokens: call.metrics.reasoningTokens,
-                        acceptedPredictionTokens: call.metrics.acceptedPredictionTokens,
-                        rejectedPredictionTokens: call.metrics.rejectedPredictionTokens,
-                        audioInputTokens: call.metrics.audioInputTokens,
-                        audioOutputTokens: call.metrics.audioOutputTokens,
-                        usageBreakdown: JSON.stringify(call.usageBreakdown),
-                        chargedCredit: 0
-                    })
-                )
-            })
-
-            savedCredentialCallRows = callRows.length ? await credentialCallRepository.save(callRows) : []
-        }
-
-        if (!input.userId) {
-            logger.info(`[token-usage] skip credit consumption: missing userId executionId=${savedExecution.id}`)
+        const existingExecution = await this.findExecutionByIdempotencyKey(input.workspaceId, input.organizationId, input.idempotencyKey)
+        if (existingExecution) {
+            logger.info(`[token-usage] reusing existing execution id=${existingExecution.id} idempotencyKey=${input.idempotencyKey}`)
+            const persistedRows = await this.ensurePersistedUsageRowsForExistingExecution(existingExecution, input)
+            await this.settlePersistedUsageRows(persistedRows, input.workspaceId, input.userId)
             return
         }
 
-        const workspaceCreditService = new WorkspaceCreditService()
-        const creditResult = await workspaceCreditService.consumeCreditByCredentialUsages(
-            input.workspaceId,
-            input.userId,
-            orderedChargeUsages.length
-                ? orderedChargeUsages
-                : savedCredentialRows.map((row) => ({
-                      credentialId: row.credentialId,
-                      credentialName: row.credentialName,
-                      model: row.model,
-                      totalTokens: row.totalTokens || 0,
-                      inputTokens: row.inputTokens || 0,
-                      outputTokens: row.outputTokens || 0,
-                      usageBreakdown: parseJsonRecord(row.usageBreakdown),
-                      billUsingTotalTokens: safeToNumber(parseJsonRecord(row.usageBreakdown).unclassified_tokens) > 0
-                  }))
-        )
-
-        if (savedCredentialCallRows.length) {
-            const callIds = savedCredentialCallRows.map((row) => row.id).filter((id): id is string => !!id)
-            const transactions = callIds.length
-                ? await workspaceCreditTransactionRepository.findBy({
-                      tokenUsageCredentialCallId: In(callIds)
-                  })
-                : []
-            const transactionByCallId = new Map(
-                transactions
-                    .filter(
-                        (transaction): transaction is WorkspaceCreditTransaction & { tokenUsageCredentialCallId: string } =>
-                            typeof transaction.tokenUsageCredentialCallId === 'string' && transaction.tokenUsageCredentialCallId.length > 0
-                    )
-                    .map((transaction) => [transaction.tokenUsageCredentialCallId, transaction])
-            )
-
-            const chargedCreditByCredentialId = new Map<string, number>()
-            const updatedCallRows = savedCredentialCallRows.map((row) => {
-                const transaction = transactionByCallId.get(row.id)
-                const chargedCredit = transaction ? Math.abs(transaction.amount || 0) : 0
-                chargedCreditByCredentialId.set(
-                    row.tokenUsageCredentialId,
-                    (chargedCreditByCredentialId.get(row.tokenUsageCredentialId) || 0) + chargedCredit
-                )
-
-                return credentialCallRepository.create({
-                    ...row,
-                    chargedCredit,
-                    creditTransactionId: transaction?.id,
-                    creditedAt: transaction?.createdDate
-                })
-            })
-
-            savedCredentialCallRows = updatedCallRows.length
-                ? await credentialCallRepository.save(updatedCallRows)
-                : savedCredentialCallRows
-            savedCredentialRows = await credentialRepository.save(
-                savedCredentialRows.map((row) =>
-                    credentialRepository.create({
-                        ...row,
-                        chargedCredit: chargedCreditByCredentialId.get(row.id) || 0
-                    })
-                )
-            )
-        } else if (Array.isArray(creditResult.usageResults) && creditResult.usageResults.length) {
-            const chargedCreditByGroupKey = creditResult.usageResults.reduce((acc, usageResult) => {
-                const key = buildCredentialGroupKey(
-                    usageResult.usage.credentialId,
-                    usageResult.usage.credentialName || 'Unknown Credential',
-                    usageResult.usage.model
-                )
-                acc.set(key, (acc.get(key) || 0) + (usageResult.chargedCredit || 0))
-                return acc
-            }, new Map<string, number>())
-
-            savedCredentialRows = await credentialRepository.save(
-                savedCredentialRows.map((row) =>
-                    credentialRepository.create({
-                        ...row,
-                        chargedCredit:
-                            chargedCreditByGroupKey.get(
-                                buildCredentialGroupKey(row.credentialId, row.credentialName || 'Unknown Credential', row.model)
-                            ) || 0
-                    })
-                )
-            )
-        }
-
         logger.info(
-            `[token-usage] credit consumed=${creditResult.creditConsumed} balance=${creditResult.creditBalance} executionId=${savedExecution.id}`
+            `[token-usage] extracted entries=${usageExtraction.selectedEntries} total=${aggregatedMetrics.totalTokens} input=${
+                aggregatedMetrics.inputTokens
+            } output=${aggregatedMetrics.outputTokens} imageCount=${aggregatedMetrics.imageCount} videoCount=${
+                aggregatedMetrics.videoCount
+            } seconds=${aggregatedMetrics.seconds} characters=${aggregatedMetrics.characters} models=${JSON.stringify(modelTotals)}`
         )
+
+        const normalizedCredentialAccesses = normalizeCredentialAccesses(credentialAccesses)
+        const persistedRows = await this.persistUsageRows(
+            input,
+            usageEntryMetrics,
+            aggregatedMetrics,
+            modelTotals,
+            normalizedCredentialAccesses
+        )
+
+        if (!persistedRows) return
+
+        await this.settlePersistedUsageRows(persistedRows, input.workspaceId, input.userId)
     }
 
     public async getUsageSummaryByOrganization(organizationId: string, startDate?: string, endDate?: string) {
@@ -1364,34 +2192,20 @@ export class TokenUsageService {
             .getMany()
 
         const userIds = Array.from(new Set(executions.map((item) => item.userId).filter((id): id is string => !!id)))
-
         const users = userIds.length ? await this.dataSource.getRepository(User).findBy({ id: In(userIds) }) : []
         const userMap = new Map(users.map((user) => [user.id, user]))
 
         const overall = createEmptyMetrics()
-        const byUser = new Map<string, { metrics: ITokenUsageMetrics; executionCount: number }>()
+        const byUser = new Map<string, { metrics: ITokenUsageMetrics; executionCount: number; chargedCredit: number }>()
 
         for (const execution of executions) {
-            const metrics: ITokenUsageMetrics = {
-                inputTokens: execution.inputTokens || 0,
-                outputTokens: execution.outputTokens || 0,
-                totalTokens: execution.totalTokens || 0,
-                cacheReadTokens: execution.cacheReadTokens || 0,
-                cacheWriteTokens: execution.cacheWriteTokens || 0,
-                reasoningTokens: execution.reasoningTokens || 0,
-                acceptedPredictionTokens: execution.acceptedPredictionTokens || 0,
-                rejectedPredictionTokens: execution.rejectedPredictionTokens || 0,
-                audioInputTokens: execution.audioInputTokens || 0,
-                audioOutputTokens: execution.audioOutputTokens || 0,
-                additionalBreakdown: {}
-            }
-
+            const metrics = metricsFromSummaryRow(execution)
             addMetrics(overall, metrics)
 
             if (!execution.userId) continue
 
             if (!byUser.has(execution.userId)) {
-                byUser.set(execution.userId, { metrics: createEmptyMetrics(), executionCount: 0 })
+                byUser.set(execution.userId, { metrics: createEmptyMetrics(), executionCount: 0, chargedCredit: 0 })
             }
 
             const current = byUser.get(execution.userId)
@@ -1419,8 +2233,18 @@ export class TokenUsageService {
                 acceptedPredictionTokens: credential.acceptedPredictionTokens,
                 rejectedPredictionTokens: credential.rejectedPredictionTokens,
                 audioInputTokens: credential.audioInputTokens,
-                audioOutputTokens: credential.audioOutputTokens
+                audioOutputTokens: credential.audioOutputTokens,
+                imageCount: credential.imageCount,
+                videoCount: credential.videoCount,
+                seconds: credential.seconds,
+                characters: credential.characters,
+                chargedCredit: credential.chargedCredit || 0
             })
+
+            const current = byUser.get(credential.userId)
+            if (current) {
+                current.chargedCredit += safeToNumber(credential.chargedCredit)
+            }
         }
 
         const usersSummary = Array.from(byUser.entries())
@@ -1441,6 +2265,11 @@ export class TokenUsageService {
                     rejectedPredictionTokens: usage.metrics.rejectedPredictionTokens,
                     audioInputTokens: usage.metrics.audioInputTokens,
                     audioOutputTokens: usage.metrics.audioOutputTokens,
+                    imageCount: usage.metrics.imageCount,
+                    videoCount: usage.metrics.videoCount,
+                    seconds: usage.metrics.seconds,
+                    characters: usage.metrics.characters,
+                    chargedCredit: usage.chargedCredit,
                     credentials: credentialByUser.get(userId) || []
                 }
             })
@@ -1459,7 +2288,12 @@ export class TokenUsageService {
                 acceptedPredictionTokens: overall.acceptedPredictionTokens,
                 rejectedPredictionTokens: overall.rejectedPredictionTokens,
                 audioInputTokens: overall.audioInputTokens,
-                audioOutputTokens: overall.audioOutputTokens
+                audioOutputTokens: overall.audioOutputTokens,
+                imageCount: overall.imageCount,
+                videoCount: overall.videoCount,
+                seconds: overall.seconds,
+                characters: overall.characters,
+                chargedCredit: credentials.reduce((sum, item) => sum + safeToNumber(item.chargedCredit), 0)
             },
             users: usersSummary,
             recentExecutions: executions.slice(0, 30)
@@ -1479,7 +2313,6 @@ export class TokenUsageService {
             .andWhere('usage.createdDate BETWEEN :startDate AND :endDate', { startDate: start, endDate: end })
 
         const totalCount = await executionBaseQuery.clone().getCount()
-
         const executions = await executionBaseQuery
             .clone()
             .orderBy('usage.createdDate', 'DESC')
@@ -1499,6 +2332,10 @@ export class TokenUsageService {
             .addSelect('COALESCE(SUM(usage.rejectedPredictionTokens), 0)', 'rejectedPredictionTokens')
             .addSelect('COALESCE(SUM(usage.audioInputTokens), 0)', 'audioInputTokens')
             .addSelect('COALESCE(SUM(usage.audioOutputTokens), 0)', 'audioOutputTokens')
+            .addSelect('COALESCE(SUM(usage.imageCount), 0)', 'imageCount')
+            .addSelect('COALESCE(SUM(usage.videoCount), 0)', 'videoCount')
+            .addSelect('COALESCE(SUM(usage.seconds), 0)', 'seconds')
+            .addSelect('COALESCE(SUM(usage.characters), 0)', 'characters')
             .getRawOne()
 
         const executionIds = executions.map((execution) => execution.id)
@@ -1539,7 +2376,6 @@ export class TokenUsageService {
         const assistants = assistantIds.length ? await this.dataSource.getRepository(Assistant).findBy({ id: In(assistantIds) }) : []
         const flowNameMap = new Map(chatflows.map((flow) => [flow.id, flow.name]))
         const assistantNameMap = new Map(assistants.map((assistant) => [assistant.id, getAssistantName(assistant) || 'Unknown Assistant']))
-
         const user = await this.dataSource.getRepository(User).findOneBy({ id: userId })
 
         const credentialCallsByCredential = new Map<string, any[]>()
@@ -1559,6 +2395,10 @@ export class TokenUsageService {
                 rejectedPredictionTokens: credentialCall.rejectedPredictionTokens,
                 audioInputTokens: credentialCall.audioInputTokens,
                 audioOutputTokens: credentialCall.audioOutputTokens,
+                imageCount: credentialCall.imageCount,
+                videoCount: credentialCall.videoCount,
+                seconds: credentialCall.seconds,
+                characters: credentialCall.characters,
                 usageBreakdown: parseJsonRecord(credentialCall.usageBreakdown),
                 chargedCredit: credentialCall.chargedCredit || 0,
                 creditTransactionId: credentialCall.creditTransactionId,
@@ -1592,9 +2432,13 @@ export class TokenUsageService {
                 rejectedPredictionTokens: credential.rejectedPredictionTokens,
                 audioInputTokens: credential.audioInputTokens,
                 audioOutputTokens: credential.audioOutputTokens,
+                imageCount: credential.imageCount,
+                videoCount: credential.videoCount,
+                seconds: credential.seconds,
+                characters: credential.characters,
                 usageBreakdown: parseJsonRecord(credential.usageBreakdown),
                 chargedCredit: credential.chargedCredit || 0,
-                hasCallDetails: credential.attributionMode === 'ordered' && calls.length > 0,
+                hasCallDetails: calls.length > 0,
                 calls
             }
             if (!credentialByExecution.has(credential.usageExecutionId)) {
@@ -1640,6 +2484,11 @@ export class TokenUsageService {
                     : execution.rejectedPredictionTokens,
                 audioInputTokens: credentialSummary ? safeToNumber(credentialSummary.audioInputTokens) : execution.audioInputTokens,
                 audioOutputTokens: credentialSummary ? safeToNumber(credentialSummary.audioOutputTokens) : execution.audioOutputTokens,
+                imageCount: credentialSummary ? safeToNumber(credentialSummary.imageCount) : execution.imageCount,
+                videoCount: credentialSummary ? safeToNumber(credentialSummary.videoCount) : execution.videoCount,
+                seconds: credentialSummary ? safeToNumber(credentialSummary.seconds) : execution.seconds,
+                characters: credentialSummary ? safeToNumber(credentialSummary.characters) : execution.characters,
+                chargedCredit: credentialSummary ? safeToNumber(credentialSummary.chargedCredit) : 0,
                 usageBreakdown: credentialSummary?.usageBreakdown || parseJsonRecord(execution.usageBreakdown),
                 modelBreakdown: parseJsonRecord(execution.modelBreakdown),
                 credentials: executionCredentials
@@ -1672,6 +2521,11 @@ export class TokenUsageService {
                 rejectedPredictionTokens: safeToNumber(totalsRaw?.rejectedPredictionTokens),
                 audioInputTokens: safeToNumber(totalsRaw?.audioInputTokens),
                 audioOutputTokens: safeToNumber(totalsRaw?.audioOutputTokens),
+                imageCount: safeToNumber(totalsRaw?.imageCount),
+                videoCount: safeToNumber(totalsRaw?.videoCount),
+                seconds: safeToNumber(totalsRaw?.seconds),
+                characters: safeToNumber(totalsRaw?.characters),
+                chargedCredit: credentials.reduce((sum, item) => sum + safeToNumber(item.chargedCredit), 0),
                 additionalBreakdown: {}
             },
             records

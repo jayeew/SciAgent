@@ -621,10 +621,6 @@ export const getCredentialData = async (selectedCredentialId: string, options: I
 
         const tokenAuditContext = options.tokenAuditContext as ICommonObject | undefined
         if (tokenAuditContext) {
-            if (!Array.isArray(tokenAuditContext.credentialAccesses)) {
-                tokenAuditContext.credentialAccesses = []
-            }
-
             if (!tokenAuditContext.credentialMetadataById || typeof tokenAuditContext.credentialMetadataById !== 'object') {
                 tokenAuditContext.credentialMetadataById = {}
             }
@@ -632,11 +628,6 @@ export const getCredentialData = async (selectedCredentialId: string, options: I
             ;(tokenAuditContext.credentialMetadataById as Record<string, { credentialName?: string }>)[selectedCredentialId] = {
                 credentialName: credential.name
             }
-
-            tokenAuditContext.credentialAccesses.push({
-                credentialId: selectedCredentialId,
-                credentialName: credential.name
-            })
         }
 
         // Decrypt credentialData

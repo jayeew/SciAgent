@@ -100,9 +100,45 @@ describe('mediaGenerationService', () => {
         expect(result).toEqual({
             credentialId: 'credential-1',
             credentialName: 'Doubao Ark Credential',
-            model: 'doubao-seedance-1-5-pro-251215'
+            model: 'doubao-seedance-1-5-pro-251215',
+            provider: 'doubao-ark',
+            tokenUsageCredentialCallId: 'call-1'
         })
         expect(tokenAuditContext.credentialAccesses).toEqual([result])
+    })
+
+    it('appends explicit media usage events before token usage recording', () => {
+        const tokenAuditContext: Record<string, any> = {}
+
+        const payload = mediaGenerationService.appendMediaGenerationUsageEvent({
+            billingDetails: {
+                provider: 'doubao-ark',
+                credentialId: 'credential-1',
+                credentialName: 'Doubao Ark Credential',
+                model: 'doubao-seedream-5-0-260128',
+                source: 'media_generation',
+                tokenUsageCredentialCallId: 'call-2',
+                billingMode: 'image_count',
+                usage: {
+                    units: 2
+                }
+            },
+            tokenAuditContext
+        })
+
+        expect(payload).toEqual({
+            provider: 'doubao-ark',
+            credentialId: 'credential-1',
+            credentialName: 'Doubao Ark Credential',
+            model: 'doubao-seedream-5-0-260128',
+            source: 'media_generation',
+            tokenUsageCredentialCallId: 'call-2',
+            billingMode: 'image_count',
+            usage: {
+                units: 2
+            }
+        })
+        expect(tokenAuditContext.tokenUsagePayloads).toEqual([payload])
     })
 
     it('consumes credit for video token billing', async () => {

@@ -12,6 +12,7 @@ import {
 } from '../../../src/Interface'
 import { AIMessageChunk, BaseMessageLike } from '@langchain/core/messages'
 import { DEFAULT_HUMAN_INPUT_DESCRIPTION, DEFAULT_HUMAN_INPUT_DESCRIPTION_HTML } from '../prompt'
+import { createTokenUsageAuditInvocationConfig, resolveCredentialIdFromConfig } from '../../../src/handler'
 
 class HumanInput_Agentflow implements INode {
     label: string
@@ -251,12 +252,24 @@ class HumanInput_Agentflow implements INode {
                 }
             } else {
                 if (model && modelConfig) {
+                    const tokenUsageAuditMetadata = {
+                        tokenAuditContext: options.tokenAuditContext as ICommonObject | undefined,
+                        credentialId: resolveCredentialIdFromConfig(modelConfig),
+                        model:
+                            (typeof modelConfig?.modelName === 'string' && modelConfig.modelName) ||
+                            (typeof modelConfig?.model === 'string' && modelConfig.model) ||
+                            undefined,
+                        provider:
+                            (typeof modelConfig?.humanInputModel === 'string' && modelConfig.humanInputModel) ||
+                            (typeof modelConfig?.llmModel === 'string' && modelConfig.llmModel) ||
+                            model
+                    }
                     const nodeInstanceFilePath = options.componentNodes[model].filePath as string
                     const nodeModule = await import(nodeInstanceFilePath)
                     const newNodeInstance = new nodeModule.nodeClass()
                     const newNodeData = {
                         ...nodeData,
-                        credential: modelConfig['FLOWISE_CREDENTIAL_ID'],
+                        credential: resolveCredentialIdFromConfig(modelConfig),
                         inputs: {
                             ...nodeData.inputs,
                             ...modelConfig
@@ -275,7 +288,11 @@ class HumanInput_Agentflow implements INode {
                     let response: AIMessageChunk = new AIMessageChunk('')
                     if (isStreamable) {
                         const sseStreamer: IServerSideEventStreamer = options.sseStreamer as IServerSideEventStreamer
-                        for await (const chunk of await llmNodeInstance.stream(messages)) {
+                        const streamInvocation = createTokenUsageAuditInvocationConfig({
+                            signal: options.abortController?.signal,
+                            ...tokenUsageAuditMetadata
+                        })
+                        for await (const chunk of await llmNodeInstance.stream(messages, streamInvocation.config)) {
                             const content = typeof chunk === 'string' ? chunk : chunk.content.toString()
                             sseStreamer.streamTokenEvent(chatId, content)
 
@@ -285,7 +302,11 @@ class HumanInput_Agentflow implements INode {
                         llmResponse = response
                         humanInputDescription = response.content as string
                     } else {
-                        llmResponse = await llmNodeInstance.invoke(messages)
+                        const modelInvocation = createTokenUsageAuditInvocationConfig({
+                            signal: options.abortController?.signal,
+                            ...tokenUsageAuditMetadata
+                        })
+                        llmResponse = await llmNodeInstance.invoke(messages, modelInvocation.config)
                         humanInputDescription = llmResponse.content as string
                     }
                 }

@@ -6,6 +6,10 @@ import { AddTokenUsageCredentialCalls1765900000000 as MariadbAddTokenUsageCreden
 import { AddTokenUsageCredentialCalls1765900000000 as MysqlAddTokenUsageCredentialCalls1765900000000 } from '../../src/enterprise/database/migrations/mysql/1765900000000-AddTokenUsageCredentialCalls'
 import { AddTokenUsageCredentialCalls1765900000000 as PostgresAddTokenUsageCredentialCalls1765900000000 } from '../../src/enterprise/database/migrations/postgres/1765900000000-AddTokenUsageCredentialCalls'
 import { AddTokenUsageCredentialCalls1765900000000 as SqliteAddTokenUsageCredentialCalls1765900000000 } from '../../src/enterprise/database/migrations/sqlite/1765900000000-AddTokenUsageCredentialCalls'
+import { AddNormalizedUsageAndBillingIdempotency1767000000000 as MariadbAddNormalizedUsageAndBillingIdempotency1767000000000 } from '../../src/enterprise/database/migrations/mariadb/1767000000000-AddNormalizedUsageAndBillingIdempotency'
+import { AddNormalizedUsageAndBillingIdempotency1767000000000 as MysqlAddNormalizedUsageAndBillingIdempotency1767000000000 } from '../../src/enterprise/database/migrations/mysql/1767000000000-AddNormalizedUsageAndBillingIdempotency'
+import { AddNormalizedUsageAndBillingIdempotency1767000000000 as PostgresAddNormalizedUsageAndBillingIdempotency1767000000000 } from '../../src/enterprise/database/migrations/postgres/1767000000000-AddNormalizedUsageAndBillingIdempotency'
+import { AddNormalizedUsageAndBillingIdempotency1767000000000 as SqliteAddNormalizedUsageAndBillingIdempotency1767000000000 } from '../../src/enterprise/database/migrations/sqlite/1767000000000-AddNormalizedUsageAndBillingIdempotency'
 
 describe('migration registry', () => {
     it('registers token usage credential call migrations for every relational database', () => {
@@ -13,5 +17,12 @@ describe('migration registry', () => {
         expect(postgresMigrations).toContain(PostgresAddTokenUsageCredentialCalls1765900000000)
         expect(mysqlMigrations).toContain(MysqlAddTokenUsageCredentialCalls1765900000000)
         expect(mariadbMigrations).toContain(MariadbAddTokenUsageCredentialCalls1765900000000)
+    })
+
+    it('registers normalized usage and billing idempotency migrations for every relational database', () => {
+        expect(sqliteMigrations).toContain(SqliteAddNormalizedUsageAndBillingIdempotency1767000000000)
+        expect(postgresMigrations).toContain(PostgresAddNormalizedUsageAndBillingIdempotency1767000000000)
+        expect(mysqlMigrations).toContain(MysqlAddNormalizedUsageAndBillingIdempotency1767000000000)
+        expect(mariadbMigrations).toContain(MariadbAddNormalizedUsageAndBillingIdempotency1767000000000)
     })
 })

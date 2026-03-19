@@ -47,6 +47,7 @@ import { AddCredentialModelConsumptionMultiplier1765900000000 } from './17659000
 import { AddCredentialBillingRules1766000000000 } from './1766000000000-AddCredentialBillingRules'
 import { AddTokenUsageAudit1765800000000 } from '../../../enterprise/database/migrations/mariadb/1765800000000-AddTokenUsageAudit'
 import { AddTokenUsageCredentialCalls1765900000000 } from '../../../enterprise/database/migrations/mariadb/1765900000000-AddTokenUsageCredentialCalls'
+import { AddNormalizedUsageAndBillingIdempotency1767000000000 } from '../../../enterprise/database/migrations/mariadb/1767000000000-AddNormalizedUsageAndBillingIdempotency'
 
 import { AddAuthTables1720230151482 } from '../../../enterprise/database/migrations/mariadb/1720230151482-AddAuthTables'
 import { AddWorkspace1725437498242 } from '../../../enterprise/database/migrations/mariadb/1725437498242-AddWorkspace'
@@ -128,5 +129,6 @@ export const mariadbMigrations = [
     CredentialOwnerOnlyAndSharedWorkspace1765500000000,
     AddWorkspaceCredit1765600000000,
     AddTokenUsageAudit1765800000000,
-    AddOrganizationWorldMessage1766100000000
+    AddOrganizationWorldMessage1766100000000,
+    AddNormalizedUsageAndBillingIdempotency1767000000000
 ]

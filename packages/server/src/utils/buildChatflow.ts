@@ -18,7 +18,9 @@ import {
     removeSpecificFileFromUpload,
     EvaluationRunner,
     handleEscapeCharacters,
-    IServerSideEventStreamer
+    IServerSideEventStreamer,
+    supportsSpeechToTextProviderUsageMetering,
+    supportsTextToSpeechProviderUsageMetering
 } from 'flowise-components'
 import { StatusCodes } from 'http-status-codes'
 import {
@@ -105,7 +107,9 @@ const generateTTSForResponseStream = async (
     workspaceId?: string,
     userId?: string,
     organizationId?: string,
-    flowType: 'CHATFLOW' | 'ASSISTANT' = 'CHATFLOW'
+    flowType: 'CHATFLOW' | 'ASSISTANT' | 'AGENTFLOW' | 'MULTIAGENT' = 'CHATFLOW',
+    executionId?: string,
+    idempotencyKey?: string
 ): Promise<void> => {
     try {
         if (!textToSpeechConfig) return
@@ -131,7 +135,14 @@ const generateTTSForResponseStream = async (
 
         if (!activeProviderConfig) return
 
-        await convertTextToSpeechStream(
+        if (workspaceId && userId && !supportsTextToSpeechProviderUsageMetering(activeProviderConfig.name)) {
+            throw new InternalFlowiseError(
+                StatusCodes.BAD_REQUEST,
+                `Metering unsupported for text-to-speech provider "${activeProviderConfig.name}" without real provider usage`
+            )
+        }
+
+        const billingDetails = await convertTextToSpeechStream(
             responseText,
             activeProviderConfig,
             options,
@@ -143,43 +154,37 @@ const generateTTSForResponseStream = async (
                 const audioBase64 = chunk.toString('base64')
                 sseStreamer.streamTTSDataEvent(chatId, chatMessageId, audioBase64)
             },
-            () => {
-                sseStreamer.streamTTSEndEvent(chatId, chatMessageId)
-            }
+            () => undefined
         )
 
-        try {
-            const billingDetails = await textToSpeechService.consumeTextToSpeechCredit({
-                text: responseText,
-                provider: activeProviderConfig.name,
-                credentialId: activeProviderConfig.credentialId,
-                model: activeProviderConfig.model,
-                baseUrl: activeProviderConfig.baseUrl,
-                languageType: activeProviderConfig.languageType,
-                instructions: activeProviderConfig.instructions,
-                optimizeInstructions: activeProviderConfig.optimizeInstructions,
-                workspaceId,
-                userId,
-                options
-            })
+        const settledBillingDetails = await textToSpeechService.consumeTextToSpeechCredit({
+            provider: activeProviderConfig.name,
+            credentialId: activeProviderConfig.credentialId,
+            model: activeProviderConfig.model,
+            billingDetails,
+            workspaceId,
+            userId,
+            options
+        })
 
-            await textToSpeechService.recordTextToSpeechTokenUsage({
-                workspaceId,
-                organizationId,
-                userId,
-                flowType,
-                flowId: options.chatflowid,
-                chatId,
-                chatMessageId,
-                billingDetails,
-                options
-            })
-        } catch (billingError) {
-            logger.warn(`[server]: TTS credit consumption failed: ${getErrorMessage(billingError)}`)
-        }
+        await textToSpeechService.recordTextToSpeechTokenUsage({
+            workspaceId,
+            organizationId,
+            userId,
+            flowType,
+            flowId: options.chatflowid,
+            executionId,
+            idempotencyKey,
+            chatId,
+            chatMessageId,
+            billingDetails: settledBillingDetails,
+            options
+        })
+        sseStreamer.streamTTSEndEvent(chatId, chatMessageId)
     } catch (error) {
         logger.error(`[server]: TTS streaming failed: ${getErrorMessage(error)}`)
         sseStreamer.streamTTSEndEvent(chatId, chatMessageId)
+        throw error
     }
 }
 
@@ -337,6 +342,40 @@ const getSetVariableNodesOutput = (reactFlowNodes: IReactFlowNode[]) => {
     return flowVariables
 }
 
+interface ITokenAuditSnapshot {
+    payloadCount: number
+    credentialAccessCount: number
+}
+
+const getTokenAuditSnapshot = (tokenAuditContext?: ICommonObject): ITokenAuditSnapshot => ({
+    payloadCount: Array.isArray(tokenAuditContext?.tokenUsagePayloads) ? (tokenAuditContext?.tokenUsagePayloads as any[]).length : 0,
+    credentialAccessCount: Array.isArray(tokenAuditContext?.credentialAccesses)
+        ? (tokenAuditContext?.credentialAccesses as any[]).length
+        : 0
+})
+
+const getTokenAuditDeltaCollections = ({
+    tokenAuditContext,
+    settledSnapshot,
+    latestSnapshot
+}: {
+    tokenAuditContext?: ICommonObject
+    settledSnapshot: ITokenAuditSnapshot
+    latestSnapshot: ITokenAuditSnapshot
+}) => ({
+    usagePayloads:
+        latestSnapshot.payloadCount > settledSnapshot.payloadCount
+            ? ((tokenAuditContext?.tokenUsagePayloads as any[]) || []).slice(settledSnapshot.payloadCount, latestSnapshot.payloadCount)
+            : [],
+    credentialAccesses:
+        latestSnapshot.credentialAccessCount > settledSnapshot.credentialAccessCount
+            ? ((tokenAuditContext?.credentialAccesses as any[]) || []).slice(
+                  settledSnapshot.credentialAccessCount,
+                  latestSnapshot.credentialAccessCount
+              )
+            : []
+})
+
 const mergeAndDedupePayloads = (payloads: any[], tokenAuditContext?: ICommonObject): any[] => {
     const merged = [...payloads, ...(((tokenAuditContext?.tokenUsagePayloads as any[]) || []) as any[])]
     const seen = new Set<string>()
@@ -357,6 +396,22 @@ const mergeAndDedupePayloads = (payloads: any[], tokenAuditContext?: ICommonObje
     return deduped
 }
 
+const buildTokenUsageIdempotencyKey = ({
+    flowType,
+    flowId,
+    executionId,
+    chatId,
+    chatMessageId,
+    sessionId
+}: {
+    flowType: 'CHATFLOW' | 'AGENTFLOW' | 'ASSISTANT' | 'MULTIAGENT'
+    flowId?: string
+    executionId?: string
+    chatId?: string
+    chatMessageId?: string
+    sessionId?: string
+}) => `${flowType}:${flowId || '-'}:${executionId || '-'}:${chatId || '-'}:${chatMessageId || '-'}:${sessionId || '-'}`
+
 const recordTokenUsage = async ({
     workspaceId,
     organizationId,
@@ -367,6 +422,7 @@ const recordTokenUsage = async ({
     chatId,
     chatMessageId,
     sessionId,
+    idempotencyKey,
     tokenAuditContext,
     usagePayloads,
     credentialAccesses = []
@@ -380,33 +436,31 @@ const recordTokenUsage = async ({
     chatId?: string
     chatMessageId?: string
     sessionId?: string
+    idempotencyKey?: string
     tokenAuditContext?: ICommonObject
     usagePayloads: any[]
     credentialAccesses?: any[]
 }) => {
-    try {
-        const mergedPayloads = mergeAndDedupePayloads(usagePayloads, tokenAuditContext)
-        const tokenUsageService = new TokenUsageService()
-        const mergedCredentialAccesses = [
-            ...(((tokenAuditContext?.credentialAccesses as any[]) || []) as any[]),
-            ...(Array.isArray(credentialAccesses) ? credentialAccesses : [])
-        ]
-        await tokenUsageService.recordTokenUsage({
-            workspaceId,
-            organizationId,
-            userId,
-            flowType,
-            flowId,
-            executionId,
-            chatId,
-            chatMessageId,
-            sessionId,
-            usagePayloads: mergedPayloads,
-            credentialAccesses: mergedCredentialAccesses
-        })
-    } catch (error) {
-        logger.warn(`[server]: Failed to record token usage: ${getErrorMessage(error)}`)
-    }
+    const mergedPayloads = mergeAndDedupePayloads(usagePayloads, tokenAuditContext)
+    const tokenUsageService = new TokenUsageService()
+    const mergedCredentialAccesses = [
+        ...(((tokenAuditContext?.credentialAccesses as any[]) || []) as any[]),
+        ...(Array.isArray(credentialAccesses) ? credentialAccesses : [])
+    ]
+    await tokenUsageService.recordTokenUsage({
+        workspaceId,
+        organizationId,
+        userId,
+        flowType,
+        flowId,
+        executionId,
+        chatId,
+        chatMessageId,
+        sessionId,
+        idempotencyKey,
+        usagePayloads: mergedPayloads,
+        credentialAccesses: mergedCredentialAccesses
+    })
 }
 
 const getPendingMediaBillingDetails = (result: ICommonObject, tokenAuditContext?: ICommonObject) => {
@@ -453,6 +507,7 @@ export const executeFlow = async ({
     incomingInput,
     chatflow,
     chatId,
+    runtimeUsageExecutionId,
     isEvaluation,
     evaluationRunId,
     appDataSource,
@@ -541,6 +596,13 @@ export const executeFlow = async ({
                     }
                 }
                 if (speechToTextConfig) {
+                    if (workspaceCreditService && userId && !supportsSpeechToTextProviderUsageMetering(speechToTextConfig.name)) {
+                        throw new InternalFlowiseError(
+                            StatusCodes.BAD_REQUEST,
+                            `Metering unsupported for speech-to-text provider "${speechToTextConfig.name}" without real provider usage`
+                        )
+                    }
+
                     const options: ICommonObject = {
                         orgId,
                         chatId,
@@ -563,32 +625,34 @@ export const executeFlow = async ({
                         question = transcribedText
                     }
 
-                    if (
-                        workspaceCreditService &&
-                        userId &&
-                        speechToTextConfig.name === 'alibabaSTT' &&
-                        speechToTextResult &&
-                        typeof speechToTextResult === 'object'
-                    ) {
+                    if (workspaceCreditService && userId && speechToTextResult && typeof speechToTextResult === 'object') {
+                        const tokenUsageCredentialCallId =
+                            (speechToTextResult as ICommonObject).tokenUsageCredentialCallId &&
+                            typeof (speechToTextResult as ICommonObject).tokenUsageCredentialCallId === 'string'
+                                ? ((speechToTextResult as ICommonObject).tokenUsageCredentialCallId as string)
+                                : undefined
                         const seconds = Number(speechToTextResult?.usage?.seconds)
                         const normalizedSeconds = Number.isFinite(seconds) && seconds >= 0 ? seconds : 0
+                        if (!tokenUsageCredentialCallId || normalizedSeconds <= 0) {
+                            throw new InternalFlowiseError(
+                                StatusCodes.BAD_REQUEST,
+                                `Metering unsupported for speech-to-text provider "${speechToTextConfig.name}" without real provider usage`
+                            )
+                        }
 
                         await workspaceCreditService.consumeCreditBySpeechSeconds(workspaceId, userId, {
                             credentialId: speechToTextResult.credentialId || speechToTextConfig.credentialId,
-                            provider: speechToTextResult.provider || 'alibabaSTT',
+                            provider: speechToTextResult.provider || speechToTextConfig.name,
                             model: speechToTextResult.model,
+                            tokenUsageCredentialCallId,
                             seconds: normalizedSeconds
                         })
                         logger.info(
-                            `[server]: [${orgId}]: Alibaba STT credit consumed credentialId=${
+                            `[server]: [${orgId}]: Speech-to-text credit consumed credentialId=${
                                 speechToTextResult.credentialId || speechToTextConfig.credentialId || '-'
-                            } model=${speechToTextResult.model || '-'} seconds=${normalizedSeconds}`
-                        )
-                    } else if (speechToTextConfig.name === 'alibabaSTT') {
-                        logger.warn(
-                            `[server]: [${orgId}]: Alibaba STT credit skipped workspaceCreditService=${!!workspaceCreditService} userId=${
-                                userId || '-'
-                            }`
+                            } provider=${speechToTextResult.provider || speechToTextConfig.name || '-'} model=${
+                                speechToTextResult.model || '-'
+                            } seconds=${normalizedSeconds}`
                         )
                     }
                 }
@@ -667,13 +731,76 @@ export const executeFlow = async ({
         }
     }
 
+    const createRuntimeTokenAuditFlusher = (flowType: 'CHATFLOW' | 'AGENTFLOW' | 'ASSISTANT' | 'MULTIAGENT') => {
+        const executionId = runtimeUsageExecutionId || chatId
+        const idempotencyKey = buildTokenUsageIdempotencyKey({
+            flowType,
+            flowId: chatflowid,
+            executionId,
+            chatId
+        })
+        let settledSnapshot = getTokenAuditSnapshot(tokenAuditContext)
+
+        const flush = async ({
+            sessionId,
+            chatMessageId,
+            fallbackUsagePayloads = []
+        }: {
+            sessionId?: string
+            chatMessageId?: string
+            fallbackUsagePayloads?: any[]
+        } = {}) => {
+            if (!workspaceId || !orgId || !tokenAuditContext) return
+
+            const latestSnapshot = getTokenAuditSnapshot(tokenAuditContext)
+            const deltaCollections = getTokenAuditDeltaCollections({
+                tokenAuditContext,
+                settledSnapshot,
+                latestSnapshot
+            })
+            const usagePayloads = deltaCollections.usagePayloads.length
+                ? deltaCollections.usagePayloads
+                : fallbackUsagePayloads.filter((payload) => payload !== null && payload !== undefined)
+
+            if (!usagePayloads.length) return
+
+            await recordTokenUsage({
+                workspaceId,
+                organizationId: orgId,
+                userId,
+                flowType,
+                flowId: chatflowid,
+                executionId,
+                chatId,
+                chatMessageId,
+                sessionId,
+                idempotencyKey,
+                usagePayloads,
+                credentialAccesses: deltaCollections.credentialAccesses
+            })
+
+            if (deltaCollections.usagePayloads.length) {
+                settledSnapshot = latestSnapshot
+            }
+        }
+
+        return {
+            executionId,
+            idempotencyKey,
+            flush
+        }
+    }
+
     const isAgentFlowV2 = chatflow.type === 'AGENTFLOW'
     if (isAgentFlowV2) {
+        const tokenAuditFlusher = createRuntimeTokenAuditFlusher('AGENTFLOW')
+        await tokenAuditFlusher.flush({ sessionId: chatId })
         return executeAgentFlow({
             componentNodes,
             incomingInput,
             chatflow,
             chatId,
+            runtimeUsageExecutionId: tokenAuditFlusher.executionId,
             evaluationRunId,
             appDataSource,
             telemetry,
@@ -728,6 +855,9 @@ export const executeFlow = async ({
 
     const isAgentFlow =
         endingNodes.filter((node) => node.data.category === 'Multi Agents' || node.data.category === 'Sequential Agents').length > 0
+    const tokenAuditFlusher = createRuntimeTokenAuditFlusher(
+        chatflow.type === 'ASSISTANT' ? 'ASSISTANT' : isAgentFlow ? 'MULTIAGENT' : 'CHATFLOW'
+    )
 
     /*** Get Chat History ***/
     const chatHistory = await getChatHistory({
@@ -741,6 +871,8 @@ export const executeFlow = async ({
         isInternal,
         isAgentFlow
     })
+
+    await tokenAuditFlusher.flush({ sessionId })
 
     /*** Get API Config ***/
     const availableVariables = await appDataSource.getRepository(Variable).findBy(getWorkspaceSearchOptions(workspaceId))
@@ -782,6 +914,15 @@ export const executeFlow = async ({
         cachePool,
         usageCacheManager,
         tokenAuditContext,
+        onNodeExecutionCompleted: async ({ result }) => {
+            await tokenAuditFlusher.flush({
+                sessionId,
+                fallbackUsagePayloads: result !== undefined ? [result] : []
+            })
+        },
+        onNodeExecutionFailed: async () => {
+            await tokenAuditFlusher.flush({ sessionId })
+        },
         isUpsert: false,
         uploads,
         baseURL,
@@ -816,7 +957,11 @@ export const executeFlow = async ({
             baseURL,
             signal,
             orgId,
-            workspaceId
+            workspaceId,
+            tokenAuditContext,
+            onTokenAuditFlush: async () => {
+                await tokenAuditFlusher.flush({ sessionId })
+            }
         })
 
         if (streamResults) {
@@ -921,17 +1066,10 @@ export const executeFlow = async ({
             if (Object.keys(setVariableNodesOutput).length) result.flowVariables = setVariableNodesOutput
             result.followUpPrompts = JSON.stringify(apiMessage.followUpPrompts)
 
-            await recordTokenUsage({
-                workspaceId,
-                organizationId: orgId,
-                userId,
-                flowType: 'MULTIAGENT',
-                flowId: agentflow.id,
-                chatId,
-                chatMessageId: chatMessage?.id,
+            await tokenAuditFlusher.flush({
                 sessionId,
-                tokenAuditContext,
-                usagePayloads: [streamResults || {}, result || {}]
+                chatMessageId: chatMessage?.id,
+                fallbackUsagePayloads: [streamResults || {}, result || {}]
             })
 
             return result
@@ -1143,48 +1281,38 @@ export const executeFlow = async ({
                 workspaceId,
                 userId,
                 orgId,
-                chatflow.type === 'ASSISTANT' ? 'ASSISTANT' : 'CHATFLOW'
+                chatflow.type === 'ASSISTANT' ? 'ASSISTANT' : 'CHATFLOW',
+                tokenAuditFlusher.executionId,
+                tokenAuditFlusher.idempotencyKey
             )
         }
 
         const mediaBillingDetailsList = getPendingMediaBillingDetails(result, tokenAuditContext)
         for (const mediaBillingDetails of mediaBillingDetailsList) {
-            try {
-                await mediaGenerationService.recordMediaGenerationCredentialAccess({
-                    billingDetails: mediaBillingDetails,
-                    tokenAuditContext,
-                    options: {
-                        appDataSource,
-                        databaseEntities
-                    }
-                })
-            } catch (credentialError) {
-                logger.warn(`[server]: Media generation credential audit failed: ${getErrorMessage(credentialError)}`)
-            }
+            mediaGenerationService.appendMediaGenerationUsageEvent({
+                billingDetails: mediaBillingDetails,
+                tokenAuditContext
+            })
+            await mediaGenerationService.recordMediaGenerationCredentialAccess({
+                billingDetails: mediaBillingDetails,
+                tokenAuditContext,
+                options: {
+                    appDataSource,
+                    databaseEntities
+                }
+            })
 
-            try {
-                await mediaGenerationService.consumeMediaGenerationCredit({
-                    workspaceId,
-                    userId,
-                    billingDetails: mediaBillingDetails
-                })
-            } catch (billingError) {
-                logger.warn(`[server]: Media generation credit consumption failed: ${getErrorMessage(billingError)}`)
-            }
+            await mediaGenerationService.consumeMediaGenerationCredit({
+                workspaceId,
+                userId,
+                billingDetails: mediaBillingDetails
+            })
         }
 
-        await recordTokenUsage({
-            workspaceId,
-            organizationId: orgId,
-            userId,
-            flowType: chatflow.type === 'ASSISTANT' ? 'ASSISTANT' : 'CHATFLOW',
-            flowId: chatflowid,
-            chatId,
-            chatMessageId: chatMessage?.id,
+        await tokenAuditFlusher.flush({
             sessionId,
-            tokenAuditContext,
-            usagePayloads: [result || {}],
-            credentialAccesses: []
+            chatMessageId: chatMessage?.id,
+            fallbackUsagePayloads: [result || {}]
         })
 
         return result
@@ -1285,6 +1413,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
     let organizationId = ''
     let workspaceId = ''
     let tokenAuditContext: ICommonObject | undefined
+    const runtimeUsageExecutionId = uuidv4()
 
     try {
         // Validate API Key if its external API request
@@ -1330,6 +1459,7 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
             incomingInput, // Use the defensively created incomingInput variable
             chatflow,
             chatId,
+            runtimeUsageExecutionId,
             userId,
             baseURL,
             isInternal,
@@ -1388,7 +1518,14 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
                 userId,
                 flowType: chatflow.type === 'ASSISTANT' ? 'ASSISTANT' : isAgentFlow ? 'MULTIAGENT' : 'CHATFLOW',
                 flowId: chatflowid,
+                executionId: runtimeUsageExecutionId,
                 chatId,
+                idempotencyKey: buildTokenUsageIdempotencyKey({
+                    flowType: chatflow.type === 'ASSISTANT' ? 'ASSISTANT' : isAgentFlow ? 'MULTIAGENT' : 'CHATFLOW',
+                    flowId: chatflowid,
+                    executionId: runtimeUsageExecutionId,
+                    chatId
+                }),
                 tokenAuditContext,
                 usagePayloads: []
             })

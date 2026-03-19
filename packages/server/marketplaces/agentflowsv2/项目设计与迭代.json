@@ -1,5 +1,5 @@
 {
-    "description": "一个面向项目方案与科研设计想法的 Agentflow V2 模板：先澄清任务，再由多模型分别构思与评审，综合裁决后引入人工反馈，并在必要时循环迭代，最终输出可执行的方案终稿。",
+    "description": "一个精简的项目设计与迭代 Agentflow V2 模板：先澄清任务并人工确认，再生成方案、做自动评审与人工确认，必要时循环迭代，最终输出可执行终稿。",
     "usecases": ["项目设计", "科研设计", "方案迭代", "技术路线评审"],
     "chatbotConfig": {
         "fullFileUpload": {
@@ -17,7 +17,7 @@
             "type": "agentFlow",
             "position": {
                 "x": 60,
-                "y": 280
+                "y": 260
             },
             "data": {
                 "id": "startAgentflow_0",
@@ -65,35 +65,11 @@
                             "value": ""
                         },
                         {
-                            "key": "evidenceNotes",
-                            "value": ""
-                        },
-                        {
-                            "key": "roundBrief",
-                            "value": ""
-                        },
-                        {
-                            "key": "conceptDraftA",
-                            "value": ""
-                        },
-                        {
-                            "key": "conceptDraftB",
-                            "value": ""
-                        },
-                        {
-                            "key": "reviewA",
-                            "value": ""
-                        },
-                        {
-                            "key": "reviewB",
+                            "key": "currentProposal",
                             "value": ""
                         },
                         {
                             "key": "judgeVerdict",
-                            "value": ""
-                        },
-                        {
-                            "key": "currentProposal",
                             "value": ""
                         },
                         {
@@ -119,7 +95,7 @@
             },
             "positionAbsolute": {
                 "x": 60,
-                "y": 280
+                "y": 260
             },
             "selected": false,
             "dragging": false,
@@ -142,7 +118,7 @@
                 "color": "#4DD0E1",
                 "baseClasses": ["Agent"],
                 "category": "Agent Flows",
-                "description": "先通过多轮对话补齐目标、约束、资源和评价标准，再进入正式迭代",
+                "description": "先通过多轮对话补齐目标、约束、资源和评价标准，再进入方案迭代",
                 "inputParams": [
                     {
                         "label": "Model",
@@ -426,7 +402,7 @@
                     "agentMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是“项目设计与迭代”的任务澄清代理。</p><p>你的任务是在正式进入多模型构思与评审前，把用户的项目方案或科研设计想法补齐到可迭代的程度。</p><p>请优先确认：目标、要解决的问题、目标用户或评审对象、资源与时间约束、已有方案或资料、评价标准、是否需要查证或补充外部证据。</p><p>如果用户上传了文件，先结合文件快速归纳，再指出仍缺什么。</p><p>每一轮最多问 3 个具体问题，优先提供明确选项，不要泛泛追问。</p><p>如果信息仍不足，不要开始正式构思；请明确列出缺失项并请用户继续补充。</p><p>如果信息已足够，请输出“已确认 / 默认采用 / 待重点评审”三部分执行确认。</p><p>当你认为已经可以进入正式迭代阶段时，最后一句必须写：若无修改，请点击“进入评审迭代”；如需补充，请点击“继续补充”并填写意见。</p><p>默认使用简体中文，不要调用任何生成工具，也不要直接产出最终方案。</p>"
+                            "content": "<p>你是“项目设计与迭代”的任务澄清代理。</p><p>你的任务是在正式进入方案生成与评审前，把用户的项目方案或科研设计想法补齐到可迭代的程度。</p><p>请优先确认：目标、要解决的问题、目标用户或评审对象、资源与时间约束、已有方案或资料、评价标准。</p><p>如果用户上传了文件，先结合文件快速归纳，再指出仍缺什么。</p><p>每一轮最多问 3 个具体问题，优先提供明确选项，不要泛泛追问。</p><p>如果信息仍不足，不要开始正式方案生成；请明确列出缺失项并请用户继续补充。</p><p>如果信息已足够，请输出“已确认 / 默认采用 / 待重点评审”三部分执行确认。</p><p>当你认为已经可以进入正式迭代阶段时，最后一句必须写：若无修改，请点击“进入方案迭代”；如需补充，请点击“继续补充”并填写意见。</p><p>默认使用简体中文，不要直接产出最终方案。</p>"
                         }
                     ],
                     "agentTools": [],
@@ -483,7 +459,7 @@
                 "color": "#6E6EFD",
                 "baseClasses": ["HumanInput"],
                 "category": "Agent Flows",
-                "description": "确认是否进入正式评审迭代；若仍需补充，则回到任务澄清",
+                "description": "确认是否进入方案迭代；若仍需补充，则回到任务澄清",
                 "inputParams": [
                     {
                         "label": "Description Type",
@@ -596,7 +572,7 @@
                     "humanInputDescriptionType": "fixed",
                     "humanInputEnableFeedback": true,
                     "humanInputFeedbackMode": "reject",
-                    "approveButtonText": "进入评审迭代",
+                    "approveButtonText": "进入方案迭代",
                     "rejectButtonText": "继续补充",
                     "humanInputModelConfig": {
                         "cache": "",
@@ -607,7 +583,7 @@
                         "imageResolution": "low",
                         "humanInputModel": "chatAlibabaTongyi"
                     },
-                    "humanInputDescription": "<p>如果上面的信息已经足够进入多模型构思与评审，请点击“进入评审迭代”；如果还需要补充需求、资料或约束，请点击“继续补充”并填写意见。</p>",
+                    "humanInputDescription": "<p>如果上面的信息已经足够进入方案设计与迭代，请点击“进入方案迭代”；如果还需要补充需求、资料或约束，请点击“继续补充”并填写意见。</p>",
                     "humanInputModel": "",
                     "humanInputModelPrompt": "<p>Summarize the conversation between the user and the assistant, reiterate the last message from the assistant, and ask if user would like to proceed or if they have any feedback. </p>\n<ul>\n<li>Begin by capturing the key points of the conversation, ensuring that you reflect the main ideas and themes discussed.</li>\n<li>Then, clearly reproduce the last message sent by the assistant to maintain continuity. Make sure the whole message is reproduced.</li>\n<li>Finally, ask the user if they would like to proceed, or provide any feedback on the last assistant message</li>\n</ul>\n<h2 id=\"output-format-the-output-should-be-structured-in-three-parts-\">Output Format The output should be structured in three parts in text:</h2>\n<ul>\n<li>A summary of the conversation (1-3 sentences).</li>\n<li>The last assistant message (exactly as it appeared).</li>\n<li>Ask the user if they would like to proceed, or provide any feedback on last assistant message. No other explanation and elaboration is needed.</li>\n</ul>\n"
                 },
@@ -697,8 +673,8 @@
             "id": "llmAgentflow_0",
             "type": "agentFlow",
             "position": {
-                "x": 900,
-                "y": 60
+                "x": 920,
+                "y": 120
             },
             "data": {
                 "id": "llmAgentflow_0",
@@ -971,7 +947,7 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是项目设计与科研方案迭代流程中的任务画像分析师。请基于完整对话历史，输出后续评审链路可直接使用的结构化任务画像。</p><p>要求：1）优先依据用户明确表达和上传资料，不要臆造事实；2）忽略仅用于流程控制的短词，如 yes/no、approve/reject、进入评审迭代、继续补充 等；3）默认使用简体中文，除非用户明确要求其他语言；4）只能输出严格合法的 JSON，不要输出 Markdown 代码块或额外说明。</p>"
+                            "content": "<p>你是项目设计与方案迭代流程中的任务画像分析师。请基于完整对话历史，输出后续方案生成与评审可直接使用的结构化任务画像。</p><p>要求：1）优先依据用户明确表达和上传资料，不要臆造事实；2）忽略仅用于流程控制的短词，如 yes/no、approve/reject、进入方案迭代、继续补充 等；3）默认使用简体中文，除非用户明确要求其他语言；4）只能输出严格合法的 JSON，不要输出 Markdown 代码块或额外说明。</p>"
                         },
                         {
                             "role": "user",
@@ -1019,19 +995,9 @@
                             "description": "评价方案优劣的标准"
                         },
                         {
-                            "key": "sourceInventory",
+                            "key": "openQuestions",
                             "type": "stringArray",
-                            "description": "已有材料与附件清单"
-                        },
-                        {
-                            "key": "sourceGaps",
-                            "type": "stringArray",
-                            "description": "当前已知信息缺口"
-                        },
-                        {
-                            "key": "needsEvidenceSupport",
-                            "type": "boolean",
-                            "description": "是否需要补充外部证据或查证"
+                            "description": "当前仍待澄清或后续要重点确认的问题"
                         }
                     ],
                     "llmUpdateState": [
@@ -1061,8 +1027,8 @@
                 "outputs": {}
             },
             "positionAbsolute": {
-                "x": 900,
-                "y": 60
+                "x": 920,
+                "y": 120
             },
             "selected": false,
             "dragging": false,
@@ -1070,572 +1036,22 @@
             "height": 80
         },
         {
-            "id": "conditionAgentflow_0",
-            "type": "agentFlow",
-            "position": {
-                "x": 1150,
-                "y": 60
-            },
-            "data": {
-                "id": "conditionAgentflow_0",
-                "label": "是否需要证据增强",
-                "version": 1,
-                "name": "conditionAgentflow",
-                "type": "Condition",
-                "color": "#FFB938",
-                "baseClasses": ["Condition"],
-                "category": "Agent Flows",
-                "description": "Split flows based on If Else conditions",
-                "inputParams": [
-                    {
-                        "label": "Conditions",
-                        "name": "conditions",
-                        "type": "array",
-                        "description": "Values to compare",
-                        "acceptVariable": true,
-                        "default": [
-                            {
-                                "type": "number",
-                                "value1": "",
-                                "operation": "equal",
-                                "value2": ""
-                            }
-                        ],
-                        "array": [
-                            {
-                                "label": "Type",
-                                "name": "type",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "String",
-                                        "name": "string"
-                                    },
-                                    {
-                                        "label": "Number",
-                                        "name": "number"
-                                    },
-                                    {
-                                        "label": "Boolean",
-                                        "name": "boolean"
-                                    }
-                                ],
-                                "default": "string"
-                            },
-                            {
-                                "label": "Value 1",
-                                "name": "value1",
-                                "type": "string",
-                                "default": "",
-                                "description": "First value to be compared with",
-                                "acceptVariable": true,
-                                "show": {
-                                    "conditions[$index].type": "string"
-                                }
-                            },
-                            {
-                                "label": "Operation",
-                                "name": "operation",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "Contains",
-                                        "name": "contains"
-                                    },
-                                    {
-                                        "label": "Ends With",
-                                        "name": "endsWith"
-                                    },
-                                    {
-                                        "label": "Equal",
-                                        "name": "equal"
-                                    },
-                                    {
-                                        "label": "Not Contains",
-                                        "name": "notContains"
-                                    },
-                                    {
-                                        "label": "Not Equal",
-                                        "name": "notEqual"
-                                    },
-                                    {
-                                        "label": "Regex",
-                                        "name": "regex"
-                                    },
-                                    {
-                                        "label": "Starts With",
-                                        "name": "startsWith"
-                                    },
-                                    {
-                                        "label": "Is Empty",
-                                        "name": "isEmpty"
-                                    },
-                                    {
-                                        "label": "Not Empty",
-                                        "name": "notEmpty"
-                                    }
-                                ],
-                                "default": "equal",
-                                "description": "Type of operation",
-                                "show": {
-                                    "conditions[$index].type": "string"
-                                }
-                            },
-                            {
-                                "label": "Value 2",
-                                "name": "value2",
-                                "type": "string",
-                                "default": "",
-                                "description": "Second value to be compared with",
-                                "acceptVariable": true,
-                                "show": {
-                                    "conditions[$index].type": "string"
-                                },
-                                "hide": {
-                                    "conditions[$index].operation": ["isEmpty", "notEmpty"]
-                                }
-                            },
-                            {
-                                "label": "Value 1",
-                                "name": "value1",
-                                "type": "number",
-                                "default": "",
-                                "description": "First value to be compared with",
-                                "acceptVariable": true,
-                                "show": {
-                                    "conditions[$index].type": "number"
-                                }
-                            },
-                            {
-                                "label": "Operation",
-                                "name": "operation",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "Smaller",
-                                        "name": "smaller"
-                                    },
-                                    {
-                                        "label": "Smaller Equal",
-                                        "name": "smallerEqual"
-                                    },
-                                    {
-                                        "label": "Equal",
-                                        "name": "equal"
-                                    },
-                                    {
-                                        "label": "Not Equal",
-                                        "name": "notEqual"
-                                    },
-                                    {
-                                        "label": "Larger",
-                                        "name": "larger"
-                                    },
-                                    {
-                                        "label": "Larger Equal",
-                                        "name": "largerEqual"
-                                    },
-                                    {
-                                        "label": "Is Empty",
-                                        "name": "isEmpty"
-                                    },
-                                    {
-                                        "label": "Not Empty",
-                                        "name": "notEmpty"
-                                    }
-                                ],
-                                "default": "equal",
-                                "description": "Type of operation",
-                                "show": {
-                                    "conditions[$index].type": "number"
-                                }
-                            },
-                            {
-                                "label": "Value 2",
-                                "name": "value2",
-                                "type": "number",
-                                "default": 0,
-                                "description": "Second value to be compared with",
-                                "acceptVariable": true,
-                                "show": {
-                                    "conditions[$index].type": "number"
-                                }
-                            },
-                            {
-                                "label": "Value 1",
-                                "name": "value1",
-                                "type": "boolean",
-                                "default": false,
-                                "description": "First value to be compared with",
-                                "show": {
-                                    "conditions[$index].type": "boolean"
-                                }
-                            },
-                            {
-                                "label": "Operation",
-                                "name": "operation",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "Equal",
-                                        "name": "equal"
-                                    },
-                                    {
-                                        "label": "Not Equal",
-                                        "name": "notEqual"
-                                    }
-                                ],
-                                "default": "equal",
-                                "description": "Type of operation",
-                                "show": {
-                                    "conditions[$index].type": "boolean"
-                                }
-                            },
-                            {
-                                "label": "Value 2",
-                                "name": "value2",
-                                "type": "boolean",
-                                "default": false,
-                                "description": "Second value to be compared with",
-                                "show": {
-                                    "conditions[$index].type": "boolean"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                "inputAnchors": [],
-                "inputs": {
-                    "conditions": [
-                        {
-                            "type": "string",
-                            "value1": "{{ $flow.state.taskProfile.needsEvidenceSupport }}",
-                            "operation": "equal",
-                            "value2": "true"
-                        }
-                    ]
-                },
-                "outputAnchors": [
-                    {
-                        "id": "conditionAgentflow_0-output-0",
-                        "label": "Condition",
-                        "name": "conditionAgentflow"
-                    },
-                    {
-                        "id": "conditionAgentflow_0-output-1",
-                        "label": "Condition",
-                        "name": "conditionAgentflow"
-                    }
-                ],
-                "outputs": {
-                    "conditionAgentflow": ""
-                },
-                "selected": false
-            },
-            "width": 178,
-            "height": 80,
-            "positionAbsolute": {
-                "x": 1150,
-                "y": 60
-            },
-            "selected": false,
-            "dragging": false
-        },
-        {
-            "id": "agentAgentflow_1",
-            "type": "agentFlow",
-            "position": {
-                "x": 1380,
-                "y": 20
-            },
-            "data": {
-                "id": "agentAgentflow_1",
-                "label": "证据研究",
-                "version": 3.2,
-                "name": "agentAgentflow",
-                "type": "Agent",
-                "color": "#4DD0E1",
-                "baseClasses": ["Agent"],
-                "category": "Agent Flows",
-                "description": "按需检索论文与网页，补充可靠证据笔记",
-                "inputParams": [
-                    {
-                        "label": "Model",
-                        "name": "agentModel",
-                        "type": "asyncOptions",
-                        "loadMethod": "listModels",
-                        "loadConfig": true
-                    },
-                    {
-                        "label": "Messages",
-                        "name": "agentMessages",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Role",
-                                "name": "role",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "System",
-                                        "name": "system"
-                                    },
-                                    {
-                                        "label": "Assistant",
-                                        "name": "assistant"
-                                    },
-                                    {
-                                        "label": "Developer",
-                                        "name": "developer"
-                                    },
-                                    {
-                                        "label": "User",
-                                        "name": "user"
-                                    }
-                                ]
-                            },
-                            {
-                                "label": "Content",
-                                "name": "content",
-                                "type": "string",
-                                "acceptVariable": true,
-                                "generateInstruction": true,
-                                "rows": 4
-                            }
-                        ]
-                    },
-                    {
-                        "label": "OpenAI Built-in Tools",
-                        "name": "agentToolsBuiltInOpenAI",
-                        "type": "multiOptions",
-                        "optional": true,
-                        "options": [
-                            {
-                                "label": "Web Search",
-                                "name": "web_search_preview",
-                                "description": "Search the web for the latest information"
-                            },
-                            {
-                                "label": "Code Interpreter",
-                                "name": "code_interpreter",
-                                "description": "Write and run Python code in a sandboxed environment"
-                            },
-                            {
-                                "label": "Image Generation",
-                                "name": "image_generation",
-                                "description": "Generate images based on a text prompt"
-                            }
-                        ],
-                        "show": {
-                            "agentModel": "chatOpenAI"
-                        }
-                    },
-                    {
-                        "label": "Tools",
-                        "name": "agentTools",
-                        "type": "array",
-                        "optional": true,
-                        "array": [
-                            {
-                                "label": "Tool",
-                                "name": "agentSelectedTool",
-                                "type": "asyncOptions",
-                                "loadMethod": "listTools",
-                                "loadConfig": true
-                            },
-                            {
-                                "label": "Require Human Input",
-                                "name": "agentSelectedToolRequiresHumanInput",
-                                "type": "boolean",
-                                "optional": true
-                            }
-                        ]
-                    },
-                    {
-                        "label": "Enable Memory",
-                        "name": "agentEnableMemory",
-                        "type": "boolean",
-                        "description": "Enable memory for the conversation thread",
-                        "default": true,
-                        "optional": true
-                    },
-                    {
-                        "label": "Memory Type",
-                        "name": "agentMemoryType",
-                        "type": "options",
-                        "options": [
-                            {
-                                "label": "All Messages",
-                                "name": "allMessages"
-                            },
-                            {
-                                "label": "Window Size",
-                                "name": "windowSize"
-                            },
-                            {
-                                "label": "Conversation Summary",
-                                "name": "conversationSummary"
-                            },
-                            {
-                                "label": "Conversation Summary Buffer",
-                                "name": "conversationSummaryBuffer"
-                            }
-                        ],
-                        "optional": true,
-                        "default": "allMessages",
-                        "show": {
-                            "agentEnableMemory": true
-                        }
-                    },
-                    {
-                        "label": "Input Message",
-                        "name": "agentUserMessage",
-                        "type": "string",
-                        "rows": 4,
-                        "optional": true,
-                        "acceptVariable": true,
-                        "show": {
-                            "agentEnableMemory": true
-                        }
-                    },
-                    {
-                        "label": "Return Response As",
-                        "name": "agentReturnResponseAs",
-                        "type": "options",
-                        "options": [
-                            {
-                                "label": "User Message",
-                                "name": "userMessage"
-                            },
-                            {
-                                "label": "Assistant Message",
-                                "name": "assistantMessage"
-                            }
-                        ],
-                        "default": "userMessage"
-                    },
-                    {
-                        "label": "Update Flow State",
-                        "name": "agentUpdateState",
-                        "description": "Update runtime state during the execution of the workflow",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Key",
-                                "name": "key",
-                                "type": "asyncOptions",
-                                "loadMethod": "listRuntimeStateKeys",
-                                "freeSolo": true
-                            },
-                            {
-                                "label": "Value",
-                                "name": "value",
-                                "type": "string",
-                                "acceptVariable": true,
-                                "acceptNodeOutputAsVariable": true
-                            }
-                        ]
-                    }
-                ],
-                "inputAnchors": [],
-                "inputs": {
-                    "agentModel": "chatDeepseek",
-                    "agentMessages": [
-                        {
-                            "role": "system",
-                            "content": "<p>你是项目设计与科研方案的证据研究代理，负责为后续构思与评审补充可靠、可核查、可引用的资料。</p><p>仅当任务画像显示确有查证需求时才展开检索。优先搜索最近且相关的来源：先用 arXiv 或网页搜索找方向，再按需读取关键网页全文。</p><p>输出要求：1）按主题整理证据笔记；2）每条核心结论都附来源线索（标题、作者、年份、链接或 Arxiv ID 至少其一）；3）明确哪些点证据充分，哪些点仍需补证据；4）默认跟随用户语言；5）不要输出 Markdown 代码块。</p>"
-                        },
-                        {
-                            "role": "user",
-                            "content": "<p>用户原始任务：</p><p>{{ question }}</p><p>任务画像：</p><p>{{ $flow.state.taskProfile }}</p><p>请生成后续方案迭代可直接使用的证据笔记。</p>"
-                        }
-                    ],
-                    "agentToolsBuiltInOpenAI": [],
-                    "agentTools": [
-                        {
-                            "agentSelectedTool": "arxiv",
-                            "agentSelectedToolRequiresHumanInput": "",
-                            "agentSelectedToolConfig": {
-                                "agentSelectedTool": "arxiv",
-                                "arxivName": "design_evidence_search",
-                                "arxivDescription": "Search for academic papers or surveys that can support the current project design or research design iteration.",
-                                "topKResults": 5,
-                                "loadFullContent": false,
-                                "docContentCharsMax": 12000
-                            }
-                        },
-                        {
-                            "agentSelectedTool": "webScraperTool",
-                            "agentSelectedToolRequiresHumanInput": "",
-                            "agentSelectedToolConfig": {
-                                "agentSelectedTool": "webScraperTool",
-                                "scrapeMode": "recursive",
-                                "maxDepth": 1,
-                                "maxPages": 6,
-                                "timeoutS": 60,
-                                "description": "Read key webpages in depth to capture supporting evidence, baselines, methods, implementation constraints or review criteria."
-                            }
-                        }
-                    ],
-                    "agentEnableMemory": true,
-                    "agentMemoryType": "allMessages",
-                    "agentUserMessage": "",
-                    "agentReturnResponseAs": "assistantMessage",
-                    "agentUpdateState": [
-                        {
-                            "key": "evidenceNotes",
-                            "value": "{{ output }}"
-                        }
-                    ],
-                    "agentModelConfig": {
-                        "credential": "",
-                        "modelName": "deepseek-chat",
-                        "temperature": 0.2,
-                        "streaming": true,
-                        "maxTokens": "",
-                        "agentModel": "chatDeepseek"
-                    }
-                },
-                "outputAnchors": [
-                    {
-                        "id": "agentAgentflow_1-output-agentAgentflow",
-                        "label": "Agent",
-                        "name": "agentAgentflow"
-                    }
-                ],
-                "outputs": {},
-                "selected": false
-            },
-            "width": 196,
-            "height": 80,
-            "positionAbsolute": {
-                "x": 1380,
-                "y": 20
-            },
-            "selected": false,
-            "dragging": false
-        },
-        {
             "id": "llmAgentflow_1",
             "type": "agentFlow",
             "position": {
-                "x": 1640,
-                "y": 60
+                "x": 1190,
+                "y": 120
             },
             "data": {
                 "id": "llmAgentflow_1",
-                "label": "轮次简报",
+                "label": "方案生成",
                 "version": 1.1,
                 "name": "llmAgentflow",
                 "type": "LLM",
                 "color": "#64B5F6",
                 "baseClasses": ["LLM"],
                 "category": "Agent Flows",
-                "description": "汇总任务画像、证据、上一轮裁决和人工反馈，生成本轮唯一工作指令",
+                "description": "基于任务画像、上一轮评审和最新反馈生成当前版本方案",
                 "inputParams": [
                     {
                         "label": "Model",
@@ -1897,11 +1313,11 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是本轮设计迭代的总协调器。请把任务画像、证据笔记、上一轮裁决和人工反馈压缩为一个对本轮所有模型都可直接执行的工作简报。</p><p>输出必须固定包含五部分：本轮目标、必须遵守的约束、已有证据与可用资源、本轮优先修正点、产出要求。</p><p>如果没有上一轮裁决或人工反馈，就按第一轮处理；如果有最新人工反馈，优先级高于上一轮自动裁决。</p><p>默认跟随用户语言，不要输出代码块。</p>"
+                            "content": "<p>你是项目设计与科研方案的主设计师。请基于任务画像、上一轮评审结论和最新人工反馈，输出当前版本的方案草案。</p><p>输出必须固定包含四个二级标题：## 目标与范围、## 核心方案、## 执行步骤、## 风险与待确认。</p><p>如果没有上一轮评审或人工反馈，就按第一轮生成；如果有最新人工反馈，优先吸收用户明确要求。</p><p>默认跟随用户语言，不要输出代码块。</p>"
                         },
                         {
                             "role": "user",
-                            "content": "<p>用户原始任务：</p><p>{{ question }}</p><p>任务画像：</p><p>{{ $flow.state.taskProfile }}</p><p>证据笔记（可能为空）：</p><p>{{ $flow.state.evidenceNotes }}</p><p>上一轮裁决（可能为空）：</p><p>{{ $flow.state.judgeVerdict }}</p><p>最新人工反馈摘要（可能为空）：</p><p>{{ $flow.state.humanFeedbackBrief }}</p><p>请生成本轮工作简报。</p>"
+                            "content": "<p>用户原始任务：</p><p>{{ question }}</p><p>任务画像：</p><p>{{ $flow.state.taskProfile }}</p><p>上一轮评审结论（可能为空）：</p><p>{{ $flow.state.judgeVerdict }}</p><p>最新人工反馈摘要（可能为空）：</p><p>{{ $flow.state.humanFeedbackBrief }}</p><p>请输出当前版本方案。</p>"
                         }
                     ],
                     "llmEnableMemory": false,
@@ -1911,14 +1327,14 @@
                     "llmStructuredOutput": "",
                     "llmUpdateState": [
                         {
-                            "key": "roundBrief",
+                            "key": "currentProposal",
                             "value": "{{ output }}"
                         }
                     ],
                     "llmModelConfig": {
                         "credential": "",
                         "modelName": "deepseek-chat",
-                        "temperature": 0.2,
+                        "temperature": 0.3,
                         "streaming": true,
                         "maxTokens": "",
                         "llmModel": "chatDeepseek"
@@ -1936,1444 +1352,8 @@
                 "outputs": {}
             },
             "positionAbsolute": {
-                "x": 1640,
-                "y": 60
-            },
-            "selected": false,
-            "dragging": false,
-            "width": 188,
-            "height": 80
-        },
-        {
-            "id": "llmAgentflow_2",
-            "type": "agentFlow",
-            "position": {
-                "x": 1910,
-                "y": 20
-            },
-            "data": {
-                "id": "llmAgentflow_2",
-                "label": "构思模型 A",
-                "version": 1.1,
-                "name": "llmAgentflow",
-                "type": "LLM",
-                "color": "#64B5F6",
-                "baseClasses": ["LLM"],
-                "category": "Agent Flows",
-                "description": "偏创新和研究价值的方案构思",
-                "inputParams": [
-                    {
-                        "label": "Model",
-                        "name": "llmModel",
-                        "type": "asyncOptions",
-                        "loadMethod": "listModels",
-                        "loadConfig": true,
-                        "id": "llmAgentflow_0-input-llmModel-asyncOptions",
-                        "display": true
-                    },
-                    {
-                        "label": "Messages",
-                        "name": "llmMessages",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Role",
-                                "name": "role",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "System",
-                                        "name": "system"
-                                    },
-                                    {
-                                        "label": "Assistant",
-                                        "name": "assistant"
-                                    },
-                                    {
-                                        "label": "Developer",
-                                        "name": "developer"
-                                    },
-                                    {
-                                        "label": "User",
-                                        "name": "user"
-                                    }
-                                ]
-                            },
-                            {
-                                "label": "Content",
-                                "name": "content",
-                                "type": "string",
-                                "acceptVariable": true,
-                                "generateInstruction": true,
-                                "rows": 4
-                            }
-                        ],
-                        "id": "llmAgentflow_0-input-llmMessages-array",
-                        "display": true
-                    },
-                    {
-                        "label": "Enable Memory",
-                        "name": "llmEnableMemory",
-                        "type": "boolean",
-                        "description": "Enable memory for the conversation thread",
-                        "default": true,
-                        "optional": true,
-                        "id": "llmAgentflow_0-input-llmEnableMemory-boolean",
-                        "display": true
-                    },
-                    {
-                        "label": "Memory Type",
-                        "name": "llmMemoryType",
-                        "type": "options",
-                        "options": [
-                            {
-                                "label": "All Messages",
-                                "name": "allMessages",
-                                "description": "Retrieve all messages from the conversation"
-                            },
-                            {
-                                "label": "Window Size",
-                                "name": "windowSize",
-                                "description": "Uses a fixed window size to surface the last N messages"
-                            },
-                            {
-                                "label": "Conversation Summary",
-                                "name": "conversationSummary",
-                                "description": "Summarizes the whole conversation"
-                            },
-                            {
-                                "label": "Conversation Summary Buffer",
-                                "name": "conversationSummaryBuffer",
-                                "description": "Summarize conversations once token limit is reached. Default to 2000"
-                            }
-                        ],
-                        "optional": true,
-                        "default": "allMessages",
-                        "show": {
-                            "llmEnableMemory": true
-                        },
-                        "id": "llmAgentflow_0-input-llmMemoryType-options",
-                        "display": true
-                    },
-                    {
-                        "label": "Window Size",
-                        "name": "llmMemoryWindowSize",
-                        "type": "number",
-                        "default": "20",
-                        "description": "Uses a fixed window size to surface the last N messages",
-                        "show": {
-                            "llmMemoryType": "windowSize"
-                        },
-                        "id": "llmAgentflow_0-input-llmMemoryWindowSize-number",
-                        "display": false
-                    },
-                    {
-                        "label": "Max Token Limit",
-                        "name": "llmMemoryMaxTokenLimit",
-                        "type": "number",
-                        "default": "2000",
-                        "description": "Summarize conversations once token limit is reached. Default to 2000",
-                        "show": {
-                            "llmMemoryType": "conversationSummaryBuffer"
-                        },
-                        "id": "llmAgentflow_0-input-llmMemoryMaxTokenLimit-number",
-                        "display": false
-                    },
-                    {
-                        "label": "Input Message",
-                        "name": "llmUserMessage",
-                        "type": "string",
-                        "description": "Add an input message as user message at the end of the conversation",
-                        "rows": 4,
-                        "optional": true,
-                        "acceptVariable": true,
-                        "show": {
-                            "llmEnableMemory": true
-                        },
-                        "id": "llmAgentflow_0-input-llmUserMessage-string",
-                        "display": true
-                    },
-                    {
-                        "label": "Return Response As",
-                        "name": "llmReturnResponseAs",
-                        "type": "options",
-                        "options": [
-                            {
-                                "label": "User Message",
-                                "name": "userMessage"
-                            },
-                            {
-                                "label": "Assistant Message",
-                                "name": "assistantMessage"
-                            }
-                        ],
-                        "default": "userMessage",
-                        "id": "llmAgentflow_0-input-llmReturnResponseAs-options",
-                        "display": true
-                    },
-                    {
-                        "label": "JSON Structured Output",
-                        "name": "llmStructuredOutput",
-                        "description": "Instruct the LLM to give output in a JSON structured schema",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Key",
-                                "name": "key",
-                                "type": "string"
-                            },
-                            {
-                                "label": "Type",
-                                "name": "type",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "String",
-                                        "name": "string"
-                                    },
-                                    {
-                                        "label": "String Array",
-                                        "name": "stringArray"
-                                    },
-                                    {
-                                        "label": "Number",
-                                        "name": "number"
-                                    },
-                                    {
-                                        "label": "Boolean",
-                                        "name": "boolean"
-                                    },
-                                    {
-                                        "label": "Enum",
-                                        "name": "enum"
-                                    },
-                                    {
-                                        "label": "JSON Array",
-                                        "name": "jsonArray"
-                                    }
-                                ]
-                            },
-                            {
-                                "label": "Enum Values",
-                                "name": "enumValues",
-                                "type": "string",
-                                "placeholder": "value1, value2, value3",
-                                "description": "Enum values. Separated by comma",
-                                "optional": true,
-                                "show": {
-                                    "llmStructuredOutput[$index].type": "enum"
-                                }
-                            },
-                            {
-                                "label": "JSON Schema",
-                                "name": "jsonSchema",
-                                "type": "code",
-                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
-                                "description": "JSON schema for the structured output",
-                                "optional": true,
-                                "show": {
-                                    "llmStructuredOutput[$index].type": "jsonArray"
-                                }
-                            },
-                            {
-                                "label": "Description",
-                                "name": "description",
-                                "type": "string",
-                                "placeholder": "Description of the key"
-                            }
-                        ],
-                        "id": "llmAgentflow_0-input-llmStructuredOutput-array",
-                        "display": true
-                    },
-                    {
-                        "label": "Update Flow State",
-                        "name": "llmUpdateState",
-                        "description": "Update runtime state during the execution of the workflow",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Key",
-                                "name": "key",
-                                "type": "asyncOptions",
-                                "loadMethod": "listRuntimeStateKeys",
-                                "freeSolo": true
-                            },
-                            {
-                                "label": "Value",
-                                "name": "value",
-                                "type": "string",
-                                "acceptVariable": true,
-                                "acceptNodeOutputAsVariable": true
-                            }
-                        ],
-                        "id": "llmAgentflow_0-input-llmUpdateState-array",
-                        "display": true
-                    }
-                ],
-                "inputAnchors": [],
-                "inputs": {
-                    "llmModel": "chatDeepseek",
-                    "llmMessages": [
-                        {
-                            "role": "system",
-                            "content": "<p>你是偏创新导向的高级方案架构师。请基于本轮工作简报提出一个具有突破性、研究价值或方法新意的方案草案。</p><p>要兼顾可执行性，但更强调新颖性、方法亮点和潜在上限。</p><p>只能输出严格合法的 JSON，不要输出 Markdown 代码块或额外说明。</p>"
-                        },
-                        {
-                            "role": "user",
-                            "content": "<p>本轮工作简报：</p><p>{{ $flow.state.roundBrief }}</p><p>请输出方案草案 A。</p>"
-                        }
-                    ],
-                    "llmEnableMemory": false,
-                    "llmMemoryType": "allMessages",
-                    "llmUserMessage": "",
-                    "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "coreIdea",
-                            "type": "string",
-                            "description": "方案核心思想"
-                        },
-                        {
-                            "key": "approachSummary",
-                            "type": "string",
-                            "description": "总体实现概述"
-                        },
-                        {
-                            "key": "milestones",
-                            "type": "stringArray",
-                            "description": "关键阶段与里程碑"
-                        },
-                        {
-                            "key": "technicalRoute",
-                            "type": "string",
-                            "description": "关键技术路线"
-                        },
-                        {
-                            "key": "risks",
-                            "type": "stringArray",
-                            "description": "主要风险"
-                        },
-                        {
-                            "key": "validationPlan",
-                            "type": "string",
-                            "description": "验证或实验计划"
-                        },
-                        {
-                            "key": "tradeoffs",
-                            "type": "stringArray",
-                            "description": "主要取舍"
-                        }
-                    ],
-                    "llmUpdateState": [
-                        {
-                            "key": "conceptDraftA",
-                            "value": "{{ output }}"
-                        }
-                    ],
-                    "llmModelConfig": {
-                        "credential": "",
-                        "modelName": "deepseek-chat",
-                        "temperature": 0.2,
-                        "streaming": true,
-                        "maxTokens": "",
-                        "llmModel": "chatDeepseek"
-                    },
-                    "llmMemoryWindowSize": "20",
-                    "llmMemoryMaxTokenLimit": "2000"
-                },
-                "outputAnchors": [
-                    {
-                        "id": "llmAgentflow_2-output-llmAgentflow",
-                        "label": "LLM",
-                        "name": "llmAgentflow"
-                    }
-                ],
-                "outputs": {}
-            },
-            "positionAbsolute": {
-                "x": 1910,
-                "y": 20
-            },
-            "selected": false,
-            "dragging": false,
-            "width": 188,
-            "height": 80
-        },
-        {
-            "id": "llmAgentflow_3",
-            "type": "agentFlow",
-            "position": {
-                "x": 1910,
-                "y": 140
-            },
-            "data": {
-                "id": "llmAgentflow_3",
-                "label": "构思模型 B",
-                "version": 1.1,
-                "name": "llmAgentflow",
-                "type": "LLM",
-                "color": "#64B5F6",
-                "baseClasses": ["LLM"],
-                "category": "Agent Flows",
-                "description": "偏可落地和资源匹配的方案构思",
-                "inputParams": [
-                    {
-                        "label": "Model",
-                        "name": "llmModel",
-                        "type": "asyncOptions",
-                        "loadMethod": "listModels",
-                        "loadConfig": true,
-                        "id": "llmAgentflow_0-input-llmModel-asyncOptions",
-                        "display": true
-                    },
-                    {
-                        "label": "Messages",
-                        "name": "llmMessages",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Role",
-                                "name": "role",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "System",
-                                        "name": "system"
-                                    },
-                                    {
-                                        "label": "Assistant",
-                                        "name": "assistant"
-                                    },
-                                    {
-                                        "label": "Developer",
-                                        "name": "developer"
-                                    },
-                                    {
-                                        "label": "User",
-                                        "name": "user"
-                                    }
-                                ]
-                            },
-                            {
-                                "label": "Content",
-                                "name": "content",
-                                "type": "string",
-                                "acceptVariable": true,
-                                "generateInstruction": true,
-                                "rows": 4
-                            }
-                        ],
-                        "id": "llmAgentflow_0-input-llmMessages-array",
-                        "display": true
-                    },
-                    {
-                        "label": "Enable Memory",
-                        "name": "llmEnableMemory",
-                        "type": "boolean",
-                        "description": "Enable memory for the conversation thread",
-                        "default": true,
-                        "optional": true,
-                        "id": "llmAgentflow_0-input-llmEnableMemory-boolean",
-                        "display": true
-                    },
-                    {
-                        "label": "Memory Type",
-                        "name": "llmMemoryType",
-                        "type": "options",
-                        "options": [
-                            {
-                                "label": "All Messages",
-                                "name": "allMessages",
-                                "description": "Retrieve all messages from the conversation"
-                            },
-                            {
-                                "label": "Window Size",
-                                "name": "windowSize",
-                                "description": "Uses a fixed window size to surface the last N messages"
-                            },
-                            {
-                                "label": "Conversation Summary",
-                                "name": "conversationSummary",
-                                "description": "Summarizes the whole conversation"
-                            },
-                            {
-                                "label": "Conversation Summary Buffer",
-                                "name": "conversationSummaryBuffer",
-                                "description": "Summarize conversations once token limit is reached. Default to 2000"
-                            }
-                        ],
-                        "optional": true,
-                        "default": "allMessages",
-                        "show": {
-                            "llmEnableMemory": true
-                        },
-                        "id": "llmAgentflow_0-input-llmMemoryType-options",
-                        "display": false
-                    },
-                    {
-                        "label": "Window Size",
-                        "name": "llmMemoryWindowSize",
-                        "type": "number",
-                        "default": "20",
-                        "description": "Uses a fixed window size to surface the last N messages",
-                        "show": {
-                            "llmMemoryType": "windowSize"
-                        },
-                        "id": "llmAgentflow_0-input-llmMemoryWindowSize-number",
-                        "display": false
-                    },
-                    {
-                        "label": "Max Token Limit",
-                        "name": "llmMemoryMaxTokenLimit",
-                        "type": "number",
-                        "default": "2000",
-                        "description": "Summarize conversations once token limit is reached. Default to 2000",
-                        "show": {
-                            "llmMemoryType": "conversationSummaryBuffer"
-                        },
-                        "id": "llmAgentflow_0-input-llmMemoryMaxTokenLimit-number",
-                        "display": false
-                    },
-                    {
-                        "label": "Input Message",
-                        "name": "llmUserMessage",
-                        "type": "string",
-                        "description": "Add an input message as user message at the end of the conversation",
-                        "rows": 4,
-                        "optional": true,
-                        "acceptVariable": true,
-                        "show": {
-                            "llmEnableMemory": true
-                        },
-                        "id": "llmAgentflow_0-input-llmUserMessage-string",
-                        "display": false
-                    },
-                    {
-                        "label": "Return Response As",
-                        "name": "llmReturnResponseAs",
-                        "type": "options",
-                        "options": [
-                            {
-                                "label": "User Message",
-                                "name": "userMessage"
-                            },
-                            {
-                                "label": "Assistant Message",
-                                "name": "assistantMessage"
-                            }
-                        ],
-                        "default": "userMessage",
-                        "id": "llmAgentflow_0-input-llmReturnResponseAs-options",
-                        "display": true
-                    },
-                    {
-                        "label": "JSON Structured Output",
-                        "name": "llmStructuredOutput",
-                        "description": "Instruct the LLM to give output in a JSON structured schema",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Key",
-                                "name": "key",
-                                "type": "string"
-                            },
-                            {
-                                "label": "Type",
-                                "name": "type",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "String",
-                                        "name": "string"
-                                    },
-                                    {
-                                        "label": "String Array",
-                                        "name": "stringArray"
-                                    },
-                                    {
-                                        "label": "Number",
-                                        "name": "number"
-                                    },
-                                    {
-                                        "label": "Boolean",
-                                        "name": "boolean"
-                                    },
-                                    {
-                                        "label": "Enum",
-                                        "name": "enum"
-                                    },
-                                    {
-                                        "label": "JSON Array",
-                                        "name": "jsonArray"
-                                    }
-                                ]
-                            },
-                            {
-                                "label": "Enum Values",
-                                "name": "enumValues",
-                                "type": "string",
-                                "placeholder": "value1, value2, value3",
-                                "description": "Enum values. Separated by comma",
-                                "optional": true,
-                                "show": {
-                                    "llmStructuredOutput[$index].type": "enum"
-                                }
-                            },
-                            {
-                                "label": "JSON Schema",
-                                "name": "jsonSchema",
-                                "type": "code",
-                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
-                                "description": "JSON schema for the structured output",
-                                "optional": true,
-                                "show": {
-                                    "llmStructuredOutput[$index].type": "jsonArray"
-                                }
-                            },
-                            {
-                                "label": "Description",
-                                "name": "description",
-                                "type": "string",
-                                "placeholder": "Description of the key"
-                            }
-                        ],
-                        "id": "llmAgentflow_0-input-llmStructuredOutput-array",
-                        "display": true
-                    },
-                    {
-                        "label": "Update Flow State",
-                        "name": "llmUpdateState",
-                        "description": "Update runtime state during the execution of the workflow",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Key",
-                                "name": "key",
-                                "type": "asyncOptions",
-                                "loadMethod": "listRuntimeStateKeys",
-                                "freeSolo": true
-                            },
-                            {
-                                "label": "Value",
-                                "name": "value",
-                                "type": "string",
-                                "acceptVariable": true,
-                                "acceptNodeOutputAsVariable": true
-                            }
-                        ],
-                        "id": "llmAgentflow_0-input-llmUpdateState-array",
-                        "display": true
-                    }
-                ],
-                "inputAnchors": [],
-                "inputs": {
-                    "llmModel": "chatAlibabaTongyi",
-                    "llmMessages": [
-                        {
-                            "role": "system",
-                            "content": "<p>你是偏工程落地导向的高级方案架构师。请基于本轮工作简报提出一个强调可执行性、资源匹配和实施效率的方案草案。</p><p>要避免不必要的复杂度，优先追求在现有约束下真正可推进的路线。</p><p>只能输出严格合法的 JSON，不要输出 Markdown 代码块或额外说明。</p>"
-                        },
-                        {
-                            "role": "user",
-                            "content": "<p>本轮工作简报：</p><p>{{ $flow.state.roundBrief }}</p><p>请输出方案草案 B。</p>"
-                        }
-                    ],
-                    "llmEnableMemory": false,
-                    "llmMemoryType": "allMessages",
-                    "llmUserMessage": "",
-                    "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "coreIdea",
-                            "type": "string",
-                            "description": "方案核心思想"
-                        },
-                        {
-                            "key": "approachSummary",
-                            "type": "string",
-                            "description": "总体实现概述"
-                        },
-                        {
-                            "key": "milestones",
-                            "type": "stringArray",
-                            "description": "关键阶段与里程碑"
-                        },
-                        {
-                            "key": "technicalRoute",
-                            "type": "string",
-                            "description": "关键技术路线"
-                        },
-                        {
-                            "key": "risks",
-                            "type": "stringArray",
-                            "description": "主要风险"
-                        },
-                        {
-                            "key": "validationPlan",
-                            "type": "string",
-                            "description": "验证或实验计划"
-                        },
-                        {
-                            "key": "tradeoffs",
-                            "type": "stringArray",
-                            "description": "主要取舍"
-                        }
-                    ],
-                    "llmUpdateState": [
-                        {
-                            "key": "conceptDraftB",
-                            "value": "{{ output }}"
-                        }
-                    ],
-                    "llmModelConfig": {
-                        "credential": "",
-                        "modelName": "qwen-plus",
-                        "temperature": 0.25,
-                        "streaming": true,
-                        "allowImageUploads": false,
-                        "imageResolution": "low",
-                        "llmModel": "chatAlibabaTongyi"
-                    }
-                },
-                "outputAnchors": [
-                    {
-                        "id": "llmAgentflow_3-output-llmAgentflow",
-                        "label": "LLM",
-                        "name": "llmAgentflow"
-                    }
-                ],
-                "outputs": {},
-                "selected": false
-            },
-            "positionAbsolute": {
-                "x": 1910,
-                "y": 140
-            },
-            "selected": false,
-            "dragging": false,
-            "width": 188,
-            "height": 80
-        },
-        {
-            "id": "llmAgentflow_4",
-            "type": "agentFlow",
-            "position": {
-                "x": 2180,
-                "y": 20
-            },
-            "data": {
-                "id": "llmAgentflow_4",
-                "label": "评审模型 A",
-                "version": 1.1,
-                "name": "llmAgentflow",
-                "type": "LLM",
-                "color": "#64B5F6",
-                "baseClasses": ["LLM"],
-                "category": "Agent Flows",
-                "description": "偏科学性与创新性的方案评审",
-                "inputParams": [
-                    {
-                        "label": "Model",
-                        "name": "llmModel",
-                        "type": "asyncOptions",
-                        "loadMethod": "listModels",
-                        "loadConfig": true,
-                        "id": "llmAgentflow_0-input-llmModel-asyncOptions",
-                        "display": true
-                    },
-                    {
-                        "label": "Messages",
-                        "name": "llmMessages",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Role",
-                                "name": "role",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "System",
-                                        "name": "system"
-                                    },
-                                    {
-                                        "label": "Assistant",
-                                        "name": "assistant"
-                                    },
-                                    {
-                                        "label": "Developer",
-                                        "name": "developer"
-                                    },
-                                    {
-                                        "label": "User",
-                                        "name": "user"
-                                    }
-                                ]
-                            },
-                            {
-                                "label": "Content",
-                                "name": "content",
-                                "type": "string",
-                                "acceptVariable": true,
-                                "generateInstruction": true,
-                                "rows": 4
-                            }
-                        ],
-                        "id": "llmAgentflow_0-input-llmMessages-array",
-                        "display": true
-                    },
-                    {
-                        "label": "Enable Memory",
-                        "name": "llmEnableMemory",
-                        "type": "boolean",
-                        "description": "Enable memory for the conversation thread",
-                        "default": true,
-                        "optional": true,
-                        "id": "llmAgentflow_0-input-llmEnableMemory-boolean",
-                        "display": true
-                    },
-                    {
-                        "label": "Memory Type",
-                        "name": "llmMemoryType",
-                        "type": "options",
-                        "options": [
-                            {
-                                "label": "All Messages",
-                                "name": "allMessages",
-                                "description": "Retrieve all messages from the conversation"
-                            },
-                            {
-                                "label": "Window Size",
-                                "name": "windowSize",
-                                "description": "Uses a fixed window size to surface the last N messages"
-                            },
-                            {
-                                "label": "Conversation Summary",
-                                "name": "conversationSummary",
-                                "description": "Summarizes the whole conversation"
-                            },
-                            {
-                                "label": "Conversation Summary Buffer",
-                                "name": "conversationSummaryBuffer",
-                                "description": "Summarize conversations once token limit is reached. Default to 2000"
-                            }
-                        ],
-                        "optional": true,
-                        "default": "allMessages",
-                        "show": {
-                            "llmEnableMemory": true
-                        },
-                        "id": "llmAgentflow_0-input-llmMemoryType-options",
-                        "display": true
-                    },
-                    {
-                        "label": "Window Size",
-                        "name": "llmMemoryWindowSize",
-                        "type": "number",
-                        "default": "20",
-                        "description": "Uses a fixed window size to surface the last N messages",
-                        "show": {
-                            "llmMemoryType": "windowSize"
-                        },
-                        "id": "llmAgentflow_0-input-llmMemoryWindowSize-number",
-                        "display": false
-                    },
-                    {
-                        "label": "Max Token Limit",
-                        "name": "llmMemoryMaxTokenLimit",
-                        "type": "number",
-                        "default": "2000",
-                        "description": "Summarize conversations once token limit is reached. Default to 2000",
-                        "show": {
-                            "llmMemoryType": "conversationSummaryBuffer"
-                        },
-                        "id": "llmAgentflow_0-input-llmMemoryMaxTokenLimit-number",
-                        "display": false
-                    },
-                    {
-                        "label": "Input Message",
-                        "name": "llmUserMessage",
-                        "type": "string",
-                        "description": "Add an input message as user message at the end of the conversation",
-                        "rows": 4,
-                        "optional": true,
-                        "acceptVariable": true,
-                        "show": {
-                            "llmEnableMemory": true
-                        },
-                        "id": "llmAgentflow_0-input-llmUserMessage-string",
-                        "display": true
-                    },
-                    {
-                        "label": "Return Response As",
-                        "name": "llmReturnResponseAs",
-                        "type": "options",
-                        "options": [
-                            {
-                                "label": "User Message",
-                                "name": "userMessage"
-                            },
-                            {
-                                "label": "Assistant Message",
-                                "name": "assistantMessage"
-                            }
-                        ],
-                        "default": "userMessage",
-                        "id": "llmAgentflow_0-input-llmReturnResponseAs-options",
-                        "display": true
-                    },
-                    {
-                        "label": "JSON Structured Output",
-                        "name": "llmStructuredOutput",
-                        "description": "Instruct the LLM to give output in a JSON structured schema",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Key",
-                                "name": "key",
-                                "type": "string"
-                            },
-                            {
-                                "label": "Type",
-                                "name": "type",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "String",
-                                        "name": "string"
-                                    },
-                                    {
-                                        "label": "String Array",
-                                        "name": "stringArray"
-                                    },
-                                    {
-                                        "label": "Number",
-                                        "name": "number"
-                                    },
-                                    {
-                                        "label": "Boolean",
-                                        "name": "boolean"
-                                    },
-                                    {
-                                        "label": "Enum",
-                                        "name": "enum"
-                                    },
-                                    {
-                                        "label": "JSON Array",
-                                        "name": "jsonArray"
-                                    }
-                                ]
-                            },
-                            {
-                                "label": "Enum Values",
-                                "name": "enumValues",
-                                "type": "string",
-                                "placeholder": "value1, value2, value3",
-                                "description": "Enum values. Separated by comma",
-                                "optional": true,
-                                "show": {
-                                    "llmStructuredOutput[$index].type": "enum"
-                                }
-                            },
-                            {
-                                "label": "JSON Schema",
-                                "name": "jsonSchema",
-                                "type": "code",
-                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
-                                "description": "JSON schema for the structured output",
-                                "optional": true,
-                                "show": {
-                                    "llmStructuredOutput[$index].type": "jsonArray"
-                                }
-                            },
-                            {
-                                "label": "Description",
-                                "name": "description",
-                                "type": "string",
-                                "placeholder": "Description of the key"
-                            }
-                        ],
-                        "id": "llmAgentflow_0-input-llmStructuredOutput-array",
-                        "display": true
-                    },
-                    {
-                        "label": "Update Flow State",
-                        "name": "llmUpdateState",
-                        "description": "Update runtime state during the execution of the workflow",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Key",
-                                "name": "key",
-                                "type": "asyncOptions",
-                                "loadMethod": "listRuntimeStateKeys",
-                                "freeSolo": true
-                            },
-                            {
-                                "label": "Value",
-                                "name": "value",
-                                "type": "string",
-                                "acceptVariable": true,
-                                "acceptNodeOutputAsVariable": true
-                            }
-                        ],
-                        "id": "llmAgentflow_0-input-llmUpdateState-array",
-                        "display": true
-                    }
-                ],
-                "inputAnchors": [],
-                "inputs": {
-                    "llmModel": "chatDeepseek",
-                    "llmMessages": [
-                        {
-                            "role": "system",
-                            "content": "<p>你是偏科学性与创新性的评审专家。请比较两个方案，重点检查问题定义是否准确、方法是否合理、创新性是否成立、验证设计是否足够支持结论。</p><p>请同时指出 A 和 B 的优劣，不要只看单个方案。</p><p>只能输出严格合法的 JSON，不要输出 Markdown 代码块或额外说明。</p>"
-                        },
-                        {
-                            "role": "user",
-                            "content": "<p>任务画像：</p><p>{{ $flow.state.taskProfile }}</p><p>本轮工作简报：</p><p>{{ $flow.state.roundBrief }}</p><p>方案 A：</p><p>{{ $flow.state.conceptDraftA }}</p><p>方案 B：</p><p>{{ $flow.state.conceptDraftB }}</p><p>请给出评审结果。</p>"
-                        }
-                    ],
-                    "llmEnableMemory": false,
-                    "llmMemoryType": "allMessages",
-                    "llmUserMessage": "",
-                    "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "strengths",
-                            "type": "stringArray",
-                            "description": "两个方案中表现较好的点"
-                        },
-                        {
-                            "key": "blockingIssues",
-                            "type": "stringArray",
-                            "description": "阻塞性问题"
-                        },
-                        {
-                            "key": "improvementActions",
-                            "type": "stringArray",
-                            "description": "建议优先执行的改进动作"
-                        },
-                        {
-                            "key": "preferredOption",
-                            "type": "enum",
-                            "enumValues": "A, B, MERGE, REPLAN",
-                            "description": "更偏好的方向"
-                        },
-                        {
-                            "key": "scoreA",
-                            "type": "number",
-                            "description": "方案 A 的评分"
-                        },
-                        {
-                            "key": "scoreB",
-                            "type": "number",
-                            "description": "方案 B 的评分"
-                        }
-                    ],
-                    "llmUpdateState": [
-                        {
-                            "key": "reviewA",
-                            "value": "{{ output }}"
-                        }
-                    ],
-                    "llmModelConfig": {
-                        "credential": "",
-                        "modelName": "deepseek-chat",
-                        "temperature": 0.2,
-                        "streaming": true,
-                        "maxTokens": "",
-                        "llmModel": "chatDeepseek"
-                    },
-                    "llmMemoryWindowSize": "20",
-                    "llmMemoryMaxTokenLimit": "2000"
-                },
-                "outputAnchors": [
-                    {
-                        "id": "llmAgentflow_4-output-llmAgentflow",
-                        "label": "LLM",
-                        "name": "llmAgentflow"
-                    }
-                ],
-                "outputs": {}
-            },
-            "positionAbsolute": {
-                "x": 2180,
-                "y": 20
-            },
-            "selected": false,
-            "dragging": false,
-            "width": 188,
-            "height": 80
-        },
-        {
-            "id": "llmAgentflow_5",
-            "type": "agentFlow",
-            "position": {
-                "x": 2180,
-                "y": 140
-            },
-            "data": {
-                "id": "llmAgentflow_5",
-                "label": "评审模型 B",
-                "version": 1.1,
-                "name": "llmAgentflow",
-                "type": "LLM",
-                "color": "#64B5F6",
-                "baseClasses": ["LLM"],
-                "category": "Agent Flows",
-                "description": "偏落地性与资源风险的方案评审",
-                "inputParams": [
-                    {
-                        "label": "Model",
-                        "name": "llmModel",
-                        "type": "asyncOptions",
-                        "loadMethod": "listModels",
-                        "loadConfig": true,
-                        "id": "llmAgentflow_0-input-llmModel-asyncOptions",
-                        "display": true
-                    },
-                    {
-                        "label": "Messages",
-                        "name": "llmMessages",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Role",
-                                "name": "role",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "System",
-                                        "name": "system"
-                                    },
-                                    {
-                                        "label": "Assistant",
-                                        "name": "assistant"
-                                    },
-                                    {
-                                        "label": "Developer",
-                                        "name": "developer"
-                                    },
-                                    {
-                                        "label": "User",
-                                        "name": "user"
-                                    }
-                                ]
-                            },
-                            {
-                                "label": "Content",
-                                "name": "content",
-                                "type": "string",
-                                "acceptVariable": true,
-                                "generateInstruction": true,
-                                "rows": 4
-                            }
-                        ],
-                        "id": "llmAgentflow_0-input-llmMessages-array",
-                        "display": true
-                    },
-                    {
-                        "label": "Enable Memory",
-                        "name": "llmEnableMemory",
-                        "type": "boolean",
-                        "description": "Enable memory for the conversation thread",
-                        "default": true,
-                        "optional": true,
-                        "id": "llmAgentflow_0-input-llmEnableMemory-boolean",
-                        "display": true
-                    },
-                    {
-                        "label": "Memory Type",
-                        "name": "llmMemoryType",
-                        "type": "options",
-                        "options": [
-                            {
-                                "label": "All Messages",
-                                "name": "allMessages",
-                                "description": "Retrieve all messages from the conversation"
-                            },
-                            {
-                                "label": "Window Size",
-                                "name": "windowSize",
-                                "description": "Uses a fixed window size to surface the last N messages"
-                            },
-                            {
-                                "label": "Conversation Summary",
-                                "name": "conversationSummary",
-                                "description": "Summarizes the whole conversation"
-                            },
-                            {
-                                "label": "Conversation Summary Buffer",
-                                "name": "conversationSummaryBuffer",
-                                "description": "Summarize conversations once token limit is reached. Default to 2000"
-                            }
-                        ],
-                        "optional": true,
-                        "default": "allMessages",
-                        "show": {
-                            "llmEnableMemory": true
-                        },
-                        "id": "llmAgentflow_0-input-llmMemoryType-options",
-                        "display": false
-                    },
-                    {
-                        "label": "Window Size",
-                        "name": "llmMemoryWindowSize",
-                        "type": "number",
-                        "default": "20",
-                        "description": "Uses a fixed window size to surface the last N messages",
-                        "show": {
-                            "llmMemoryType": "windowSize"
-                        },
-                        "id": "llmAgentflow_0-input-llmMemoryWindowSize-number",
-                        "display": false
-                    },
-                    {
-                        "label": "Max Token Limit",
-                        "name": "llmMemoryMaxTokenLimit",
-                        "type": "number",
-                        "default": "2000",
-                        "description": "Summarize conversations once token limit is reached. Default to 2000",
-                        "show": {
-                            "llmMemoryType": "conversationSummaryBuffer"
-                        },
-                        "id": "llmAgentflow_0-input-llmMemoryMaxTokenLimit-number",
-                        "display": false
-                    },
-                    {
-                        "label": "Input Message",
-                        "name": "llmUserMessage",
-                        "type": "string",
-                        "description": "Add an input message as user message at the end of the conversation",
-                        "rows": 4,
-                        "optional": true,
-                        "acceptVariable": true,
-                        "show": {
-                            "llmEnableMemory": true
-                        },
-                        "id": "llmAgentflow_0-input-llmUserMessage-string",
-                        "display": false
-                    },
-                    {
-                        "label": "Return Response As",
-                        "name": "llmReturnResponseAs",
-                        "type": "options",
-                        "options": [
-                            {
-                                "label": "User Message",
-                                "name": "userMessage"
-                            },
-                            {
-                                "label": "Assistant Message",
-                                "name": "assistantMessage"
-                            }
-                        ],
-                        "default": "userMessage",
-                        "id": "llmAgentflow_0-input-llmReturnResponseAs-options",
-                        "display": true
-                    },
-                    {
-                        "label": "JSON Structured Output",
-                        "name": "llmStructuredOutput",
-                        "description": "Instruct the LLM to give output in a JSON structured schema",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Key",
-                                "name": "key",
-                                "type": "string"
-                            },
-                            {
-                                "label": "Type",
-                                "name": "type",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "String",
-                                        "name": "string"
-                                    },
-                                    {
-                                        "label": "String Array",
-                                        "name": "stringArray"
-                                    },
-                                    {
-                                        "label": "Number",
-                                        "name": "number"
-                                    },
-                                    {
-                                        "label": "Boolean",
-                                        "name": "boolean"
-                                    },
-                                    {
-                                        "label": "Enum",
-                                        "name": "enum"
-                                    },
-                                    {
-                                        "label": "JSON Array",
-                                        "name": "jsonArray"
-                                    }
-                                ]
-                            },
-                            {
-                                "label": "Enum Values",
-                                "name": "enumValues",
-                                "type": "string",
-                                "placeholder": "value1, value2, value3",
-                                "description": "Enum values. Separated by comma",
-                                "optional": true,
-                                "show": {
-                                    "llmStructuredOutput[$index].type": "enum"
-                                }
-                            },
-                            {
-                                "label": "JSON Schema",
-                                "name": "jsonSchema",
-                                "type": "code",
-                                "placeholder": "{\n    \"answer\": {\n        \"type\": \"string\",\n        \"description\": \"Value of the answer\"\n    },\n    \"reason\": {\n        \"type\": \"string\",\n        \"description\": \"Reason for the answer\"\n    },\n    \"optional\": {\n        \"type\": \"boolean\"\n    },\n    \"count\": {\n        \"type\": \"number\"\n    },\n    \"children\": {\n        \"type\": \"array\",\n        \"items\": {\n            \"type\": \"object\",\n            \"properties\": {\n                \"value\": {\n                    \"type\": \"string\",\n                    \"description\": \"Value of the children's answer\"\n                }\n            }\n        }\n    }\n}",
-                                "description": "JSON schema for the structured output",
-                                "optional": true,
-                                "show": {
-                                    "llmStructuredOutput[$index].type": "jsonArray"
-                                }
-                            },
-                            {
-                                "label": "Description",
-                                "name": "description",
-                                "type": "string",
-                                "placeholder": "Description of the key"
-                            }
-                        ],
-                        "id": "llmAgentflow_0-input-llmStructuredOutput-array",
-                        "display": true
-                    },
-                    {
-                        "label": "Update Flow State",
-                        "name": "llmUpdateState",
-                        "description": "Update runtime state during the execution of the workflow",
-                        "type": "array",
-                        "optional": true,
-                        "acceptVariable": true,
-                        "array": [
-                            {
-                                "label": "Key",
-                                "name": "key",
-                                "type": "asyncOptions",
-                                "loadMethod": "listRuntimeStateKeys",
-                                "freeSolo": true
-                            },
-                            {
-                                "label": "Value",
-                                "name": "value",
-                                "type": "string",
-                                "acceptVariable": true,
-                                "acceptNodeOutputAsVariable": true
-                            }
-                        ],
-                        "id": "llmAgentflow_0-input-llmUpdateState-array",
-                        "display": true
-                    }
-                ],
-                "inputAnchors": [],
-                "inputs": {
-                    "llmModel": "chatAlibabaTongyi",
-                    "llmMessages": [
-                        {
-                            "role": "system",
-                            "content": "<p>你是偏工程执行与资源风险的评审专家。请比较两个方案，重点检查时间成本、资源匹配、实现复杂度、失败风险和验证闭环是否足够务实。</p><p>请同时指出 A 和 B 的优劣，不要只看单个方案。</p><p>只能输出严格合法的 JSON，不要输出 Markdown 代码块或额外说明。</p>"
-                        },
-                        {
-                            "role": "user",
-                            "content": "<p>任务画像：</p><p>{{ $flow.state.taskProfile }}</p><p>本轮工作简报：</p><p>{{ $flow.state.roundBrief }}</p><p>方案 A：</p><p>{{ $flow.state.conceptDraftA }}</p><p>方案 B：</p><p>{{ $flow.state.conceptDraftB }}</p><p>请给出评审结果。</p>"
-                        }
-                    ],
-                    "llmEnableMemory": false,
-                    "llmMemoryType": "allMessages",
-                    "llmUserMessage": "",
-                    "llmReturnResponseAs": "assistantMessage",
-                    "llmStructuredOutput": [
-                        {
-                            "key": "strengths",
-                            "type": "stringArray",
-                            "description": "两个方案中表现较好的点"
-                        },
-                        {
-                            "key": "blockingIssues",
-                            "type": "stringArray",
-                            "description": "阻塞性问题"
-                        },
-                        {
-                            "key": "improvementActions",
-                            "type": "stringArray",
-                            "description": "建议优先执行的改进动作"
-                        },
-                        {
-                            "key": "preferredOption",
-                            "type": "enum",
-                            "enumValues": "A, B, MERGE, REPLAN",
-                            "description": "更偏好的方向"
-                        },
-                        {
-                            "key": "scoreA",
-                            "type": "number",
-                            "description": "方案 A 的评分"
-                        },
-                        {
-                            "key": "scoreB",
-                            "type": "number",
-                            "description": "方案 B 的评分"
-                        }
-                    ],
-                    "llmUpdateState": [
-                        {
-                            "key": "reviewB",
-                            "value": "{{ output }}"
-                        }
-                    ],
-                    "llmModelConfig": {
-                        "credential": "",
-                        "modelName": "qwen-plus",
-                        "temperature": 0.15,
-                        "streaming": true,
-                        "allowImageUploads": false,
-                        "imageResolution": "low",
-                        "llmModel": "chatAlibabaTongyi"
-                    }
-                },
-                "outputAnchors": [
-                    {
-                        "id": "llmAgentflow_5-output-llmAgentflow",
-                        "label": "LLM",
-                        "name": "llmAgentflow"
-                    }
-                ],
-                "outputs": {},
-                "selected": false
-            },
-            "positionAbsolute": {
-                "x": 2180,
-                "y": 140
+                "x": 1190,
+                "y": 120
             },
             "selected": false,
             "dragging": false,
@@ -3384,19 +1364,19 @@
             "id": "llmAgentflow_6",
             "type": "agentFlow",
             "position": {
-                "x": 2450,
-                "y": 80
+                "x": 1460,
+                "y": 120
             },
             "data": {
                 "id": "llmAgentflow_6",
-                "label": "最终裁决",
+                "label": "评审判断",
                 "version": 1.1,
                 "name": "llmAgentflow",
                 "type": "LLM",
                 "color": "#64B5F6",
                 "baseClasses": ["LLM"],
                 "category": "Agent Flows",
-                "description": "综合两份方案和两份评审，给出本轮裁决与下一轮指令",
+                "description": "评估当前方案是否可定稿，并给出下一轮明确修改点",
                 "inputParams": [
                     {
                         "label": "Model",
@@ -3658,11 +1638,11 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是项目设计与科研方案迭代流程中的最终裁决者。请综合两个方案和两份评审，输出本轮裁决。</p><p>只有在方案结构完整、主要风险可控、验证路径清晰、且不存在明显阻塞项时，才可以把 isReady 设为 true；否则必须给出下一轮迭代指令。</p><p>如果最优结果应当融合两案，请使用 MERGE；如果当前轮次应推倒重来，请使用 REPLAN。</p><p>只能输出严格合法的 JSON，不要输出 Markdown 代码块或额外说明。</p>"
+                            "content": "<p>你是项目设计与科研方案的评审者。请基于任务画像和当前方案，判断这一版是否已经可以定稿。</p><p>只有当目标清晰、路径可执行、关键风险已被处理、且不存在明显阻塞项时，才把 isReady 设为 true；否则必须给出下一轮可执行修正点。</p><p>只能输出严格合法的 JSON，不要输出 Markdown 代码块或额外说明。</p>"
                         },
                         {
                             "role": "user",
-                            "content": "<p>任务画像：</p><p>{{ $flow.state.taskProfile }}</p><p>本轮工作简报：</p><p>{{ $flow.state.roundBrief }}</p><p>方案 A：</p><p>{{ $flow.state.conceptDraftA }}</p><p>方案 B：</p><p>{{ $flow.state.conceptDraftB }}</p><p>评审 A：</p><p>{{ $flow.state.reviewA }}</p><p>评审 B：</p><p>{{ $flow.state.reviewB }}</p><p>请输出最终裁决。</p>"
+                            "content": "<p>用户原始任务：</p><p>{{ question }}</p><p>任务画像：</p><p>{{ $flow.state.taskProfile }}</p><p>当前方案：</p><p>{{ $flow.state.currentProposal }}</p><p>请输出评审结论。</p>"
                         }
                     ],
                     "llmEnableMemory": false,
@@ -3671,20 +1651,19 @@
                     "llmReturnResponseAs": "assistantMessage",
                     "llmStructuredOutput": [
                         {
-                            "key": "decision",
-                            "type": "enum",
-                            "enumValues": "A, B, MERGE, REPLAN",
-                            "description": "本轮裁决结果"
-                        },
-                        {
                             "key": "isReady",
                             "type": "boolean",
-                            "description": "是否已经可以定稿"
+                            "description": "当前版本是否已经可以定稿"
                         },
                         {
-                            "key": "winningRationale",
+                            "key": "summary",
                             "type": "string",
-                            "description": "裁决依据"
+                            "description": "对当前方案的整体判断"
+                        },
+                        {
+                            "key": "strengths",
+                            "type": "stringArray",
+                            "description": "当前版本值得保留的点"
                         },
                         {
                             "key": "mustFix",
@@ -3694,12 +1673,12 @@
                         {
                             "key": "questionsForHuman",
                             "type": "stringArray",
-                            "description": "需要人类补充的信息"
+                            "description": "需要用户补充确认的问题"
                         },
                         {
                             "key": "nextIterationBrief",
                             "type": "stringArray",
-                            "description": "下一轮的明确修正指令"
+                            "description": "下一轮应执行的明确修改点"
                         }
                     ],
                     "llmUpdateState": [
@@ -3729,8 +1708,8 @@
                 "outputs": {}
             },
             "positionAbsolute": {
-                "x": 2450,
-                "y": 80
+                "x": 1460,
+                "y": 120
             },
             "selected": false,
             "dragging": false,
@@ -3741,19 +1720,19 @@
             "id": "llmAgentflow_7",
             "type": "agentFlow",
             "position": {
-                "x": 2720,
-                "y": 80
+                "x": 1730,
+                "y": 120
             },
             "data": {
                 "id": "llmAgentflow_7",
-                "label": "轮次总结",
+                "label": "迭代总结",
                 "version": 1.1,
                 "name": "llmAgentflow",
                 "type": "LLM",
                 "color": "#64B5F6",
                 "baseClasses": ["LLM"],
                 "category": "Agent Flows",
-                "description": "把结构化裁决转成用户可读的当前推荐方案",
+                "description": "把当前方案与评审结论整理成用户可确认的本轮总结",
                 "inputParams": [
                     {
                         "label": "Model",
@@ -4015,11 +1994,11 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是方案迭代流程中的结果解释器。请把本轮裁决转成用户可读的摘要。</p><p>输出必须固定包含且仅包含以下四个二级标题：## 当前推荐方案、## 这样裁决的原因、## 下一轮拟修正点、## 需要你补充的信息。</p><p>语言要简洁、执行导向，不要输出代码块。</p>"
+                            "content": "<p>你是方案迭代流程中的结果解释器。请把当前方案和评审结论整理成一份便于用户确认的摘要。</p><p>输出必须固定包含且仅包含以下四个二级标题：## 当前方案、## 本轮评审、## 继续完善建议、## 请你确认。</p><p>语言简洁、直接，不要输出代码块。</p>"
                         },
                         {
                             "role": "user",
-                            "content": "<p>任务画像：</p><p>{{ $flow.state.taskProfile }}</p><p>最终裁决：</p><p>{{ $flow.state.judgeVerdict }}</p><p>请输出当前推荐方案摘要。</p>"
+                            "content": "<p>当前方案：</p><p>{{ $flow.state.currentProposal }}</p><p>评审结论：</p><p>{{ $flow.state.judgeVerdict }}</p><p>请输出本轮总结。</p>"
                         }
                     ],
                     "llmEnableMemory": false,
@@ -4027,12 +2006,7 @@
                     "llmUserMessage": "",
                     "llmReturnResponseAs": "assistantMessage",
                     "llmStructuredOutput": "",
-                    "llmUpdateState": [
-                        {
-                            "key": "currentProposal",
-                            "value": "{{ output }}"
-                        }
-                    ],
+                    "llmUpdateState": [],
                     "llmModelConfig": {
                         "credential": "",
                         "modelName": "deepseek-chat",
@@ -4054,8 +2028,8 @@
                 "outputs": {}
             },
             "positionAbsolute": {
-                "x": 2720,
-                "y": 80
+                "x": 1730,
+                "y": 120
             },
             "selected": false,
             "dragging": false,
@@ -4065,19 +2039,19 @@
         {
             "id": "humanInputAgentflow_1",
             "position": {
-                "x": 2990,
-                "y": 80
+                "x": 2000,
+                "y": 120
             },
             "data": {
                 "id": "humanInputAgentflow_1",
-                "label": "人工确认",
+                "label": "迭代确认",
                 "version": 1,
                 "name": "humanInputAgentflow",
                 "type": "HumanInput",
                 "color": "#6E6EFD",
                 "baseClasses": ["HumanInput"],
                 "category": "Agent Flows",
-                "description": "用户认可本轮方向或补充修订意见",
+                "description": "用户确认当前方案是否可以定稿，或补充下一轮修订意见",
                 "inputParams": [
                     {
                         "label": "Description Type",
@@ -4190,7 +2164,7 @@
                     "humanInputDescriptionType": "fixed",
                     "humanInputEnableFeedback": true,
                     "humanInputFeedbackMode": "reject",
-                    "approveButtonText": "认可并继续",
+                    "approveButtonText": "认可并定稿",
                     "rejectButtonText": "补充意见",
                     "humanInputModelConfig": {
                         "cache": "",
@@ -4201,7 +2175,7 @@
                         "imageResolution": "low",
                         "humanInputModel": "chatAlibabaTongyi"
                     },
-                    "humanInputDescription": "请确认是否认可本轮推荐方案；若需继续修正，请点击“补充意见”并直接说明保留、删除、加强或新增的点。",
+                    "humanInputDescription": "如果当前方案方向可以接受，请点击“认可并定稿”；如果还要继续修改，请点击“补充意见”并直接说明保留、删除、加强或新增的内容。",
                     "humanInputModel": "",
                     "humanInputModelPrompt": "<p>Summarize the conversation between the user and the assistant, reiterate the last message from the assistant, and ask if user would like to proceed or if they have any feedback. </p>\n<ul>\n<li>Begin by capturing the key points of the conversation, ensuring that you reflect the main ideas and themes discussed.</li>\n<li>Then, clearly reproduce the last message sent by the assistant to maintain continuity. Make sure the whole message is reproduced.</li>\n<li>Finally, ask the user if they would like to proceed, or provide any feedback on the last assistant message</li>\n</ul>\n<h2 id=\"output-format-the-output-should-be-structured-in-three-parts-\">Output Format The output should be structured in three parts in text:</h2>\n<ul>\n<li>A summary of the conversation (1-3 sentences).</li>\n<li>The last assistant message (exactly as it appeared).</li>\n<li>Ask the user if they would like to proceed, or provide any feedback on last assistant message. No other explanation and elaboration is needed.</li>\n</ul>\n"
                 },
@@ -4227,8 +2201,8 @@
             "height": 80,
             "selected": false,
             "positionAbsolute": {
-                "x": 2990,
-                "y": 80
+                "x": 2000,
+                "y": 120
             },
             "dragging": false
         },
@@ -4236,19 +2210,19 @@
             "id": "llmAgentflow_8",
             "type": "agentFlow",
             "position": {
-                "x": 3250,
-                "y": 220
+                "x": 2000,
+                "y": 240
             },
             "data": {
                 "id": "llmAgentflow_8",
-                "label": "人工意见提炼",
+                "label": "提炼修订意见",
                 "version": 1.1,
                 "name": "llmAgentflow",
                 "type": "LLM",
                 "color": "#64B5F6",
                 "baseClasses": ["LLM"],
                 "category": "Agent Flows",
-                "description": "将人工反馈压缩成下一轮可执行修订摘要",
+                "description": "将用户补充的修改意见压缩成下一轮可执行摘要",
                 "inputParams": [
                     {
                         "label": "Model",
@@ -4510,7 +2484,7 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是方案修订编辑。请读取用户刚刚在对话中给出的人工反馈，把它压缩成一份仅包含可执行改动的修订摘要。</p><p>要求：1）保留用户明确要求保留的内容；2）删除情绪化或不可执行表述；3）输出简洁中文要点，适合直接拼接到下一轮工作简报；4）不要输出 Markdown 标题或代码块。</p>"
+                            "content": "<p>你是方案修订编辑。请读取用户刚刚给出的补充意见，把它压缩成仅包含可执行改动的修订摘要。</p><p>要求：1）保留用户明确要求保留的内容；2）删除情绪化或不可执行表述；3）输出简洁中文要点，适合直接交给下一轮方案生成；4）不要输出 Markdown 标题或代码块。</p>"
                         },
                         {
                             "role": "user",
@@ -4531,7 +2505,7 @@
                     "llmModelConfig": {
                         "credential": "",
                         "modelName": "deepseek-chat",
-                        "temperature": 0.2,
+                        "temperature": 0.1,
                         "streaming": true,
                         "maxTokens": "",
                         "llmModel": "chatDeepseek"
@@ -4549,8 +2523,8 @@
                 "outputs": {}
             },
             "positionAbsolute": {
-                "x": 3250,
-                "y": 220
+                "x": 2000,
+                "y": 240
             },
             "selected": false,
             "dragging": false,
@@ -4561,8 +2535,8 @@
             "id": "conditionAgentflow_1",
             "type": "agentFlow",
             "position": {
-                "x": 3250,
-                "y": 20
+                "x": 2270,
+                "y": 60
             },
             "data": {
                 "id": "conditionAgentflow_1",
@@ -4573,7 +2547,7 @@
                 "color": "#FFB938",
                 "baseClasses": ["Condition"],
                 "category": "Agent Flows",
-                "description": "Split flows based on If Else conditions",
+                "description": "若评审判断当前版本已成熟，则进入最终整编；否则继续迭代",
                 "inputParams": [
                     {
                         "label": "Conditions",
@@ -4823,8 +2797,8 @@
             "width": 178,
             "height": 80,
             "positionAbsolute": {
-                "x": 3250,
-                "y": 20
+                "x": 2270,
+                "y": 60
             },
             "selected": false,
             "dragging": false
@@ -4833,12 +2807,12 @@
             "id": "loopAgentflow_1",
             "type": "agentFlow",
             "position": {
-                "x": 3500,
-                "y": 160
+                "x": 2270,
+                "y": 240
             },
             "data": {
                 "id": "loopAgentflow_1",
-                "label": "回到轮次简报",
+                "label": "回到方案生成",
                 "version": 1.2,
                 "name": "loopAgentflow",
                 "type": "Loop",
@@ -4846,7 +2820,7 @@
                 "hideOutput": true,
                 "baseClasses": ["Loop"],
                 "category": "Agent Flows",
-                "description": "当前轮次未就绪或用户补充意见时，回到轮次简报开始下一轮",
+                "description": "用户补充意见或评审未通过时，回到方案生成继续迭代",
                 "inputParams": [
                     {
                         "label": "Loop Back To",
@@ -4868,9 +2842,8 @@
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "loopBackToNode": "llmAgentflow_1-轮次简报",
-                    "maxLoopCount": 4,
-                    "fallbackMessage": "__RETURN_LATEST_CURRENT_PROPOSAL__"
+                    "loopBackToNode": "llmAgentflow_1-方案生成",
+                    "maxLoopCount": 4
                 },
                 "outputAnchors": [],
                 "outputs": {},
@@ -4879,8 +2852,8 @@
             "width": 184,
             "height": 66,
             "positionAbsolute": {
-                "x": 3500,
-                "y": 160
+                "x": 2270,
+                "y": 240
             },
             "selected": false,
             "dragging": false
@@ -4889,8 +2862,8 @@
             "id": "llmAgentflow_9",
             "type": "agentFlow",
             "position": {
-                "x": 3500,
-                "y": 20
+                "x": 2540,
+                "y": 60
             },
             "data": {
                 "id": "llmAgentflow_9",
@@ -4901,7 +2874,7 @@
                 "color": "#64B5F6",
                 "baseClasses": ["LLM"],
                 "category": "Agent Flows",
-                "description": "将本轮最佳结果整编为固定结构的最终交付稿",
+                "description": "将当前方案整编为结构清晰的最终交付稿",
                 "inputParams": [
                     {
                         "label": "Model",
@@ -5163,11 +3136,11 @@
                     "llmMessages": [
                         {
                             "role": "system",
-                            "content": "<p>你是最终方案整编者。请基于任务画像、本轮裁决、推荐方案和必要的证据笔记，生成最终交付稿。</p><p>最终输出必须严格包含且仅包含以下四个一级标题：# 最终方案、# 裁决依据、# 实施/实验路线、# 仍需人工确认。</p><p>其中：最终方案写可直接推进的方案正文；裁决依据说明为什么这样定；实施/实验路线给出阶段安排、验证或实验闭环；仍需人工确认列出剩余待拍板事项。</p><p>默认跟随用户语言，不要输出代码块。</p>"
+                            "content": "<p>你是最终方案整编者。请基于用户原始任务、任务画像、当前方案与评审结论，生成最终交付稿。</p><p>最终输出必须严格包含且仅包含以下四个一级标题：# 最终方案、# 设计依据、# 执行计划、# 仍需确认。</p><p>其中：最终方案写清晰可执行的正文；设计依据简述为什么这样定；执行计划给出阶段安排或实验闭环；仍需确认列出剩余待拍板事项。</p><p>默认跟随用户语言，不要输出代码块。</p>"
                         },
                         {
                             "role": "user",
-                            "content": "<p>用户原始任务：</p><p>{{ question }}</p><p>任务画像：</p><p>{{ $flow.state.taskProfile }}</p><p>证据笔记（可能为空）：</p><p>{{ $flow.state.evidenceNotes }}</p><p>当前推荐方案：</p><p>{{ $flow.state.currentProposal }}</p><p>最终裁决：</p><p>{{ $flow.state.judgeVerdict }}</p><p>请输出最终交付稿。</p>"
+                            "content": "<p>用户原始任务：</p><p>{{ question }}</p><p>任务画像：</p><p>{{ $flow.state.taskProfile }}</p><p>当前方案：</p><p>{{ $flow.state.currentProposal }}</p><p>评审结论：</p><p>{{ $flow.state.judgeVerdict }}</p><p>请输出最终交付稿。</p>"
                         }
                     ],
                     "llmEnableMemory": false,
@@ -5202,8 +3175,8 @@
                 "outputs": {}
             },
             "positionAbsolute": {
-                "x": 3500,
-                "y": 20
+                "x": 2540,
+                "y": 60
             },
             "selected": false,
             "dragging": false,
@@ -5214,12 +3187,12 @@
             "id": "directReplyAgentflow_0",
             "type": "agentFlow",
             "position": {
-                "x": 3770,
-                "y": 20
+                "x": 2810,
+                "y": 60
             },
             "data": {
                 "id": "directReplyAgentflow_0",
-                "label": "返回终稿",
+                "label": "返回最终方案",
                 "version": 1,
                 "name": "directReplyAgentflow",
                 "type": "DirectReply",
@@ -5248,324 +3221,216 @@
             "width": 160,
             "height": 66,
             "positionAbsolute": {
-                "x": 3770,
-                "y": 20
+                "x": 2810,
+                "y": 60
             },
             "selected": false,
             "dragging": false
         },
         {
-            "id": "conditionAgentflow_2",
-            "type": "agentFlow",
+            "id": "stickyNoteAgentflow_note_entry",
             "position": {
-                "x": 3770,
-                "y": 160
+                "x": 90,
+                "y": 10
             },
             "data": {
-                "id": "conditionAgentflow_2",
-                "label": "是否达到最大轮次",
+                "id": "stickyNoteAgentflow_note_entry",
+                "label": "Sticky Note",
                 "version": 1,
-                "name": "conditionAgentflow",
-                "type": "Condition",
-                "color": "#FFB938",
-                "baseClasses": ["Condition"],
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
                 "category": "Agent Flows",
-                "description": "Split flows based on If Else conditions",
+                "description": "Add notes to the agent flow",
                 "inputParams": [
                     {
-                        "label": "Conditions",
-                        "name": "conditions",
-                        "type": "array",
-                        "description": "Values to compare",
-                        "acceptVariable": true,
-                        "default": [
-                            {
-                                "type": "number",
-                                "value1": "",
-                                "operation": "equal",
-                                "value2": ""
-                            }
-                        ],
-                        "array": [
-                            {
-                                "label": "Type",
-                                "name": "type",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "String",
-                                        "name": "string"
-                                    },
-                                    {
-                                        "label": "Number",
-                                        "name": "number"
-                                    },
-                                    {
-                                        "label": "Boolean",
-                                        "name": "boolean"
-                                    }
-                                ],
-                                "default": "string"
-                            },
-                            {
-                                "label": "Value 1",
-                                "name": "value1",
-                                "type": "string",
-                                "default": "",
-                                "description": "First value to be compared with",
-                                "acceptVariable": true,
-                                "show": {
-                                    "conditions[$index].type": "string"
-                                }
-                            },
-                            {
-                                "label": "Operation",
-                                "name": "operation",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "Contains",
-                                        "name": "contains"
-                                    },
-                                    {
-                                        "label": "Ends With",
-                                        "name": "endsWith"
-                                    },
-                                    {
-                                        "label": "Equal",
-                                        "name": "equal"
-                                    },
-                                    {
-                                        "label": "Not Contains",
-                                        "name": "notContains"
-                                    },
-                                    {
-                                        "label": "Not Equal",
-                                        "name": "notEqual"
-                                    },
-                                    {
-                                        "label": "Regex",
-                                        "name": "regex"
-                                    },
-                                    {
-                                        "label": "Starts With",
-                                        "name": "startsWith"
-                                    },
-                                    {
-                                        "label": "Is Empty",
-                                        "name": "isEmpty"
-                                    },
-                                    {
-                                        "label": "Not Empty",
-                                        "name": "notEmpty"
-                                    }
-                                ],
-                                "default": "equal",
-                                "description": "Type of operation",
-                                "show": {
-                                    "conditions[$index].type": "string"
-                                }
-                            },
-                            {
-                                "label": "Value 2",
-                                "name": "value2",
-                                "type": "string",
-                                "default": "",
-                                "description": "Second value to be compared with",
-                                "acceptVariable": true,
-                                "show": {
-                                    "conditions[$index].type": "string"
-                                },
-                                "hide": {
-                                    "conditions[$index].operation": ["isEmpty", "notEmpty"]
-                                }
-                            },
-                            {
-                                "label": "Value 1",
-                                "name": "value1",
-                                "type": "number",
-                                "default": "",
-                                "description": "First value to be compared with",
-                                "acceptVariable": true,
-                                "show": {
-                                    "conditions[$index].type": "number"
-                                }
-                            },
-                            {
-                                "label": "Operation",
-                                "name": "operation",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "Smaller",
-                                        "name": "smaller"
-                                    },
-                                    {
-                                        "label": "Smaller Equal",
-                                        "name": "smallerEqual"
-                                    },
-                                    {
-                                        "label": "Equal",
-                                        "name": "equal"
-                                    },
-                                    {
-                                        "label": "Not Equal",
-                                        "name": "notEqual"
-                                    },
-                                    {
-                                        "label": "Larger",
-                                        "name": "larger"
-                                    },
-                                    {
-                                        "label": "Larger Equal",
-                                        "name": "largerEqual"
-                                    },
-                                    {
-                                        "label": "Is Empty",
-                                        "name": "isEmpty"
-                                    },
-                                    {
-                                        "label": "Not Empty",
-                                        "name": "notEmpty"
-                                    }
-                                ],
-                                "default": "equal",
-                                "description": "Type of operation",
-                                "show": {
-                                    "conditions[$index].type": "number"
-                                }
-                            },
-                            {
-                                "label": "Value 2",
-                                "name": "value2",
-                                "type": "number",
-                                "default": 0,
-                                "description": "Second value to be compared with",
-                                "acceptVariable": true,
-                                "show": {
-                                    "conditions[$index].type": "number"
-                                }
-                            },
-                            {
-                                "label": "Value 1",
-                                "name": "value1",
-                                "type": "boolean",
-                                "default": false,
-                                "description": "First value to be compared with",
-                                "show": {
-                                    "conditions[$index].type": "boolean"
-                                }
-                            },
-                            {
-                                "label": "Operation",
-                                "name": "operation",
-                                "type": "options",
-                                "options": [
-                                    {
-                                        "label": "Equal",
-                                        "name": "equal"
-                                    },
-                                    {
-                                        "label": "Not Equal",
-                                        "name": "notEqual"
-                                    }
-                                ],
-                                "default": "equal",
-                                "description": "Type of operation",
-                                "show": {
-                                    "conditions[$index].type": "boolean"
-                                }
-                            },
-                            {
-                                "label": "Value 2",
-                                "name": "value2",
-                                "type": "boolean",
-                                "default": false,
-                                "description": "Second value to be compared with",
-                                "show": {
-                                    "conditions[$index].type": "boolean"
-                                }
-                            }
-                        ]
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_entry-input-note-string"
                     }
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "conditions": [
-                        {
-                            "type": "string",
-                            "value1": "{{ loopAgentflow_1.output.content }}",
-                            "operation": "equal",
-                            "value2": "__RETURN_LATEST_CURRENT_PROPOSAL__"
-                        }
-                    ]
+                    "note": "入口澄清阶段：先把目标、问题、对象、约束、资源和评价标准问清。点击“继续补充”会回到任务澄清；点击“进入方案迭代”后，才进入后续生成流程。"
                 },
                 "outputAnchors": [
                     {
-                        "id": "conditionAgentflow_2-output-0",
-                        "label": "Condition",
-                        "name": "conditionAgentflow"
-                    },
-                    {
-                        "id": "conditionAgentflow_2-output-1",
-                        "label": "Condition",
-                        "name": "conditionAgentflow"
+                        "id": "stickyNoteAgentflow_note_entry-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
                     }
                 ],
-                "outputs": {
-                    "conditionAgentflow": ""
-                },
+                "outputs": {},
                 "selected": false
             },
-            "width": 178,
-            "height": 80,
+            "type": "stickyNote",
+            "width": 470,
+            "height": 170,
             "positionAbsolute": {
-                "x": 3770,
-                "y": 160
+                "x": 90,
+                "y": 10
             },
             "selected": false,
             "dragging": false
         },
         {
-            "id": "directReplyAgentflow_1",
-            "type": "agentFlow",
+            "id": "stickyNoteAgentflow_note_profile",
             "position": {
-                "x": 4030,
-                "y": 160
+                "x": 900,
+                "y": 10
             },
             "data": {
-                "id": "directReplyAgentflow_1",
-                "label": "返回最新方案",
+                "id": "stickyNoteAgentflow_note_profile",
+                "label": "Sticky Note",
                 "version": 1,
-                "name": "directReplyAgentflow",
-                "type": "DirectReply",
-                "color": "#4DDBBB",
-                "hideOutput": true,
-                "baseClasses": ["DirectReply"],
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
                 "category": "Agent Flows",
-                "description": "Directly reply to the user with a message",
+                "description": "Add notes to the agent flow",
                 "inputParams": [
                     {
-                        "label": "Message",
-                        "name": "directReplyMessage",
+                        "label": "",
+                        "name": "note",
                         "type": "string",
-                        "rows": 4,
-                        "acceptVariable": true
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_profile-input-note-string"
                     }
                 ],
                 "inputAnchors": [],
                 "inputs": {
-                    "directReplyMessage": "{{ $flow.state.currentProposal }}"
+                    "note": "任务画像阶段：把对话和附件压成一份结构化画像，供后面的方案生成与评审直接复用。这里不再分证据增强分支，保持主链路简洁。"
                 },
-                "outputAnchors": [],
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_profile-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
                 "outputs": {},
                 "selected": false
             },
-            "width": 160,
-            "height": 66,
+            "type": "stickyNote",
+            "width": 260,
+            "height": 170,
             "positionAbsolute": {
-                "x": 4030,
-                "y": 160
+                "x": 900,
+                "y": 10
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_iteration",
+            "position": {
+                "x": 1200,
+                "y": 10
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_iteration",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_iteration-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "迭代主链路：保留“方案生成 -> 评审判断 -> 迭代总结 -> 人工确认”的最小闭环。若用户补充意见，或评审判断尚不可定稿，就提炼修改点并回到“方案生成”，从而保留确认、分支与循环结构。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_iteration-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 1120,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1200,
+                "y": 10
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_output",
+            "position": {
+                "x": 2520,
+                "y": -120
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_output",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_output-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "最终输出阶段：只有当用户认可且评审结论 isReady=true 时，才进入最终整编并返回结构化终稿。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_output-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 420,
+            "height": 150,
+            "positionAbsolute": {
+                "x": 2520,
+                "y": -120
             },
             "selected": false,
             "dragging": false
@@ -5627,110 +3492,19 @@
         {
             "source": "llmAgentflow_0",
             "sourceHandle": "llmAgentflow_0-output-llmAgentflow",
-            "target": "conditionAgentflow_0",
-            "targetHandle": "conditionAgentflow_0",
+            "target": "llmAgentflow_1",
+            "targetHandle": "llmAgentflow_1",
             "data": {
                 "sourceColor": "#64B5F6",
-                "targetColor": "#FFB938",
-                "isHumanInput": false
-            },
-            "type": "agentFlow",
-            "id": "llmAgentflow_0-llmAgentflow_0-output-llmAgentflow-conditionAgentflow_0-conditionAgentflow_0"
-        },
-        {
-            "source": "conditionAgentflow_0",
-            "sourceHandle": "conditionAgentflow_0-output-0",
-            "target": "agentAgentflow_1",
-            "targetHandle": "agentAgentflow_1",
-            "data": {
-                "sourceColor": "#FFB938",
-                "targetColor": "#4DD0E1",
-                "isHumanInput": false
-            },
-            "type": "agentFlow",
-            "id": "conditionAgentflow_0-conditionAgentflow_0-output-0-agentAgentflow_1-agentAgentflow_1"
-        },
-        {
-            "source": "conditionAgentflow_0",
-            "sourceHandle": "conditionAgentflow_0-output-1",
-            "target": "llmAgentflow_1",
-            "targetHandle": "llmAgentflow_1",
-            "data": {
-                "sourceColor": "#FFB938",
                 "targetColor": "#64B5F6",
                 "isHumanInput": false
             },
             "type": "agentFlow",
-            "id": "conditionAgentflow_0-conditionAgentflow_0-output-1-llmAgentflow_1-llmAgentflow_1"
-        },
-        {
-            "source": "agentAgentflow_1",
-            "sourceHandle": "agentAgentflow_1-output-agentAgentflow",
-            "target": "llmAgentflow_1",
-            "targetHandle": "llmAgentflow_1",
-            "data": {
-                "sourceColor": "#4DD0E1",
-                "targetColor": "#64B5F6",
-                "isHumanInput": false
-            },
-            "type": "agentFlow",
-            "id": "agentAgentflow_1-agentAgentflow_1-output-agentAgentflow-llmAgentflow_1-llmAgentflow_1"
+            "id": "llmAgentflow_0-llmAgentflow_0-output-llmAgentflow-llmAgentflow_1-llmAgentflow_1"
         },
         {
             "source": "llmAgentflow_1",
             "sourceHandle": "llmAgentflow_1-output-llmAgentflow",
-            "target": "llmAgentflow_2",
-            "targetHandle": "llmAgentflow_2",
-            "data": {
-                "sourceColor": "#64B5F6",
-                "targetColor": "#64B5F6",
-                "isHumanInput": false
-            },
-            "type": "agentFlow",
-            "id": "llmAgentflow_1-llmAgentflow_1-output-llmAgentflow-llmAgentflow_2-llmAgentflow_2"
-        },
-        {
-            "source": "llmAgentflow_2",
-            "sourceHandle": "llmAgentflow_2-output-llmAgentflow",
-            "target": "llmAgentflow_3",
-            "targetHandle": "llmAgentflow_3",
-            "data": {
-                "sourceColor": "#64B5F6",
-                "targetColor": "#64B5F6",
-                "isHumanInput": false
-            },
-            "type": "agentFlow",
-            "id": "llmAgentflow_2-llmAgentflow_2-output-llmAgentflow-llmAgentflow_3-llmAgentflow_3"
-        },
-        {
-            "source": "llmAgentflow_3",
-            "sourceHandle": "llmAgentflow_3-output-llmAgentflow",
-            "target": "llmAgentflow_4",
-            "targetHandle": "llmAgentflow_4",
-            "data": {
-                "sourceColor": "#64B5F6",
-                "targetColor": "#64B5F6",
-                "isHumanInput": false
-            },
-            "type": "agentFlow",
-            "id": "llmAgentflow_3-llmAgentflow_3-output-llmAgentflow-llmAgentflow_4-llmAgentflow_4"
-        },
-        {
-            "source": "llmAgentflow_4",
-            "sourceHandle": "llmAgentflow_4-output-llmAgentflow",
-            "target": "llmAgentflow_5",
-            "targetHandle": "llmAgentflow_5",
-            "data": {
-                "sourceColor": "#64B5F6",
-                "targetColor": "#64B5F6",
-                "isHumanInput": false
-            },
-            "type": "agentFlow",
-            "id": "llmAgentflow_4-llmAgentflow_4-output-llmAgentflow-llmAgentflow_5-llmAgentflow_5"
-        },
-        {
-            "source": "llmAgentflow_5",
-            "sourceHandle": "llmAgentflow_5-output-llmAgentflow",
             "target": "llmAgentflow_6",
             "targetHandle": "llmAgentflow_6",
             "data": {
@@ -5739,7 +3513,7 @@
                 "isHumanInput": false
             },
             "type": "agentFlow",
-            "id": "llmAgentflow_5-llmAgentflow_5-output-llmAgentflow-llmAgentflow_6-llmAgentflow_6"
+            "id": "llmAgentflow_1-llmAgentflow_1-output-llmAgentflow-llmAgentflow_6-llmAgentflow_6"
         },
         {
             "source": "llmAgentflow_6",
@@ -5844,32 +3618,6 @@
             },
             "type": "agentFlow",
             "id": "llmAgentflow_9-llmAgentflow_9-output-llmAgentflow-directReplyAgentflow_0-directReplyAgentflow_0"
-        },
-        {
-            "source": "loopAgentflow_1",
-            "sourceHandle": "loopAgentflow_1",
-            "target": "conditionAgentflow_2",
-            "targetHandle": "conditionAgentflow_2",
-            "data": {
-                "sourceColor": "#FFA07A",
-                "targetColor": "#FFB938",
-                "isHumanInput": false
-            },
-            "type": "agentFlow",
-            "id": "loopAgentflow_1-loopAgentflow_1-conditionAgentflow_2-conditionAgentflow_2"
-        },
-        {
-            "source": "conditionAgentflow_2",
-            "sourceHandle": "conditionAgentflow_2-output-0",
-            "target": "directReplyAgentflow_1",
-            "targetHandle": "directReplyAgentflow_1",
-            "data": {
-                "sourceColor": "#FFB938",
-                "targetColor": "#4DDBBB",
-                "isHumanInput": false
-            },
-            "type": "agentFlow",
-            "id": "conditionAgentflow_2-conditionAgentflow_2-output-0-directReplyAgentflow_1-directReplyAgentflow_1"
         }
     ]
 }

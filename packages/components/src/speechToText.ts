@@ -6,6 +6,7 @@ import { getFileFromStorage } from './storageUtils'
 import axios from 'axios'
 import Groq from 'groq-sdk'
 import OpenAI from 'openai'
+import { v4 as uuidv4 } from 'uuid'
 
 const SpeechToTextType = {
     OPENAI_WHISPER: 'openAIWhisper',
@@ -74,11 +75,25 @@ const appendTokenUsagePayload = (tokenAuditContext: ICommonObject | undefined, p
     tokenAuditContext.tokenUsagePayloads.push(payload)
 }
 
+const resolveCredentialNameFromAuditContext = (tokenAuditContext: ICommonObject | undefined, credentialId?: string) => {
+    if (!credentialId) return undefined
+
+    const credentialMetadataById =
+        tokenAuditContext?.credentialMetadataById && typeof tokenAuditContext.credentialMetadataById === 'object'
+            ? (tokenAuditContext.credentialMetadataById as Record<string, { credentialName?: string }>)
+            : undefined
+
+    return credentialMetadataById?.[credentialId]?.credentialName
+}
+
+export const supportsSpeechToTextProviderUsageMetering = (provider: string) => provider === SpeechToTextType.ALIBABA_STT
+
 export interface ISpeechToTextResult {
     text: string
     provider: string
     credentialId?: string
     model?: string
+    tokenUsageCredentialCallId?: string
     usage?: {
         seconds?: number
     }
@@ -281,6 +296,7 @@ export const convertSpeechToText = async (
                 const content = completion?.choices?.[0]?.message?.content
                 const transcript = parseAlibabaSpeechContent(content)
                 if (transcript) {
+                    const tokenUsageCredentialCallId = uuidv4()
                     const usageSeconds = Number((completion as ICommonObject)?.usage?.seconds)
                     const normalizedUsageSeconds = Number.isFinite(usageSeconds) && usageSeconds >= 0 ? usageSeconds : 0
                     const promptTokens = Number((completion as ICommonObject)?.usage?.prompt_tokens) || 0
@@ -292,17 +308,32 @@ export const convertSpeechToText = async (
                             ...(completion as ICommonObject)?.usage,
                             seconds: normalizedUsageSeconds
                         },
+                        credentialId,
                         model: modelName,
                         provider: SpeechToTextType.ALIBABA_STT,
-                        source: 'speech_to_text'
+                        source: 'speech_to_text',
+                        billingMode: 'seconds',
+                        tokenUsageCredentialCallId
                     })
-                    if (Array.isArray(tokenAuditContext?.credentialAccesses)) {
-                        const matchedAccess = [...tokenAuditContext.credentialAccesses]
-                            .reverse()
-                            .find((access: ICommonObject) => access?.credentialId === credentialId)
-                        if (matchedAccess && !matchedAccess.model) {
-                            matchedAccess.model = modelName
+                    if (tokenAuditContext) {
+                        if (!Array.isArray(tokenAuditContext.credentialAccesses)) {
+                            tokenAuditContext.credentialAccesses = []
                         }
+
+                        const matchedCredentialName =
+                            (Array.isArray(tokenAuditContext.credentialAccesses)
+                                ? [...tokenAuditContext.credentialAccesses]
+                                      .reverse()
+                                      .find((access: ICommonObject) => access?.credentialId === credentialId)?.credentialName
+                                : undefined) || resolveCredentialNameFromAuditContext(tokenAuditContext, credentialId)
+
+                        tokenAuditContext.credentialAccesses.push({
+                            credentialId,
+                            credentialName: matchedCredentialName,
+                            model: modelName,
+                            provider: SpeechToTextType.ALIBABA_STT,
+                            tokenUsageCredentialCallId
+                        })
                     }
 
                     console.info(
@@ -318,6 +349,7 @@ export const convertSpeechToText = async (
                         provider: SpeechToTextType.ALIBABA_STT,
                         credentialId,
                         model: modelName,
+                        tokenUsageCredentialCallId,
                         usage: {
                             seconds: normalizedUsageSeconds
                         }

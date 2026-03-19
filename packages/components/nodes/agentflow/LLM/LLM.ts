@@ -2,7 +2,7 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { ICommonObject, IMessage, INode, INodeData, INodeOptionsValue, INodeParams, IServerSideEventStreamer } from '../../../src/Interface'
 import { AIMessageChunk, BaseMessageLike, MessageContentText } from '@langchain/core/messages'
 import { DEFAULT_SUMMARIZER_TEMPLATE } from '../prompt'
-import { AnalyticHandler, createTokenUsageAuditCallbacks } from '../../../src/handler'
+import { AnalyticHandler, createTokenUsageAuditInvocationConfig, resolveCredentialIdFromConfig } from '../../../src/handler'
 import { ILLMMessage } from '../Interface.Agentflow'
 import {
     addImageArtifactsToMessages,
@@ -385,7 +385,7 @@ class LLM_Agentflow implements INode {
             const newLLMNodeInstance = new nodeModule.nodeClass()
             const newNodeData = {
                 ...nodeData,
-                credential: modelConfig['FLOWISE_CREDENTIAL_ID'],
+                credential: resolveCredentialIdFromConfig(modelConfig),
                 inputs: {
                     ...nodeData.inputs,
                     ...modelConfig
@@ -513,10 +513,8 @@ class LLM_Agentflow implements INode {
                 )
             } else {
                 try {
-                    response = await llmNodeInstance.invoke(
-                        llmInvokeInput,
-                        this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
-                    )
+                    const modelInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+                    response = await llmNodeInstance.invoke(llmInvokeInput, modelInvocation.config)
                 } catch (error) {
                     if (!isStructuredOutput) {
                         throw error
@@ -809,18 +807,17 @@ class LLM_Agentflow implements INode {
                 messages.push(...windowedMessages)
             } else if (memoryType === 'conversationSummary') {
                 // Summary memory: Summarize all past messages
-                const summary = await llmNodeInstance.invoke(
-                    [
-                        {
-                            role: 'user',
-                            content: DEFAULT_SUMMARIZER_TEMPLATE.replace(
-                                '{conversation}',
-                                pastMessages.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n')
-                            )
-                        }
-                    ],
-                    this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
-                )
+                const summaryPrompt = [
+                    {
+                        role: 'user',
+                        content: DEFAULT_SUMMARIZER_TEMPLATE.replace(
+                            '{conversation}',
+                            pastMessages.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n')
+                        )
+                    }
+                ]
+                const summaryInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+                const summary = await llmNodeInstance.invoke(summaryPrompt, summaryInvocation.config)
                 messages.push({ role: 'assistant', content: summary.content as string })
             } else if (memoryType === 'conversationSummaryBuffer') {
                 // Summary buffer: Summarize messages that exceed token limit
@@ -877,15 +874,14 @@ class LLM_Agentflow implements INode {
             // Summarize the messages that were removed
             const messagesToSummarizeString = messagesToSummarize.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n')
 
-            const summary = await llmNodeInstance.invoke(
-                [
-                    {
-                        role: 'user',
-                        content: DEFAULT_SUMMARIZER_TEMPLATE.replace('{conversation}', messagesToSummarizeString)
-                    }
-                ],
-                this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
-            )
+            const summaryPrompt = [
+                {
+                    role: 'user',
+                    content: DEFAULT_SUMMARIZER_TEMPLATE.replace('{conversation}', messagesToSummarizeString)
+                }
+            ]
+            const summaryInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+            const summary = await llmNodeInstance.invoke(summaryPrompt, summaryInvocation.config)
 
             // Add summary as a system message at the beginning, then add remaining messages
             messages.push({ role: 'system', content: `Previous conversation summary: ${summary.content}` })
@@ -910,10 +906,8 @@ class LLM_Agentflow implements INode {
         let response = new AIMessageChunk('')
 
         try {
-            for await (const chunk of await llmNodeInstance.stream(
-                messages,
-                this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
-            )) {
+            const streamInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+            for await (const chunk of await llmNodeInstance.stream(messages, streamInvocation.config)) {
                 if (sseStreamer) {
                     let content = ''
 
@@ -949,20 +943,16 @@ class LLM_Agentflow implements INode {
         abortController: AbortController,
         tokenUsageAuditMetadata: ITokenUsageAuditMetadata
     ): Promise<Record<string, any>> {
-        const rawResponse = (await baseLlmNodeInstance.invoke(
-            invokeInput,
-            this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
-        )) as AIMessageChunk
+        const rawInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+        const rawResponse = (await baseLlmNodeInstance.invoke(invokeInput, rawInvocation.config)) as AIMessageChunk
         const rawResponseContent = this.getResponseContent(rawResponse)
         const structuredPrompt = ensureStructuredOutputInstructions(
             'Convert the following response to the structured output format. Preserve the meaning, but rewrite it so it matches the schema exactly.\n\n' +
                 rawResponseContent,
             structuredOutput
         )
-        const structuredResponse = (await baseLlmNodeInstance.invoke(
-            structuredPrompt,
-            this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
-        )) as AIMessageChunk
+        const structuredInvocation = this.buildModelInvocationConfig(abortController, tokenUsageAuditMetadata)
+        const structuredResponse = (await baseLlmNodeInstance.invoke(structuredPrompt, structuredInvocation.config)) as AIMessageChunk
         const structuredResponseContent = this.getResponseContent(structuredResponse)
 
         return await this.parseStructuredOutputResponse(structuredResponseContent, structuredOutput)
@@ -975,10 +965,7 @@ class LLM_Agentflow implements INode {
     ): ITokenUsageAuditMetadata {
         return {
             tokenAuditContext: options.tokenAuditContext as ICommonObject | undefined,
-            credentialId:
-                (typeof modelConfig?.FLOWISE_CREDENTIAL_ID === 'string' && modelConfig.FLOWISE_CREDENTIAL_ID) ||
-                (typeof modelConfig?.credential === 'string' && modelConfig.credential) ||
-                undefined,
+            credentialId: resolveCredentialIdFromConfig(modelConfig),
             model:
                 (typeof modelConfig?.modelName === 'string' && modelConfig.modelName) ||
                 (typeof modelConfig?.model === 'string' && modelConfig.model) ||
@@ -993,18 +980,11 @@ class LLM_Agentflow implements INode {
     private buildModelInvocationConfig(
         abortController: AbortController | undefined,
         tokenUsageAuditMetadata: ITokenUsageAuditMetadata
-    ): ICommonObject {
-        const callbacks = createTokenUsageAuditCallbacks(tokenUsageAuditMetadata)
-        if (callbacks.length) {
-            return {
-                signal: abortController?.signal,
-                callbacks
-            }
-        }
-
-        return {
-            signal: abortController?.signal
-        }
+    ): { config: ICommonObject; tokenUsageCredentialCallId: string } {
+        return createTokenUsageAuditInvocationConfig({
+            signal: abortController?.signal,
+            ...tokenUsageAuditMetadata
+        })
     }
 
     private getResponseContent(response: AIMessageChunk): string {

@@ -5110,6 +5110,266 @@
             },
             "selected": false,
             "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_entry",
+            "position": {
+                "x": 90,
+                "y": 30
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_entry",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_entry-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "问诊入口阶段：支持文本、图片与全文附件输入。先补齐主诉、病程变化、严重程度、既往史、用药/过敏史、已做检查与已上传资料，信息不足时不要直接进入 MDT。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_entry-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 420,
+            "height": 160,
+            "positionAbsolute": {
+                "x": 90,
+                "y": 30
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_humanInputAgentflow_0",
+            "position": {
+                "x": 610,
+                "y": 50
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_humanInputAgentflow_0",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_humanInputAgentflow_0-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "人工确认阶段：点击“继续补充”会回到问诊收集；点击“进入 MDT 会诊”后，才会进入结构化整理、风险分层与后续多学科评估。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_humanInputAgentflow_0-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 250,
+            "height": 160,
+            "positionAbsolute": {
+                "x": 610,
+                "y": 50
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_risk",
+            "position": {
+                "x": 1110,
+                "y": -90
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_risk",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_risk-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "风险分层阶段：先把对话和附件整理成结构化病例，再保守识别红旗信号。若判断需要紧急就医，流程会直接返回紧急提示；否则进入 MDT 会诊。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_risk-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 420,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 1110,
+                "y": -90
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_mdt",
+            "position": {
+                "x": 1940,
+                "y": -320
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_mdt",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_mdt-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "多学科会诊阶段：6 位专家会基于同一份病例简报并行给出初步意见，重点输出风险、鉴别方向、缺失检查与下一步线下建议，而不是直接确诊。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_mdt-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 430,
+            "height": 180,
+            "positionAbsolute": {
+                "x": 1940,
+                "y": -320
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "stickyNoteAgentflow_note_output",
+            "position": {
+                "x": 2520,
+                "y": 30
+            },
+            "data": {
+                "id": "stickyNoteAgentflow_note_output",
+                "label": "Sticky Note",
+                "version": 1,
+                "name": "stickyNoteAgentflow",
+                "type": "StickyNote",
+                "color": "#fee440",
+                "baseClasses": ["StickyNote"],
+                "category": "Agent Flows",
+                "description": "Add notes to the agent flow",
+                "inputParams": [
+                    {
+                        "label": "",
+                        "name": "note",
+                        "type": "string",
+                        "rows": 1,
+                        "placeholder": "Type something here",
+                        "optional": true,
+                        "display": true,
+                        "id": "stickyNoteAgentflow_note_output-input-note-string"
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "note": "纪要输出阶段：先汇总共识与分歧，再生成面向用户的 Markdown 会诊纪要，需明确风险、下一步检查或就诊科室建议，并保留“仅供辅助参考”的边界。"
+                },
+                "outputAnchors": [
+                    {
+                        "id": "stickyNoteAgentflow_note_output-output-stickyNoteAgentflow",
+                        "label": "Sticky Note",
+                        "name": "stickyNoteAgentflow"
+                    }
+                ],
+                "outputs": {},
+                "selected": false
+            },
+            "type": "stickyNote",
+            "width": 430,
+            "height": 170,
+            "positionAbsolute": {
+                "x": 2520,
+                "y": 30
+            },
+            "selected": false,
+            "dragging": false
         }
     ],
     "edges": [

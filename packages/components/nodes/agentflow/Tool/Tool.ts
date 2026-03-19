@@ -13,6 +13,7 @@ import { Tool } from '@langchain/core/tools'
 import { parseToolOutput } from '../../../src/agents'
 import zodToJsonSchema from 'zod-to-json-schema'
 import { get } from 'lodash'
+import { resolveCredentialIdFromConfig } from '../../../src/handler'
 
 interface IToolInputArgs {
     inputArgName: string
@@ -222,7 +223,7 @@ class Tool_Agentflow implements INode {
 
             const newNodeData = {
                 ...nodeData,
-                credential: selectedToolConfig['FLOWISE_CREDENTIAL_ID'],
+                credential: resolveCredentialIdFromConfig(selectedToolConfig),
                 inputs: {
                     ...nodeData.inputs,
                     ...selectedToolConfig
@@ -302,7 +303,7 @@ class Tool_Agentflow implements INode {
         const newToolNodeInstance = new nodeModule.nodeClass()
         const newNodeData = {
             ...nodeData,
-            credential: selectedToolConfig['FLOWISE_CREDENTIAL_ID'],
+            credential: resolveCredentialIdFromConfig(selectedToolConfig),
             inputs: {
                 ...nodeData.inputs,
                 ...selectedToolConfig

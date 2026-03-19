@@ -18,6 +18,11 @@ interface IRecordMediaGenerationCredentialAccessParams {
     options: ICommonObject
 }
 
+interface IAppendMediaGenerationUsageEventParams {
+    billingDetails?: ICredentialBillingUsage
+    tokenAuditContext?: ICommonObject
+}
+
 const normalizeUsageMetric = (value: unknown): number | undefined => {
     const numericValue = Number(value)
     return Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : undefined
@@ -117,8 +122,12 @@ const consumeMediaGenerationCredit = async (params: IConsumeMediaGenerationCredi
 const getCredentialAccessForUsage = async (
     credentialId: string | undefined,
     model: string | undefined,
+    provider: string | undefined,
+    tokenUsageCredentialCallId: string | undefined,
     options: ICommonObject
-): Promise<{ credentialId?: string; credentialName?: string; model?: string } | undefined> => {
+): Promise<
+    { credentialId?: string; credentialName?: string; model?: string; provider?: string; tokenUsageCredentialCallId?: string } | undefined
+> => {
     if (!credentialId) return undefined
 
     const appDataSource = options.appDataSource
@@ -126,7 +135,9 @@ const getCredentialAccessForUsage = async (
     if (!appDataSource || !credentialEntity) {
         return {
             credentialId,
-            model
+            model,
+            provider,
+            tokenUsageCredentialCallId
         }
     }
 
@@ -135,7 +146,9 @@ const getCredentialAccessForUsage = async (
         return {
             credentialId,
             credentialName: credential?.name || credential?.credentialName,
-            model
+            model,
+            provider,
+            tokenUsageCredentialCallId
         }
     } catch (error) {
         logger.warn(
@@ -145,16 +158,47 @@ const getCredentialAccessForUsage = async (
         )
         return {
             credentialId,
-            model
+            model,
+            provider,
+            tokenUsageCredentialCallId
         }
     }
+}
+
+const appendMediaGenerationUsageEvent = (params: IAppendMediaGenerationUsageEventParams) => {
+    const { billingDetails, tokenAuditContext } = params
+    if (!billingDetails || !tokenAuditContext) return undefined
+
+    if (!Array.isArray(tokenAuditContext.tokenUsagePayloads)) {
+        tokenAuditContext.tokenUsagePayloads = []
+    }
+
+    const usagePayload = {
+        credentialId: billingDetails.credentialId,
+        credentialName: billingDetails.credentialName,
+        provider: billingDetails.provider,
+        model: billingDetails.model,
+        source: billingDetails.source || 'media_generation',
+        billingMode: billingDetails.billingMode,
+        tokenUsageCredentialCallId: billingDetails.tokenUsageCredentialCallId,
+        usage: billingDetails.usage
+    }
+
+    tokenAuditContext.tokenUsagePayloads.push(usagePayload)
+    return usagePayload
 }
 
 const recordMediaGenerationCredentialAccess = async (params: IRecordMediaGenerationCredentialAccessParams) => {
     const { billingDetails, tokenAuditContext, options } = params
     if (!billingDetails || !tokenAuditContext) return undefined
 
-    const credentialAccess = await getCredentialAccessForUsage(billingDetails.credentialId, billingDetails.model, options)
+    const credentialAccess = await getCredentialAccessForUsage(
+        billingDetails.credentialId,
+        billingDetails.model,
+        billingDetails.provider,
+        billingDetails.tokenUsageCredentialCallId,
+        options
+    )
     if (!credentialAccess) return undefined
 
     if (!Array.isArray(tokenAuditContext.credentialAccesses)) {
@@ -169,6 +213,7 @@ export default {
     ensureMediaGenerationCredentialCallId,
     getMediaGenerationBillingDetails,
     consumeMediaGenerationCredit,
+    appendMediaGenerationUsageEvent,
     getCredentialAccessForUsage,
     recordMediaGenerationCredentialAccess
 }

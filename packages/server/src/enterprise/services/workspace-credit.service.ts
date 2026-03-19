@@ -15,6 +15,19 @@ import {
 } from '../../utils/credentialBilling'
 import logger from '../../utils/logger'
 
+const isValidBillingMode = (billingMode: string): billingMode is CredentialBillingMode =>
+    ['token', 'image_count', 'video_count', 'seconds', 'characters'].includes(billingMode)
+
+const isDuplicateKeyError = (error: unknown): boolean => {
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
+    return (
+        message.includes('duplicate') ||
+        message.includes('unique constraint') ||
+        message.includes('constraint failed') ||
+        message.includes('already exists')
+    )
+}
+
 const getUsageMetricValue = (billingMode: CredentialBillingMode, usage: ICredentialBillingUsage['usage']): number => {
     switch (billingMode) {
         case 'token':
@@ -402,6 +415,14 @@ export class WorkspaceCreditService {
     public async consumeCreditByBillingUsages(workspaceId: string, userId: string, usages: ICredentialBillingUsage[]) {
         const normalizedUsages = (Array.isArray(usages) ? usages : []).filter((usage): usage is ICredentialBillingUsage => {
             if (!usage || typeof usage !== 'object') return false
+            if (!isValidBillingMode(usage.billingMode)) {
+                logger.warn(
+                    `[workspace-credit] skip usage with invalid billing mode workspaceId=${workspaceId} userId=${userId} credentialId=${
+                        usage.credentialId || '-'
+                    } model=${usage.model || 'unknown'} billingMode=${String(usage.billingMode)}`
+                )
+                return false
+            }
 
             const usageMetric = getUsageMetricValue(usage.billingMode, usage.usage || {})
             if (usageMetric <= 0) {
@@ -460,6 +481,29 @@ export class WorkspaceCreditService {
             }> = []
 
             for (const usage of normalizedUsages) {
+                if (usage.tokenUsageCredentialCallId) {
+                    const existingTransaction = await queryRunner.manager.findOneBy(WorkspaceCreditTransaction, {
+                        workspaceId,
+                        userId,
+                        type: WorkspaceCreditTransactionType.CONSUME,
+                        tokenUsageCredentialCallId: usage.tokenUsageCredentialCallId
+                    })
+
+                    if (existingTransaction) {
+                        const reusedChargedCredit = Math.abs(existingTransaction.amount || 0)
+                        transactions.push(existingTransaction)
+                        usageResults.push({
+                            usage,
+                            chargedCredit: reusedChargedCredit,
+                            transaction: existingTransaction
+                        })
+                        logger.info(
+                            `[workspace-credit] reused existing consume transaction workspaceId=${workspaceId} userId=${userId} callId=${usage.tokenUsageCredentialCallId} chargedCredit=${reusedChargedCredit}`
+                        )
+                        continue
+                    }
+                }
+
                 const credential = usage.credentialId ? credentialMap.get(usage.credentialId) : undefined
                 let decryptedCredentialData: Record<string, unknown> | undefined
 
@@ -586,11 +630,47 @@ export class WorkspaceCreditService {
                     )}, chargedCredit=${consumed}`
                 })
 
-                const savedTransaction = await queryRunner.manager.save(WorkspaceCreditTransaction, transaction)
+                let savedTransaction: WorkspaceCreditTransaction | null = null
+                try {
+                    savedTransaction = await queryRunner.manager.save(WorkspaceCreditTransaction, transaction)
+                } catch (error) {
+                    if (!usage.tokenUsageCredentialCallId || !isDuplicateKeyError(error)) {
+                        throw error
+                    }
+
+                    workspaceUser.credit = (workspaceUser.credit ?? 0) + consumed
+                    totalCreditConsumed -= consumed
+
+                    const existingTransaction = await queryRunner.manager.findOneBy(WorkspaceCreditTransaction, {
+                        workspaceId,
+                        userId,
+                        type: WorkspaceCreditTransactionType.CONSUME,
+                        tokenUsageCredentialCallId: usage.tokenUsageCredentialCallId
+                    })
+
+                    if (!existingTransaction) {
+                        throw error
+                    }
+
+                    savedTransaction = existingTransaction
+                    logger.warn(
+                        `[workspace-credit] recovered duplicate consume transaction workspaceId=${workspaceId} userId=${userId} callId=${usage.tokenUsageCredentialCallId}`
+                    )
+                }
+
+                if (!savedTransaction) {
+                    usageResults.push({
+                        usage,
+                        chargedCredit: 0,
+                        transaction: null
+                    })
+                    continue
+                }
+
                 transactions.push(savedTransaction)
                 usageResults.push({
                     usage,
-                    chargedCredit: consumed,
+                    chargedCredit: Math.abs(savedTransaction.amount || 0),
                     transaction: savedTransaction
                 })
                 logger.info(
@@ -630,6 +710,7 @@ export class WorkspaceCreditService {
             credentialName?: string
             provider?: string
             model?: string
+            tokenUsageCredentialCallId?: string
             seconds: number
         }
     ) {
@@ -644,6 +725,7 @@ export class WorkspaceCreditService {
                 credentialName: usage.credentialName,
                 provider: usage.provider,
                 model: usage.model,
+                tokenUsageCredentialCallId: usage.tokenUsageCredentialCallId,
                 source: 'speech_to_text',
                 billingMode: 'seconds',
                 usage: {
@@ -666,6 +748,7 @@ export class WorkspaceCreditService {
             credentialName?: string
             provider?: string
             model?: string
+            tokenUsageCredentialCallId?: string
             characters: number
         }
     ) {
@@ -680,6 +763,7 @@ export class WorkspaceCreditService {
                 credentialName: usage.credentialName,
                 provider: usage.provider,
                 model: usage.model,
+                tokenUsageCredentialCallId: usage.tokenUsageCredentialCallId,
                 source: 'text_to_speech',
                 billingMode: 'characters',
                 usage: {
@@ -766,6 +850,7 @@ export class WorkspaceCreditService {
             credentialName?: string
             provider?: string
             model?: string
+            tokenUsageCredentialCallId?: string
             generatedImages: number
         }
     ) {
@@ -780,6 +865,7 @@ export class WorkspaceCreditService {
                 credentialName: usage.credentialName,
                 provider: usage.provider,
                 model: usage.model,
+                tokenUsageCredentialCallId: usage.tokenUsageCredentialCallId,
                 source: 'media_generation',
                 billingMode: 'image_count',
                 usage: {

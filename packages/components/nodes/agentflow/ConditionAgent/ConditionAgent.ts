@@ -1,4 +1,4 @@
-import { AnalyticHandler } from '../../../src/handler'
+import { AnalyticHandler, createTokenUsageAuditInvocationConfig, resolveCredentialIdFromConfig } from '../../../src/handler'
 import { ICommonObject, INode, INodeData, INodeOptionsValue, INodeOutputsValue, INodeParams } from '../../../src/Interface'
 import { AIMessageChunk, BaseMessageLike } from '@langchain/core/messages'
 import {
@@ -285,13 +285,25 @@ class ConditionAgent_Agentflow implements INode {
             const newLLMNodeInstance = new nodeModule.nodeClass()
             const newNodeData = {
                 ...nodeData,
-                credential: modelConfig['FLOWISE_CREDENTIAL_ID'],
+                credential: resolveCredentialIdFromConfig(modelConfig),
                 inputs: {
                     ...nodeData.inputs,
                     ...modelConfig
                 }
             }
             let llmNodeInstance = (await newLLMNodeInstance.init(newNodeData, '', options)) as BaseChatModel
+            const tokenUsageAuditMetadata = {
+                tokenAuditContext: options.tokenAuditContext as ICommonObject | undefined,
+                credentialId: resolveCredentialIdFromConfig(modelConfig),
+                model:
+                    (typeof modelConfig?.modelName === 'string' && modelConfig.modelName) ||
+                    (typeof modelConfig?.model === 'string' && modelConfig.model) ||
+                    undefined,
+                provider:
+                    (typeof modelConfig?.conditionAgentModel === 'string' && modelConfig.conditionAgentModel) ||
+                    (typeof modelConfig?.llmModel === 'string' && modelConfig.llmModel) ||
+                    model
+            }
 
             const isStructuredOutput =
                 _conditionAgentScenarios && Array.isArray(_conditionAgentScenarios) && _conditionAgentScenarios.length > 0
@@ -338,7 +350,8 @@ class ConditionAgent_Agentflow implements INode {
                     options,
                     modelConfig,
                     runtimeImageMessagesWithFileRef,
-                    pastImageMessagesWithFileRef
+                    pastImageMessagesWithFileRef,
+                    tokenUsageAuditMetadata
                 })
             } else {
                 /*
@@ -371,7 +384,11 @@ class ConditionAgent_Agentflow implements INode {
             // Track execution time
             const startTime = Date.now()
 
-            response = await llmNodeInstance.invoke(messages, { signal: abortController?.signal })
+            const modelInvocation = createTokenUsageAuditInvocationConfig({
+                signal: abortController?.signal,
+                ...tokenUsageAuditMetadata
+            })
+            response = await llmNodeInstance.invoke(messages, modelInvocation.config)
 
             // Calculate execution time
             const endTime = Date.now()
@@ -489,7 +506,8 @@ class ConditionAgent_Agentflow implements INode {
         options,
         modelConfig,
         runtimeImageMessagesWithFileRef,
-        pastImageMessagesWithFileRef
+        pastImageMessagesWithFileRef,
+        tokenUsageAuditMetadata
     }: {
         messages: BaseMessageLike[]
         memoryType: string
@@ -504,6 +522,12 @@ class ConditionAgent_Agentflow implements INode {
         modelConfig: ICommonObject
         runtimeImageMessagesWithFileRef: BaseMessageLike[]
         pastImageMessagesWithFileRef: BaseMessageLike[]
+        tokenUsageAuditMetadata: {
+            tokenAuditContext?: ICommonObject
+            credentialId?: string
+            model?: string
+            provider?: string
+        }
     }): Promise<void> {
         const { updatedPastMessages, transformedPastMessages } = await getPastChatHistoryImageMessages(pastChatHistory, options)
         pastChatHistory = updatedPastMessages
@@ -536,22 +560,24 @@ class ConditionAgent_Agentflow implements INode {
                 messages.push(...windowedMessages)
             } else if (memoryType === 'conversationSummary') {
                 // Summary memory: Summarize all past messages
-                const summary = await llmNodeInstance.invoke(
-                    [
-                        {
-                            role: 'user',
-                            content: DEFAULT_SUMMARIZER_TEMPLATE.replace(
-                                '{conversation}',
-                                pastMessages.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n')
-                            )
-                        }
-                    ],
-                    { signal: abortController?.signal }
-                )
+                const summaryPrompt = [
+                    {
+                        role: 'user',
+                        content: DEFAULT_SUMMARIZER_TEMPLATE.replace(
+                            '{conversation}',
+                            pastMessages.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n')
+                        )
+                    }
+                ]
+                const summaryInvocation = createTokenUsageAuditInvocationConfig({
+                    signal: abortController?.signal,
+                    ...tokenUsageAuditMetadata
+                })
+                const summary = await llmNodeInstance.invoke(summaryPrompt, summaryInvocation.config)
                 messages.push({ role: 'assistant', content: summary.content as string })
             } else if (memoryType === 'conversationSummaryBuffer') {
                 // Summary buffer: Summarize messages that exceed token limit
-                await this.handleSummaryBuffer(messages, pastMessages, llmNodeInstance, nodeData, abortController)
+                await this.handleSummaryBuffer(messages, pastMessages, llmNodeInstance, nodeData, abortController, tokenUsageAuditMetadata)
             } else {
                 // Default: Use all messages
                 messages.push(...pastMessages)
@@ -572,7 +598,13 @@ class ConditionAgent_Agentflow implements INode {
         pastMessages: BaseMessageLike[],
         llmNodeInstance: BaseChatModel,
         nodeData: INodeData,
-        abortController: AbortController
+        abortController: AbortController,
+        tokenUsageAuditMetadata: {
+            tokenAuditContext?: ICommonObject
+            credentialId?: string
+            model?: string
+            provider?: string
+        }
     ): Promise<void> {
         const maxTokenLimit = (nodeData.inputs?.conditionAgentMemoryMaxTokenLimit as number) || 2000
 
@@ -600,15 +632,17 @@ class ConditionAgent_Agentflow implements INode {
             // Summarize the messages that were removed
             const messagesToSummarizeString = messagesToSummarize.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n')
 
-            const summary = await llmNodeInstance.invoke(
-                [
-                    {
-                        role: 'user',
-                        content: DEFAULT_SUMMARIZER_TEMPLATE.replace('{conversation}', messagesToSummarizeString)
-                    }
-                ],
-                { signal: abortController?.signal }
-            )
+            const summaryPrompt = [
+                {
+                    role: 'user',
+                    content: DEFAULT_SUMMARIZER_TEMPLATE.replace('{conversation}', messagesToSummarizeString)
+                }
+            ]
+            const summaryInvocation = createTokenUsageAuditInvocationConfig({
+                signal: abortController?.signal,
+                ...tokenUsageAuditMetadata
+            })
+            const summary = await llmNodeInstance.invoke(summaryPrompt, summaryInvocation.config)
 
             // Add summary as a system message at the beginning, then add remaining messages
             messages.push({ role: 'system', content: `Previous conversation summary: ${summary.content}` })

@@ -2,6 +2,7 @@ import { DataSource } from 'typeorm'
 import { v4 as uuidv4 } from 'uuid'
 import { cloneDeep, get } from 'lodash'
 import TurndownService from 'turndown'
+import { createHash } from 'crypto'
 import {
     AnalyticHandler,
     ICommonObject,
@@ -67,7 +68,6 @@ import {
     TokenUsageService
 } from '../enterprise/services/token-usage.service'
 import mediaGenerationService from '../services/media-generation'
-import { getAgentflowTokenUsagePayloadSeeds } from './agentflowTokenUsage'
 
 interface IWaitingNode {
     nodeId: string
@@ -226,6 +226,10 @@ const formatTokenUsageMetricsForLog = (metrics: ITokenUsageMetrics): string => {
     if (metrics.rejectedPredictionTokens > 0) parts.push(`rejectedPrediction=${metrics.rejectedPredictionTokens}`)
     if (metrics.audioInputTokens > 0) parts.push(`audioInput=${metrics.audioInputTokens}`)
     if (metrics.audioOutputTokens > 0) parts.push(`audioOutput=${metrics.audioOutputTokens}`)
+    if (metrics.imageCount > 0) parts.push(`imageCount=${metrics.imageCount}`)
+    if (metrics.videoCount > 0) parts.push(`videoCount=${metrics.videoCount}`)
+    if (metrics.seconds > 0) parts.push(`seconds=${metrics.seconds}`)
+    if (metrics.characters > 0) parts.push(`characters=${metrics.characters}`)
 
     const unclassifiedTokens = getUnclassifiedTokens(metrics)
     if (unclassifiedTokens > 0) parts.push(`unclassified=${unclassifiedTokens}`)
@@ -235,6 +239,353 @@ const formatTokenUsageMetricsForLog = (metrics: ITokenUsageMetrics): string => {
     }
 
     return parts.join(' ')
+}
+
+const buildAgentflowTokenUsageIdempotencyKey = ({
+    flowId,
+    executionId,
+    chatId,
+    sessionId
+}: {
+    flowId: string
+    executionId: string
+    chatId: string
+    sessionId: string
+}) => `AGENTFLOW:${flowId}:${executionId}:${chatId}:${sessionId}`
+
+const estimatedUsageSources = new Set(['estimated_token_usage', 'estimatedtokenusage', 'token_usage', 'tokenusage'])
+
+const getTokenAuditDeltaCollections = ({
+    tokenAuditContext,
+    previousTokenAuditSnapshot,
+    latestTokenAuditSnapshot
+}: {
+    tokenAuditContext?: ICommonObject
+    previousTokenAuditSnapshot: ITokenAuditSnapshot
+    latestTokenAuditSnapshot: ITokenAuditSnapshot
+}) => {
+    const { tokenUsagePayloads, credentialAccesses } = getTokenAuditCollections(tokenAuditContext)
+
+    return {
+        usagePayloads:
+            latestTokenAuditSnapshot.payloadCount > previousTokenAuditSnapshot.payloadCount
+                ? tokenUsagePayloads.slice(previousTokenAuditSnapshot.payloadCount, latestTokenAuditSnapshot.payloadCount)
+                : [],
+        credentialAccesses:
+            latestTokenAuditSnapshot.credentialAccessCount > previousTokenAuditSnapshot.credentialAccessCount
+                ? credentialAccesses.slice(previousTokenAuditSnapshot.credentialAccessCount, latestTokenAuditSnapshot.credentialAccessCount)
+                : []
+    }
+}
+
+const isChargeableActualUsageEntry = (entry: IUsageEntryMetrics): boolean => {
+    const normalizedSource = typeof entry.source === 'string' ? entry.source.trim().toLowerCase() : ''
+    if (estimatedUsageSources.has(normalizedSource)) return false
+
+    switch (entry.billingMode) {
+        case 'image_count':
+            return entry.metrics.imageCount > 0
+        case 'video_count':
+            return entry.metrics.videoCount > 0
+        case 'seconds':
+            return entry.metrics.seconds > 0
+        case 'characters':
+            return entry.metrics.characters > 0
+        case 'token':
+        default:
+            return entry.metrics.totalTokens > 0 || entry.metrics.inputTokens > 0 || entry.metrics.outputTokens > 0
+    }
+}
+
+const buildAgentflowFallbackTokenUsageCallId = ({
+    flowId,
+    executionId,
+    chatId,
+    sessionId,
+    nodeId,
+    nodeExecutionIndex,
+    entry,
+    index
+}: {
+    flowId: string
+    executionId: string
+    chatId: string
+    sessionId: string
+    nodeId: string
+    nodeExecutionIndex: number
+    entry: IUsageEntryMetrics
+    index: number
+}) => {
+    const serializedEntry = JSON.stringify({
+        credentialId: entry.credentialId,
+        credentialName: entry.credentialName,
+        provider: entry.provider,
+        model: entry.model,
+        source: entry.source,
+        billingSource: entry.billingSource,
+        billingMode: entry.billingMode,
+        metrics: {
+            inputTokens: entry.metrics.inputTokens,
+            outputTokens: entry.metrics.outputTokens,
+            totalTokens: entry.metrics.totalTokens,
+            cacheReadTokens: entry.metrics.cacheReadTokens,
+            cacheWriteTokens: entry.metrics.cacheWriteTokens,
+            reasoningTokens: entry.metrics.reasoningTokens,
+            acceptedPredictionTokens: entry.metrics.acceptedPredictionTokens,
+            rejectedPredictionTokens: entry.metrics.rejectedPredictionTokens,
+            audioInputTokens: entry.metrics.audioInputTokens,
+            audioOutputTokens: entry.metrics.audioOutputTokens,
+            imageCount: entry.metrics.imageCount,
+            videoCount: entry.metrics.videoCount,
+            seconds: entry.metrics.seconds,
+            characters: entry.metrics.characters,
+            additionalBreakdown: entry.metrics.additionalBreakdown
+        },
+        index
+    })
+    const hex = createHash('sha1')
+        .update(`${flowId}:${executionId}:${chatId}:${sessionId}:${nodeId}:${nodeExecutionIndex}:${serializedEntry}`)
+        .digest('hex')
+        .slice(0, 32)
+
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
+}
+
+const buildAgentflowTokenUsagePayload = ({
+    flowId,
+    executionId,
+    chatId,
+    sessionId,
+    nodeId,
+    nodeExecutionIndex,
+    entry,
+    index
+}: {
+    flowId: string
+    executionId: string
+    chatId: string
+    sessionId: string
+    nodeId: string
+    nodeExecutionIndex: number
+    entry: IUsageEntryMetrics
+    index: number
+}) => {
+    const billingMode = entry.billingMode || 'token'
+    const usage =
+        billingMode === 'image_count'
+            ? {
+                  units: entry.metrics.imageCount,
+                  ...entry.metrics.additionalBreakdown
+              }
+            : billingMode === 'video_count'
+            ? {
+                  units: entry.metrics.videoCount,
+                  ...entry.metrics.additionalBreakdown
+              }
+            : billingMode === 'seconds'
+            ? {
+                  seconds: entry.metrics.seconds,
+                  ...entry.metrics.additionalBreakdown
+              }
+            : billingMode === 'characters'
+            ? {
+                  characters: entry.metrics.characters,
+                  ...entry.metrics.additionalBreakdown
+              }
+            : {
+                  inputTokens: entry.metrics.inputTokens,
+                  outputTokens: entry.metrics.outputTokens,
+                  totalTokens: entry.metrics.totalTokens,
+                  ...(entry.metrics.cacheReadTokens > 0 ? { cacheReadTokens: entry.metrics.cacheReadTokens } : {}),
+                  ...(entry.metrics.cacheWriteTokens > 0 ? { cacheWriteTokens: entry.metrics.cacheWriteTokens } : {}),
+                  ...(entry.metrics.reasoningTokens > 0 ? { reasoningTokens: entry.metrics.reasoningTokens } : {}),
+                  ...(entry.metrics.acceptedPredictionTokens > 0
+                      ? { acceptedPredictionTokens: entry.metrics.acceptedPredictionTokens }
+                      : {}),
+                  ...(entry.metrics.rejectedPredictionTokens > 0
+                      ? { rejectedPredictionTokens: entry.metrics.rejectedPredictionTokens }
+                      : {}),
+                  ...(entry.metrics.audioInputTokens > 0 ? { audioInputTokens: entry.metrics.audioInputTokens } : {}),
+                  ...(entry.metrics.audioOutputTokens > 0 ? { audioOutputTokens: entry.metrics.audioOutputTokens } : {}),
+                  ...entry.metrics.additionalBreakdown
+              }
+
+    return {
+        auditSource: entry.auditSource || 'execution_fallback',
+        ...(entry.credentialId ? { credentialId: entry.credentialId } : {}),
+        ...(entry.credentialName ? { credentialName: entry.credentialName } : {}),
+        ...(entry.provider ? { provider: entry.provider } : {}),
+        ...(entry.model ? { model: entry.model } : {}),
+        source: entry.billingSource || entry.source || 'llm',
+        billingMode,
+        tokenUsageCredentialCallId:
+            entry.tokenUsageCredentialCallId ||
+            buildAgentflowFallbackTokenUsageCallId({
+                flowId,
+                executionId,
+                chatId,
+                sessionId,
+                nodeId,
+                nodeExecutionIndex,
+                entry,
+                index
+            }),
+        usage
+    }
+}
+
+const buildAgentflowTokenCredentialAccesses = ({
+    usageEntries,
+    credentialAccesses,
+    usagePayloads
+}: {
+    usageEntries: IUsageEntryMetrics[]
+    credentialAccesses: any[]
+    usagePayloads: any[]
+}) => {
+    const accessByCallId = new Map(
+        credentialAccesses
+            .filter((access) => typeof access?.tokenUsageCredentialCallId === 'string' && access.tokenUsageCredentialCallId)
+            .map((access) => [access.tokenUsageCredentialCallId, access])
+    )
+
+    const deduped = new Map<string, any>()
+    usageEntries.forEach((entry, index) => {
+        const payload = usagePayloads[index]
+        const resolvedCallId = payload?.tokenUsageCredentialCallId || entry.tokenUsageCredentialCallId
+        const matchedAccess = resolvedCallId ? accessByCallId.get(resolvedCallId) : undefined
+        const resolvedAccess = {
+            credentialId: entry.credentialId || matchedAccess?.credentialId,
+            credentialName: entry.credentialName || matchedAccess?.credentialName,
+            provider: entry.provider || matchedAccess?.provider,
+            model: entry.model || matchedAccess?.model,
+            tokenUsageCredentialCallId: resolvedCallId
+        }
+
+        if (!resolvedAccess.credentialId && !resolvedAccess.credentialName) return
+
+        const key = JSON.stringify(resolvedAccess)
+        if (!deduped.has(key)) {
+            deduped.set(key, resolvedAccess)
+        }
+    })
+
+    return Array.from(deduped.values())
+}
+
+const buildAgentflowNodeTokenUsageEvent = ({
+    workspaceId,
+    orgId,
+    userId,
+    flowId,
+    executionId,
+    chatId,
+    sessionId,
+    nodeId,
+    nodeExecutionIndex,
+    nodeResult,
+    previousObservedSnapshot,
+    previousSettledSnapshot,
+    latestTokenAuditSnapshot,
+    tokenAuditContext
+}: {
+    workspaceId: string
+    orgId: string
+    userId?: string
+    flowId: string
+    executionId: string
+    chatId: string
+    sessionId: string
+    nodeId: string
+    nodeExecutionIndex: number
+    nodeResult?: ICommonObject
+    previousObservedSnapshot: ITokenAuditSnapshot
+    previousSettledSnapshot: ITokenAuditSnapshot
+    latestTokenAuditSnapshot: ITokenAuditSnapshot
+    tokenAuditContext?: ICommonObject
+}) => {
+    const deltaCollections = getTokenAuditDeltaCollections({
+        tokenAuditContext,
+        previousTokenAuditSnapshot: previousSettledSnapshot,
+        latestTokenAuditSnapshot
+    })
+
+    const deltaExtraction = deltaCollections.usagePayloads.length
+        ? extractUsageEntryMetricsFromPayloads(deltaCollections.usagePayloads)
+        : undefined
+    const deltaUsageEntries = (deltaExtraction?.usageEntryMetrics || []).filter(isChargeableActualUsageEntry)
+
+    const currentNodeCollections = getTokenAuditDeltaCollections({
+        tokenAuditContext,
+        previousTokenAuditSnapshot: previousObservedSnapshot,
+        latestTokenAuditSnapshot
+    })
+    const currentNodeExtraction = currentNodeCollections.usagePayloads.length
+        ? extractUsageEntryMetricsFromPayloads(currentNodeCollections.usagePayloads)
+        : undefined
+    const currentNodeUsageEntries = (currentNodeExtraction?.usageEntryMetrics || []).filter(isChargeableActualUsageEntry)
+
+    const fallbackExtraction =
+        currentNodeUsageEntries.length === 0 && nodeResult ? extractUsageEntryMetricsFromPayloads([nodeResult]) : undefined
+    const fallbackUsageEntries = (fallbackExtraction?.usageEntryMetrics || []).filter(isChargeableActualUsageEntry)
+
+    const selectedUsageEntries = [...deltaUsageEntries, ...fallbackUsageEntries].filter((entry, index, entries) => {
+        const fingerprint = JSON.stringify({
+            callId: entry.tokenUsageCredentialCallId,
+            credentialId: entry.credentialId,
+            credentialName: entry.credentialName,
+            provider: entry.provider,
+            model: entry.model,
+            billingMode: entry.billingMode,
+            metrics: entry.metrics
+        })
+
+        return (
+            entries.findIndex((candidate) => {
+                const candidateFingerprint = JSON.stringify({
+                    callId: candidate.tokenUsageCredentialCallId,
+                    credentialId: candidate.credentialId,
+                    credentialName: candidate.credentialName,
+                    provider: candidate.provider,
+                    model: candidate.model,
+                    billingMode: candidate.billingMode,
+                    metrics: candidate.metrics
+                })
+
+                return candidateFingerprint === fingerprint
+            }) === index
+        )
+    })
+    const usagePayloads = selectedUsageEntries.map((entry, index) =>
+        buildAgentflowTokenUsagePayload({
+            flowId,
+            executionId,
+            chatId,
+            sessionId,
+            nodeId,
+            nodeExecutionIndex,
+            entry,
+            index
+        })
+    )
+
+    return {
+        workspaceId,
+        orgId,
+        userId,
+        flowId,
+        executionId,
+        chatId,
+        sessionId,
+        nodeId,
+        usagePayloads,
+        credentialAccesses: buildAgentflowTokenCredentialAccesses({
+            usageEntries: selectedUsageEntries,
+            credentialAccesses: deltaCollections.credentialAccesses,
+            usagePayloads
+        }),
+        advanceSettledSnapshot: usagePayloads.length > 0 && deltaCollections.usagePayloads.length > 0
+    }
 }
 
 const resolveUsageEntryCredentialAccess = (entry: IUsageEntryMetrics, credentialAccesses: any[]) => {
@@ -325,26 +676,6 @@ const logAgentflowNodeTokenUsage = ({
     })
 }
 
-const mergeAndDedupeTokenPayloads = (payloads: any[], tokenAuditContext?: ICommonObject): any[] => {
-    const merged = [...payloads, ...(((tokenAuditContext?.tokenUsagePayloads as any[]) || []) as any[])]
-    const seen = new Set<string>()
-    const deduped: any[] = []
-
-    for (const payload of merged) {
-        if (payload === null || payload === undefined) continue
-        try {
-            const key = JSON.stringify(payload)
-            if (seen.has(key)) continue
-            seen.add(key)
-            deduped.push(payload)
-        } catch {
-            deduped.push(payload)
-        }
-    }
-
-    return deduped
-}
-
 const recordAgentflowTokenUsage = async ({
     workspaceId,
     orgId,
@@ -353,8 +684,9 @@ const recordAgentflowTokenUsage = async ({
     executionId,
     chatId,
     sessionId,
-    usagePayloadSeeds,
-    tokenAuditContext
+    nodeId,
+    usagePayloads,
+    credentialAccesses
 }: {
     workspaceId: string
     orgId: string
@@ -363,32 +695,36 @@ const recordAgentflowTokenUsage = async ({
     executionId: string
     chatId: string
     sessionId: string
-    usagePayloadSeeds: any[]
-    tokenAuditContext?: ICommonObject
+    nodeId: string
+    usagePayloads: any[]
+    credentialAccesses: any[]
 }) => {
-    try {
-        const usagePayloads = mergeAndDedupeTokenPayloads(usagePayloadSeeds, tokenAuditContext)
-        const credentialAccesses = (tokenAuditContext?.credentialAccesses as any[]) || []
-        logger.info(
-            `[agentflow-token] record start flowId=${flowId} executionId=${executionId} chatId=${chatId} payloads=${usagePayloads.length} credentialAccesses=${credentialAccesses.length}`
-        )
-        const tokenUsageService = new TokenUsageService()
-        await tokenUsageService.recordTokenUsage({
-            workspaceId,
-            organizationId: orgId,
-            userId,
-            flowType: 'AGENTFLOW',
+    if (!usagePayloads.length) return false
+
+    logger.info(
+        `[agentflow-token] record start flowId=${flowId} executionId=${executionId} chatId=${chatId} node=${nodeId} payloads=${usagePayloads.length} credentialAccesses=${credentialAccesses.length}`
+    )
+    const tokenUsageService = new TokenUsageService()
+    await tokenUsageService.recordTokenUsage({
+        workspaceId,
+        organizationId: orgId,
+        userId,
+        flowType: 'AGENTFLOW',
+        flowId,
+        executionId,
+        chatId,
+        sessionId,
+        idempotencyKey: buildAgentflowTokenUsageIdempotencyKey({
             flowId,
             executionId,
             chatId,
-            sessionId,
-            usagePayloads,
-            credentialAccesses
-        })
-        logger.info(`[agentflow-token] record done flowId=${flowId} executionId=${executionId} chatId=${chatId}`)
-    } catch (error) {
-        logger.warn(`[server]: Failed to record agentflow token usage: ${getErrorMessage(error)}`)
-    }
+            sessionId
+        }),
+        usagePayloads,
+        credentialAccesses
+    })
+    logger.info(`[agentflow-token] record done flowId=${flowId} executionId=${executionId} chatId=${chatId} node=${nodeId}`)
+    return true
 }
 
 /**
@@ -1729,6 +2065,7 @@ export const executeAgentFlow = async ({
     incomingInput,
     chatflow,
     chatId,
+    runtimeUsageExecutionId,
     evaluationRunId,
     appDataSource,
     telemetry,
@@ -1769,6 +2106,7 @@ export const executeAgentFlow = async ({
     )
 
     let tokenAuditSnapshot = getTokenAuditSnapshot(tokenAuditContext)
+    let settledTokenAuditSnapshot = tokenAuditSnapshot
     if (tokenAuditSnapshot.payloadCount > 0 || tokenAuditSnapshot.credentialAccessCount > 0) {
         logger.info(
             `[agentflow-token] initial snapshot chatId=${chatId} payloads=${tokenAuditSnapshot.payloadCount} credentialAccesses=${tokenAuditSnapshot.credentialAccessCount}`
@@ -2053,6 +2391,8 @@ export const executeAgentFlow = async ({
         parentExecutionId = newExecution.id
     }
 
+    const tokenUsageExecutionId = runtimeUsageExecutionId || newExecution.id
+
     // Add starting nodes to queue
     startingNodeIds.forEach((nodeId) => {
         nodeExecutionQueue.push({
@@ -2138,7 +2478,6 @@ export const executeAgentFlow = async ({
 
     let analyticHandlers: AnalyticHandler | undefined
     let parentTraceIds: ICommonObject | undefined
-    let hasRecordedTokenUsage = false
 
     try {
         if (chatflow.analytic) {
@@ -2296,28 +2635,24 @@ export const executeAgentFlow = async ({
 
             const nodeMediaBillingDetails = getPendingNodeMediaBillingDetails(nodeResult)
             for (const mediaBillingDetails of nodeMediaBillingDetails) {
-                try {
-                    await mediaGenerationService.recordMediaGenerationCredentialAccess({
-                        billingDetails: mediaBillingDetails,
-                        tokenAuditContext,
-                        options: {
-                            appDataSource,
-                            databaseEntities
-                        }
-                    })
-                } catch (credentialError) {
-                    logger.warn(`[server]: Agentflow media generation credential audit failed: ${getErrorMessage(credentialError)}`)
-                }
+                mediaGenerationService.appendMediaGenerationUsageEvent({
+                    billingDetails: mediaBillingDetails,
+                    tokenAuditContext
+                })
+                await mediaGenerationService.recordMediaGenerationCredentialAccess({
+                    billingDetails: mediaBillingDetails,
+                    tokenAuditContext,
+                    options: {
+                        appDataSource,
+                        databaseEntities
+                    }
+                })
 
-                try {
-                    await mediaGenerationService.consumeMediaGenerationCredit({
-                        workspaceId,
-                        userId,
-                        billingDetails: mediaBillingDetails
-                    })
-                } catch (billingError) {
-                    logger.warn(`[server]: Agentflow media generation credit consumption failed: ${getErrorMessage(billingError)}`)
-                }
+                await mediaGenerationService.consumeMediaGenerationCredit({
+                    workspaceId,
+                    userId,
+                    billingDetails: mediaBillingDetails
+                })
             }
 
             const latestTokenAuditSnapshot = getTokenAuditSnapshot(tokenAuditContext)
@@ -2331,6 +2666,30 @@ export const executeAgentFlow = async ({
                 nodeResult,
                 nodeMediaBillingDetails
             })
+
+            const nodeTokenUsageEvent = buildAgentflowNodeTokenUsageEvent({
+                workspaceId,
+                orgId,
+                userId,
+                flowId: chatflow.id,
+                executionId: tokenUsageExecutionId,
+                chatId,
+                sessionId,
+                nodeId: currentNode.nodeId,
+                nodeExecutionIndex: agentFlowExecutedData.length,
+                nodeResult,
+                previousObservedSnapshot: tokenAuditSnapshot,
+                previousSettledSnapshot: settledTokenAuditSnapshot,
+                latestTokenAuditSnapshot,
+                tokenAuditContext
+            })
+            if (nodeTokenUsageEvent.usagePayloads.length) {
+                await recordAgentflowTokenUsage(nodeTokenUsageEvent)
+                if (nodeTokenUsageEvent.advanceSettledSnapshot) {
+                    settledTokenAuditSnapshot = latestTokenAuditSnapshot
+                }
+            }
+
             tokenAuditSnapshot = latestTokenAuditSnapshot
 
             // Process node outputs and handle branching
@@ -2392,22 +2751,27 @@ export const executeAgentFlow = async ({
 
                 sseStreamer?.streamAgentFlowEvent(chatId, errorStatus)
 
-                if (!hasRecordedTokenUsage) {
-                    hasRecordedTokenUsage = true
-                    await recordAgentflowTokenUsage({
-                        workspaceId,
-                        orgId,
-                        userId,
-                        flowId: chatflow.id,
-                        executionId: newExecution.id,
-                        chatId,
-                        sessionId,
-                        usagePayloadSeeds: getAgentflowTokenUsagePayloadSeeds({
-                            agentFlowExecutedData,
-                            tokenAuditContext
-                        }),
-                        tokenAuditContext
-                    })
+                const latestTokenAuditSnapshot = getTokenAuditSnapshot(tokenAuditContext)
+                const finalNodeTokenUsageEvent = buildAgentflowNodeTokenUsageEvent({
+                    workspaceId,
+                    orgId,
+                    userId,
+                    flowId: chatflow.id,
+                    executionId: tokenUsageExecutionId,
+                    chatId,
+                    sessionId,
+                    nodeId: currentNode.nodeId,
+                    nodeExecutionIndex: agentFlowExecutedData.length,
+                    previousObservedSnapshot: tokenAuditSnapshot,
+                    previousSettledSnapshot: settledTokenAuditSnapshot,
+                    latestTokenAuditSnapshot,
+                    tokenAuditContext
+                })
+                if (finalNodeTokenUsageEvent.usagePayloads.length) {
+                    await recordAgentflowTokenUsage(finalNodeTokenUsageEvent)
+                    if (finalNodeTokenUsageEvent.advanceSettledSnapshot) {
+                        settledTokenAuditSnapshot = latestTokenAuditSnapshot
+                    }
                 }
             }
 
@@ -2512,23 +2876,27 @@ export const executeAgentFlow = async ({
     }
 
     if (!isRecursive) {
-        if (!hasRecordedTokenUsage) {
-            hasRecordedTokenUsage = true
-            await recordAgentflowTokenUsage({
-                workspaceId,
-                orgId,
-                userId,
-                flowId: chatflow.id,
-                executionId: newExecution.id,
-                chatId,
-                sessionId,
-                usagePayloadSeeds: getAgentflowTokenUsagePayloadSeeds({
-                    agentFlowExecutedData,
-                    fallbackPayload: lastNodeOutput || {},
-                    tokenAuditContext
-                }),
-                tokenAuditContext
-            })
+        const latestTokenAuditSnapshot = getTokenAuditSnapshot(tokenAuditContext)
+        const finalNodeTokenUsageEvent = buildAgentflowNodeTokenUsageEvent({
+            workspaceId,
+            orgId,
+            userId,
+            flowId: chatflow.id,
+            executionId: tokenUsageExecutionId,
+            chatId,
+            sessionId,
+            nodeId: agentFlowExecutedData[agentFlowExecutedData.length - 1]?.nodeId || 'execution',
+            nodeExecutionIndex: agentFlowExecutedData.length,
+            previousObservedSnapshot: tokenAuditSnapshot,
+            previousSettledSnapshot: settledTokenAuditSnapshot,
+            latestTokenAuditSnapshot,
+            tokenAuditContext
+        })
+        if (finalNodeTokenUsageEvent.usagePayloads.length) {
+            await recordAgentflowTokenUsage(finalNodeTokenUsageEvent)
+            if (finalNodeTokenUsageEvent.advanceSettledSnapshot) {
+                settledTokenAuditSnapshot = latestTokenAuditSnapshot
+            }
         }
     }
 
@@ -2681,7 +3049,11 @@ export const executeAgentFlow = async ({
                 chatId,
                 chatMessage?.id,
                 sseStreamer,
-                abortController
+                abortController,
+                workspaceId,
+                userId,
+                orgId,
+                'AGENTFLOW'
             )
         }
     }

@@ -440,7 +440,13 @@ class TokenUsageAuditHandler extends BaseCallbackHandler {
     credentialName?: string
     model?: string
     provider?: string
-    tokenUsageCredentialCallId?: string
+    source?: string
+    billingMode?: string
+    preferredTokenUsageCredentialCallId?: string
+    tokenUsageCallIdsByRunId: Map<string, string>
+    recordedRunIds: Set<string>
+    recordedAnonymousCallIds: Set<string>
+    preferredCallIdAssigned = false
 
     constructor({
         tokenAuditContext,
@@ -448,6 +454,8 @@ class TokenUsageAuditHandler extends BaseCallbackHandler {
         credentialName,
         model,
         provider,
+        source,
+        billingMode,
         tokenUsageCredentialCallId
     }: {
         tokenAuditContext?: ICommonObject
@@ -455,6 +463,8 @@ class TokenUsageAuditHandler extends BaseCallbackHandler {
         credentialName?: string
         model?: string
         provider?: string
+        source?: string
+        billingMode?: string
         tokenUsageCredentialCallId?: string
     }) {
         super()
@@ -463,24 +473,53 @@ class TokenUsageAuditHandler extends BaseCallbackHandler {
         this.credentialName = credentialName
         this.model = model
         this.provider = provider
-        this.tokenUsageCredentialCallId = tokenUsageCredentialCallId
+        this.source = source
+        this.billingMode = billingMode
+        this.preferredTokenUsageCredentialCallId = tokenUsageCredentialCallId
+        this.tokenUsageCallIdsByRunId = new Map()
+        this.recordedRunIds = new Set()
+        this.recordedAnonymousCallIds = new Set()
     }
 
-    handleLLMEnd(output: any): void | Promise<void> {
+    private getOrCreateCallId(runId?: string) {
+        if (runId && this.tokenUsageCallIdsByRunId.has(runId)) {
+            return this.tokenUsageCallIdsByRunId.get(runId) as string
+        }
+
+        const callId =
+            !this.preferredCallIdAssigned && this.preferredTokenUsageCredentialCallId ? this.preferredTokenUsageCredentialCallId : uuidv4()
+        this.preferredCallIdAssigned = true
+
+        if (runId) {
+            this.tokenUsageCallIdsByRunId.set(runId, callId)
+        }
+
+        return callId
+    }
+
+    handleLLMStart(_llm: Serialized, _prompts: string[], runId: string): void | Promise<void> {
+        this.getOrCreateCallId(runId)
+    }
+
+    handleChatModelStart(_llm: Serialized, _messages: BaseMessageLike[][], runId: string): void | Promise<void> {
+        this.getOrCreateCallId(runId)
+    }
+
+    handleLLMEnd(output: any, runId?: string): void | Promise<void> {
         if (!this.tokenAuditContext || !output || typeof output !== 'object') return
 
         if (!Array.isArray(this.tokenAuditContext.tokenUsagePayloads)) {
             this.tokenAuditContext.tokenUsagePayloads = []
         }
 
-        if (!Array.isArray(this.tokenAuditContext.tokenUsageRecordedCallIds)) {
-            this.tokenAuditContext.tokenUsageRecordedCallIds = []
+        const callId = this.getOrCreateCallId(runId)
+        if (runId) {
+            if (this.recordedRunIds.has(runId)) return
+            this.recordedRunIds.add(runId)
+        } else {
+            if (this.recordedAnonymousCallIds.has(callId)) return
+            this.recordedAnonymousCallIds.add(callId)
         }
-
-        const callId = this.tokenUsageCredentialCallId || uuidv4()
-        const recordedCallIds = this.tokenAuditContext.tokenUsageRecordedCallIds as string[]
-        if (recordedCallIds.includes(callId)) return
-        recordedCallIds.push(callId)
 
         this.tokenAuditContext.tokenUsagePayloads.push({
             auditSource: 'llm_callback',
@@ -489,6 +528,8 @@ class TokenUsageAuditHandler extends BaseCallbackHandler {
             ...(this.credentialName ? { credentialName: this.credentialName } : {}),
             ...(this.model ? { model: this.model } : {}),
             ...(this.provider ? { provider: this.provider } : {}),
+            source: this.source || 'llm',
+            billingMode: this.billingMode || 'token',
             output
         })
 
@@ -508,12 +549,92 @@ class TokenUsageAuditHandler extends BaseCallbackHandler {
     }
 }
 
+const resolveCredentialNameFromAuditContext = (
+    tokenAuditContext: ICommonObject | undefined,
+    credentialId?: string,
+    credentialName?: string
+) => {
+    if (credentialName) return credentialName
+    if (!credentialId) return undefined
+
+    const credentialMetadataById =
+        tokenAuditContext?.credentialMetadataById && typeof tokenAuditContext.credentialMetadataById === 'object'
+            ? (tokenAuditContext.credentialMetadataById as Record<string, { credentialName?: string }>)
+            : undefined
+
+    return credentialMetadataById?.[credentialId]?.credentialName
+}
+
+const normalizeCredentialConfigValue = (value: unknown): string | undefined => {
+    if (typeof value !== 'string') return undefined
+    const normalizedValue = value.trim()
+    return normalizedValue || undefined
+}
+
+export const resolveCredentialIdFromConfig = (config?: ICommonObject): string | undefined => {
+    if (!config || typeof config !== 'object') return undefined
+
+    return (
+        normalizeCredentialConfigValue(config.FLOWISE_CREDENTIAL_ID) ||
+        normalizeCredentialConfigValue(config.credentialId) ||
+        normalizeCredentialConfigValue(config.credential)
+    )
+}
+
+export const createTokenUsageAuditInvocationConfig = ({
+    signal,
+    tokenAuditContext,
+    credentialId,
+    credentialName,
+    model,
+    provider,
+    source,
+    billingMode,
+    tokenUsageCredentialCallId
+}: {
+    signal?: AbortSignal
+    tokenAuditContext?: ICommonObject
+    credentialId?: string
+    credentialName?: string
+    model?: string
+    provider?: string
+    source?: string
+    billingMode?: string
+    tokenUsageCredentialCallId?: string
+}) => {
+    const callId = tokenUsageCredentialCallId || uuidv4()
+    const callbacks = createTokenUsageAuditCallbacks({
+        tokenAuditContext,
+        credentialId,
+        credentialName,
+        model,
+        provider,
+        source,
+        billingMode,
+        tokenUsageCredentialCallId: callId
+    })
+
+    return {
+        tokenUsageCredentialCallId: callId,
+        config: callbacks.length
+            ? {
+                  signal,
+                  callbacks
+              }
+            : {
+                  signal
+              }
+    }
+}
+
 export const createTokenUsageAuditCallbacks = ({
     tokenAuditContext,
     credentialId,
     credentialName,
     model,
     provider,
+    source,
+    billingMode,
     tokenUsageCredentialCallId
 }: {
     tokenAuditContext?: ICommonObject
@@ -521,15 +642,13 @@ export const createTokenUsageAuditCallbacks = ({
     credentialName?: string
     model?: string
     provider?: string
+    source?: string
+    billingMode?: string
     tokenUsageCredentialCallId?: string
 }) => {
     if (!tokenAuditContext) return []
 
-    const resolvedCredentialName =
-        credentialName ||
-        (credentialId && tokenAuditContext?.credentialMetadataById
-            ? (tokenAuditContext.credentialMetadataById as Record<string, { credentialName?: string }>)[credentialId]?.credentialName
-            : undefined)
+    const resolvedCredentialName = resolveCredentialNameFromAuditContext(tokenAuditContext, credentialId, credentialName)
 
     return [
         new TokenUsageAuditHandler({
@@ -538,9 +657,42 @@ export const createTokenUsageAuditCallbacks = ({
             credentialName: resolvedCredentialName,
             model,
             provider,
+            source: source || 'llm',
+            billingMode: billingMode || 'token',
             tokenUsageCredentialCallId: tokenUsageCredentialCallId || uuidv4()
         })
     ]
+}
+
+const getNodeInputValue = (nodeData: INodeData, candidates: string[]): string | undefined => {
+    for (const candidate of candidates) {
+        const value = nodeData?.inputs?.[candidate]
+        if (typeof value === 'string' && value.trim()) {
+            return value.trim()
+        }
+    }
+    return undefined
+}
+
+const getTokenAuditMetadataFromNodeData = (nodeData: INodeData, options: ICommonObject) => {
+    const credentialId =
+        (typeof nodeData?.credential === 'string' && nodeData.credential.trim()) ||
+        getNodeInputValue(nodeData, ['credential', 'credentialId', 'FLOWISE_CREDENTIAL_ID'])
+    const credentialMetadataById =
+        options.tokenAuditContext?.credentialMetadataById && typeof options.tokenAuditContext.credentialMetadataById === 'object'
+            ? (options.tokenAuditContext.credentialMetadataById as Record<string, { credentialName?: string }>)
+            : undefined
+
+    return {
+        credentialId,
+        credentialName: credentialId ? credentialMetadataById?.[credentialId]?.credentialName : undefined,
+        model: getNodeInputValue(nodeData, ['modelName', 'model', 'chatModel', 'llmModelName', 'agentModelName']),
+        provider:
+            getNodeInputValue(nodeData, ['llmModel', 'agentModel', 'provider', 'providerName']) ||
+            (typeof nodeData?.name === 'string' ? nodeData.name : undefined),
+        source: 'llm',
+        billingMode: 'token'
+    }
 }
 
 /*TODO - Add llamaIndex tracer to non evaluation runs*/
@@ -627,9 +779,12 @@ export const additionalCallbacks = async (nodeData: INodeData, options: ICommonO
     try {
         const callbacks: any = []
         if (options.tokenAuditContext) {
+            const tokenAuditMetadata = getTokenAuditMetadataFromNodeData(nodeData, options)
             callbacks.push(
                 new TokenUsageAuditHandler({
-                    tokenAuditContext: options.tokenAuditContext
+                    tokenAuditContext: options.tokenAuditContext,
+                    ...tokenAuditMetadata,
+                    tokenUsageCredentialCallId: uuidv4()
                 })
             )
         }

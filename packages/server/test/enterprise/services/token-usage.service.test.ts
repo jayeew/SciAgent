@@ -6,7 +6,7 @@ import { ChatFlow } from '../../../src/database/entities/ChatFlow'
 import { Assistant } from '../../../src/database/entities/Assistant'
 import { User } from '../../../src/enterprise/database/entities/user.entity'
 
-const mockConsumeCreditByCredentialUsages = jest.fn()
+const mockConsumeCreditByBillingUsages = jest.fn()
 const mockGetRunningExpressApp = jest.fn()
 
 jest.mock('../../../src/utils/getRunningExpressApp', () => ({
@@ -15,7 +15,7 @@ jest.mock('../../../src/utils/getRunningExpressApp', () => ({
 
 jest.mock('../../../src/enterprise/services/workspace-credit.service', () => ({
     WorkspaceCreditService: jest.fn().mockImplementation(() => ({
-        consumeCreditByCredentialUsages: mockConsumeCreditByCredentialUsages
+        consumeCreditByBillingUsages: mockConsumeCreditByBillingUsages
     }))
 }))
 
@@ -48,8 +48,8 @@ describe('TokenUsageService', () => {
         }
     }
 
-    it('groups ordered credential rows but bills each attributed usage separately', async () => {
-        const savedExecutions: Record<string, any>[] = []
+    const setupUsageRepositories = () => {
+        const savedExecutionsById = new Map<string, Record<string, any>>()
         const savedCredentialRowsById = new Map<string, Record<string, any>>()
         const savedCredentialCallRowsById = new Map<string, Record<string, any>>()
 
@@ -57,12 +57,28 @@ describe('TokenUsageService', () => {
             create: jest.fn((value: Record<string, any>) => value),
             save: jest.fn(async (value: Record<string, any>) => {
                 const savedValue = {
-                    id: `execution-${savedExecutions.length + 1}`,
+                    id: value.id || `execution-${savedExecutionsById.size + 1}`,
                     ...value
                 }
-                savedExecutions.push(savedValue)
+                savedExecutionsById.set(savedValue.id, savedValue)
                 return savedValue
-            })
+            }),
+            findOneBy: jest.fn(async (where: Record<string, any>) => {
+                if (where.id) return savedExecutionsById.get(where.id) || null
+
+                const idempotencyKey = where.idempotencyKey
+                if (!idempotencyKey) return null
+
+                return (
+                    Array.from(savedExecutionsById.values()).find(
+                        (item) =>
+                            item.workspaceId === where.workspaceId &&
+                            item.organizationId === where.organizationId &&
+                            item.idempotencyKey === idempotencyKey
+                    ) || null
+                )
+            }),
+            createQueryBuilder: jest.fn()
         }
 
         const credentialRepository = {
@@ -73,11 +89,16 @@ describe('TokenUsageService', () => {
                     id: row.id || `credential-${savedCredentialRowsById.size + index + 1}`,
                     ...row
                 }))
-                savedRows.forEach((row) => {
-                    savedCredentialRowsById.set(row.id, row)
-                })
+                savedRows.forEach((row) => savedCredentialRowsById.set(row.id, row))
                 return Array.isArray(value) ? savedRows : savedRows[0]
-            })
+            }),
+            findBy: jest.fn(async (where: Record<string, any>) => {
+                if (where.usageExecutionId) {
+                    return Array.from(savedCredentialRowsById.values()).filter((row) => row.usageExecutionId === where.usageExecutionId)
+                }
+                return []
+            }),
+            createQueryBuilder: jest.fn()
         }
 
         const credentialCallRepository = {
@@ -88,29 +109,45 @@ describe('TokenUsageService', () => {
                     id: row.id || `call-${savedCredentialCallRowsById.size + index + 1}`,
                     ...row
                 }))
-                savedRows.forEach((row) => {
-                    savedCredentialCallRowsById.set(row.id, row)
-                })
+                savedRows.forEach((row) => savedCredentialCallRowsById.set(row.id, row))
                 return Array.isArray(value) ? savedRows : savedRows[0]
+            }),
+            findBy: jest.fn(async (where: Record<string, any>) => {
+                const credentialIds = Array.isArray(where.tokenUsageCredentialId?._value)
+                    ? where.tokenUsageCredentialId._value
+                    : where.tokenUsageCredentialId
+                if (Array.isArray(credentialIds)) {
+                    return Array.from(savedCredentialCallRowsById.values()).filter((row) =>
+                        credentialIds.includes(row.tokenUsageCredentialId)
+                    )
+                }
+                return []
             }),
             createQueryBuilder: jest.fn()
         }
 
         const workspaceCreditTransactionRepository = {
-            findBy: jest.fn(async () => {
-                const savedCredentialCallRows = Array.from(savedCredentialCallRowsById.values())
-                return savedCredentialCallRows.map((row) => ({
-                    id: `transaction-${row.id}`,
-                    workspaceId: 'workspace-1',
-                    userId: 'user-1',
-                    type: 'consume',
-                    amount: row.billingMode === 'image_count' ? -220 : -100,
-                    balance: 9000,
-                    credentialId: row.credentialId,
-                    credentialName: row.credentialName,
-                    tokenUsageCredentialCallId: row.id,
-                    createdDate: new Date('2026-03-13T01:00:00.000Z')
-                }))
+            findBy: jest.fn(async (where: Record<string, any>) => {
+                const callIds = Array.isArray(where.tokenUsageCredentialCallId?._value)
+                    ? where.tokenUsageCredentialCallId._value
+                    : where.tokenUsageCredentialCallId
+                const callIdList = Array.isArray(callIds) ? callIds : []
+
+                return callIdList
+                    .map((callId: string) => savedCredentialCallRowsById.get(callId))
+                    .filter(Boolean)
+                    .map((row: any) => ({
+                        id: `transaction-${row.id}`,
+                        workspaceId: 'workspace-1',
+                        userId: 'user-1',
+                        type: 'consume',
+                        amount: row.billingMode === 'image_count' ? -220 : -100,
+                        balance: 9000,
+                        credentialId: savedCredentialRowsById.get(row.tokenUsageCredentialId)?.credentialId,
+                        credentialName: savedCredentialRowsById.get(row.tokenUsageCredentialId)?.credentialName,
+                        tokenUsageCredentialCallId: row.id,
+                        createdDate: new Date('2026-03-13T01:00:00.000Z')
+                    }))
             })
         }
 
@@ -127,9 +164,21 @@ describe('TokenUsageService', () => {
             }
         })
 
-        mockConsumeCreditByCredentialUsages.mockResolvedValue({
-            creditConsumed: 600,
-            creditBalance: 9400,
+        return {
+            executionRepository,
+            credentialRepository,
+            credentialCallRepository,
+            savedExecutionsById,
+            savedCredentialRowsById,
+            savedCredentialCallRowsById
+        }
+    }
+
+    it('records mixed token and image usages with ordered call-level settlement', async () => {
+        const { savedExecutionsById, savedCredentialRowsById, savedCredentialCallRowsById } = setupUsageRepositories()
+        mockConsumeCreditByBillingUsages.mockResolvedValue({
+            creditConsumed: 420,
+            creditBalance: 9580,
             transactions: [],
             usageResults: []
         })
@@ -145,197 +194,7 @@ describe('TokenUsageService', () => {
             flowId: 'flow-1',
             executionId: 'runtime-execution-1',
             chatId: 'chat-1',
-            usagePayloads: [
-                {
-                    model: 'deepseek-chat',
-                    usage_metadata: { input_tokens: 100, output_tokens: 50, total_tokens: 150 }
-                },
-                {
-                    model: 'deepseek-chat',
-                    usage_metadata: { input_tokens: 110, output_tokens: 55, total_tokens: 165 }
-                },
-                {
-                    model: 'deepseek-chat',
-                    usage_metadata: { input_tokens: 120, output_tokens: 60, total_tokens: 180 }
-                },
-                {
-                    model: 'deepseek-reasoner',
-                    usage_metadata: { input_tokens: 200, output_tokens: 80, total_tokens: 280 }
-                },
-                {
-                    model: 'deepseek-reasoner',
-                    usage_metadata: { input_tokens: 210, output_tokens: 90, total_tokens: 300 }
-                },
-                {
-                    model: 'doubao-seedream-5-0-260128',
-                    source: 'media_generation',
-                    tokenUsageCredentialCallId: 'call-doubao-1',
-                    billingMode: 'image_count',
-                    usage: { units: 1 }
-                }
-            ],
-            credentialAccesses: [
-                { credentialId: 'credential-llm', credentialName: 'DeepSeek Credential' },
-                { credentialId: 'credential-llm', credentialName: 'DeepSeek Credential' },
-                { credentialId: 'credential-llm', credentialName: 'DeepSeek Credential' },
-                { credentialId: 'credential-llm', credentialName: 'DeepSeek Credential' },
-                { credentialId: 'credential-llm', credentialName: 'DeepSeek Credential' },
-                { credentialId: 'credential-doubao', credentialName: 'Doubao Credential' }
-            ]
-        })
-
-        expect(savedExecutions).toHaveLength(1)
-        const savedCredentialRows = Array.from(savedCredentialRowsById.values())
-        const savedCredentialCallRows = Array.from(savedCredentialCallRowsById.values())
-
-        expect(savedCredentialRows).toHaveLength(3)
-        expect(savedCredentialCallRows).toHaveLength(6)
-
-        expect(savedCredentialRows).toEqual(
-            expect.arrayContaining([
-                expect.objectContaining({
-                    credentialId: 'credential-llm',
-                    credentialName: 'DeepSeek Credential',
-                    model: 'deepseek-chat',
-                    attributionMode: 'ordered',
-                    usageCount: 3,
-                    totalTokens: 495,
-                    chargedCredit: 300
-                }),
-                expect.objectContaining({
-                    credentialId: 'credential-llm',
-                    credentialName: 'DeepSeek Credential',
-                    model: 'deepseek-reasoner',
-                    attributionMode: 'ordered',
-                    usageCount: 2,
-                    totalTokens: 580,
-                    chargedCredit: 200
-                }),
-                expect.objectContaining({
-                    credentialId: 'credential-doubao',
-                    credentialName: 'Doubao Credential',
-                    model: 'doubao-seedream-5-0-260128',
-                    attributionMode: 'ordered',
-                    usageCount: 1,
-                    totalTokens: 0,
-                    chargedCredit: 220
-                })
-            ])
-        )
-
-        const savedImageUsage = savedCredentialRows.find((row) => row.model === 'doubao-seedream-5-0-260128')
-        expect(savedImageUsage).toBeDefined()
-        if (!savedImageUsage) {
-            throw new Error('Expected Doubao image usage row to be present')
-        }
-        expect(JSON.parse(savedImageUsage.usageBreakdown)).toEqual({
-            units: 1,
-            generated_images: 1,
-            source: 'media_generation'
-        })
-
-        expect(savedCredentialCallRows).toEqual(
-            expect.arrayContaining([
-                expect.objectContaining({
-                    id: 'call-doubao-1',
-                    billingMode: 'image_count',
-                    sequenceIndex: 1,
-                    chargedCredit: 220,
-                    creditTransactionId: 'transaction-call-doubao-1'
-                })
-            ])
-        )
-
-        expect(mockConsumeCreditByCredentialUsages).toHaveBeenCalledTimes(1)
-
-        const billedUsages = mockConsumeCreditByCredentialUsages.mock.calls[0][2]
-        expect(billedUsages).toHaveLength(6)
-        expect(billedUsages.filter((usage: Record<string, any>) => usage.model === 'deepseek-chat')).toHaveLength(3)
-        expect(billedUsages.filter((usage: Record<string, any>) => usage.model === 'deepseek-reasoner')).toHaveLength(2)
-        expect(billedUsages.filter((usage: Record<string, any>) => usage.model === 'doubao-seedream-5-0-260128')).toHaveLength(1)
-
-        const billedImageUsage = billedUsages.find((usage: Record<string, any>) => usage.model === 'doubao-seedream-5-0-260128')
-        expect(billedImageUsage.usageBreakdown).toEqual({
-            units: 1,
-            generated_images: 1,
-            source: 'media_generation'
-        })
-        expect(billedImageUsage.tokenUsageCredentialCallId).toBe('call-doubao-1')
-    })
-
-    it('attributes per-entry exactly for a single credential even when usage entries exceed credential accesses', async () => {
-        const savedCredentialRowsById = new Map<string, Record<string, any>>()
-        const savedCredentialCallRowsById = new Map<string, Record<string, any>>()
-
-        mockGetRunningExpressApp.mockReturnValue({
-            AppDataSource: {
-                getRepository: jest.fn((entity: any) => {
-                    if (entity === TokenUsageExecution) {
-                        return {
-                            create: jest.fn((value: Record<string, any>) => value),
-                            save: jest.fn(async (value: Record<string, any>) => ({ id: 'execution-1', ...value }))
-                        }
-                    }
-
-                    if (entity === TokenUsageCredential) {
-                        return {
-                            create: jest.fn((value: Record<string, any>) => value),
-                            save: jest.fn(async (value: Record<string, any> | Record<string, any>[]) => {
-                                const rows = Array.isArray(value) ? value : [value]
-                                const savedRows = rows.map((row: Record<string, any>, index: number) => ({
-                                    id: row.id || `credential-${savedCredentialRowsById.size + index + 1}`,
-                                    ...row
-                                }))
-                                savedRows.forEach((row) => savedCredentialRowsById.set(row.id, row))
-                                return Array.isArray(value) ? savedRows : savedRows[0]
-                            })
-                        }
-                    }
-
-                    if (entity === TokenUsageCredentialCall) {
-                        return {
-                            create: jest.fn((value: Record<string, any>) => value),
-                            save: jest.fn(async (value: Record<string, any> | Record<string, any>[]) => {
-                                const rows = Array.isArray(value) ? value : [value]
-                                const savedRows = rows.map((row: Record<string, any>, index: number) => ({
-                                    id: row.id || `call-${savedCredentialCallRowsById.size + index + 1}`,
-                                    ...row
-                                }))
-                                savedRows.forEach((row) => savedCredentialCallRowsById.set(row.id, row))
-                                return Array.isArray(value) ? savedRows : savedRows[0]
-                            })
-                        }
-                    }
-
-                    if (entity === WorkspaceCreditTransaction) {
-                        return {
-                            findBy: jest.fn().mockResolvedValue([])
-                        }
-                    }
-
-                    throw new Error(`Unexpected repository request: ${entity?.name || entity}`)
-                })
-            }
-        })
-
-        mockConsumeCreditByCredentialUsages.mockResolvedValue({
-            creditConsumed: 200,
-            creditBalance: 9800,
-            transactions: [],
-            usageResults: []
-        })
-
-        const { TokenUsageService } = await import('../../../src/enterprise/services/token-usage.service')
-        const service = new TokenUsageService()
-
-        await service.recordTokenUsage({
-            workspaceId: 'workspace-1',
-            organizationId: 'org-1',
-            userId: 'user-1',
-            flowType: 'AGENTFLOW',
-            flowId: 'flow-1',
-            executionId: 'runtime-execution-2',
-            chatId: 'chat-2',
+            idempotencyKey: 'usage-1',
             usagePayloads: [
                 {
                     auditSource: 'llm_callback',
@@ -358,99 +217,138 @@ describe('TokenUsageService', () => {
                     output: {
                         usage_metadata: { input_tokens: 120, output_tokens: 30, total_tokens: 150 }
                     }
+                },
+                {
+                    credentialId: 'credential-image',
+                    credentialName: 'Doubao Credential',
+                    provider: 'doubao',
+                    model: 'doubao-seedream-5-0-260128',
+                    source: 'media_generation',
+                    billingMode: 'image_count',
+                    tokenUsageCredentialCallId: 'call-img-1',
+                    usage: { units: 1 }
                 }
             ],
-            credentialAccesses: [{ credentialId: 'credential-llm', credentialName: 'DeepSeek Credential' }]
+            credentialAccesses: [
+                {
+                    credentialId: 'credential-llm',
+                    credentialName: 'DeepSeek Credential',
+                    provider: 'chatDeepseek',
+                    model: 'deepseek-chat',
+                    tokenUsageCredentialCallId: 'call-llm-1'
+                },
+                {
+                    credentialId: 'credential-llm',
+                    credentialName: 'DeepSeek Credential',
+                    provider: 'chatDeepseek',
+                    model: 'deepseek-chat',
+                    tokenUsageCredentialCallId: 'call-llm-2'
+                },
+                {
+                    credentialId: 'credential-image',
+                    credentialName: 'Doubao Credential',
+                    provider: 'doubao',
+                    model: 'doubao-seedream-5-0-260128',
+                    tokenUsageCredentialCallId: 'call-img-1'
+                }
+            ]
         })
 
+        const savedExecution = Array.from(savedExecutionsById.values())[0]
         const savedCredentialRows = Array.from(savedCredentialRowsById.values())
-        const savedCredentialCallRows = Array.from(savedCredentialCallRowsById.values())
-        expect(savedCredentialRows).toHaveLength(1)
-        expect(savedCredentialRows[0]).toEqual(
+        const savedCallRows = Array.from(savedCredentialCallRowsById.values())
+
+        expect(savedExecution).toEqual(
             expect.objectContaining({
-                credentialId: 'credential-llm',
-                credentialName: 'DeepSeek Credential',
-                model: 'deepseek-chat',
-                attributionMode: 'ordered',
-                usageCount: 2,
-                totalTokens: 300
+                totalTokens: 300,
+                inputTokens: 220,
+                outputTokens: 80,
+                imageCount: 1
             })
         )
-        expect(savedCredentialCallRows).toHaveLength(2)
-        expect(savedCredentialCallRows.map((row) => row.id)).toEqual(['call-llm-1', 'call-llm-2'])
-        expect(savedCredentialCallRows.every((row) => row.attributionMode === 'ordered')).toBe(true)
 
-        const billedUsages = mockConsumeCreditByCredentialUsages.mock.calls[0][2]
-        expect(billedUsages).toHaveLength(2)
-        expect(billedUsages).toEqual(
+        expect(savedCredentialRows).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
-                    tokenUsageCredentialCallId: 'call-llm-1',
                     credentialId: 'credential-llm',
                     credentialName: 'DeepSeek Credential',
-                    provider: 'chatDeepseek',
-                    model: 'deepseek-chat'
+                    model: 'deepseek-chat',
+                    totalTokens: 300,
+                    imageCount: 0,
+                    chargedCredit: 200
                 }),
                 expect.objectContaining({
-                    tokenUsageCredentialCallId: 'call-llm-2',
-                    credentialId: 'credential-llm',
-                    credentialName: 'DeepSeek Credential',
-                    provider: 'chatDeepseek',
-                    model: 'deepseek-chat'
+                    credentialId: 'credential-image',
+                    credentialName: 'Doubao Credential',
+                    model: 'doubao-seedream-5-0-260128',
+                    totalTokens: 0,
+                    imageCount: 1,
+                    chargedCredit: 220
                 })
             ])
         )
+
+        expect(savedCallRows).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'call-llm-1',
+                    billingMode: 'token',
+                    totalTokens: 150,
+                    chargedCredit: 100
+                }),
+                expect.objectContaining({
+                    id: 'call-llm-2',
+                    billingMode: 'token',
+                    totalTokens: 150,
+                    chargedCredit: 100
+                }),
+                expect.objectContaining({
+                    id: 'call-img-1',
+                    billingMode: 'image_count',
+                    imageCount: 1,
+                    chargedCredit: 220
+                })
+            ])
+        )
+
+        expect(mockConsumeCreditByBillingUsages).toHaveBeenCalledTimes(1)
+        expect(mockConsumeCreditByBillingUsages).toHaveBeenCalledWith('workspace-1', 'user-1', [
+            expect.objectContaining({
+                credentialId: 'credential-llm',
+                tokenUsageCredentialCallId: 'call-llm-1',
+                billingMode: 'token',
+                usage: {
+                    inputTokens: 100,
+                    outputTokens: 50,
+                    totalTokens: 150
+                }
+            }),
+            expect.objectContaining({
+                credentialId: 'credential-llm',
+                tokenUsageCredentialCallId: 'call-llm-2',
+                billingMode: 'token',
+                usage: {
+                    inputTokens: 120,
+                    outputTokens: 30,
+                    totalTokens: 150
+                }
+            }),
+            expect.objectContaining({
+                credentialId: 'credential-image',
+                tokenUsageCredentialCallId: 'call-img-1',
+                billingMode: 'image_count',
+                usage: {
+                    units: 1
+                }
+            })
+        ])
     })
 
-    it('fills model metadata from execution payload config and preserves total-token billing for fallback entries', async () => {
-        const savedCredentialRowsById = new Map<string, Record<string, any>>()
-
-        mockGetRunningExpressApp.mockReturnValue({
-            AppDataSource: {
-                getRepository: jest.fn((entity: any) => {
-                    if (entity === TokenUsageExecution) {
-                        return {
-                            create: jest.fn((value: Record<string, any>) => value),
-                            save: jest.fn(async (value: Record<string, any>) => ({ id: 'execution-2', ...value }))
-                        }
-                    }
-
-                    if (entity === TokenUsageCredential) {
-                        return {
-                            create: jest.fn((value: Record<string, any>) => value),
-                            save: jest.fn(async (value: Record<string, any> | Record<string, any>[]) => {
-                                const rows = Array.isArray(value) ? value : [value]
-                                const savedRows = rows.map((row: Record<string, any>, index: number) => ({
-                                    id: row.id || `credential-fallback-${savedCredentialRowsById.size + index + 1}`,
-                                    ...row
-                                }))
-                                savedRows.forEach((row) => savedCredentialRowsById.set(row.id, row))
-                                return Array.isArray(value) ? savedRows : savedRows[0]
-                            })
-                        }
-                    }
-
-                    if (entity === TokenUsageCredentialCall) {
-                        return {
-                            create: jest.fn((value: Record<string, any>) => value),
-                            save: jest.fn(async (value: Record<string, any> | Record<string, any>[]) => value)
-                        }
-                    }
-
-                    if (entity === WorkspaceCreditTransaction) {
-                        return {
-                            findBy: jest.fn().mockResolvedValue([])
-                        }
-                    }
-
-                    throw new Error(`Unexpected repository request: ${entity?.name || entity}`)
-                })
-            }
-        })
-
-        mockConsumeCreditByCredentialUsages.mockResolvedValue({
-            creditConsumed: 350,
-            creditBalance: 9650,
+    it('normalizes token totals to input plus output and preserves raw provider total in breakdown', async () => {
+        const { savedCredentialRowsById } = setupUsageRepositories()
+        mockConsumeCreditByBillingUsages.mockResolvedValue({
+            creditConsumed: 100,
+            creditBalance: 9900,
             transactions: [],
             usageResults: []
         })
@@ -464,8 +362,8 @@ describe('TokenUsageService', () => {
             userId: 'user-1',
             flowType: 'AGENTFLOW',
             flowId: 'flow-1',
-            executionId: 'runtime-execution-3',
-            chatId: 'chat-3',
+            executionId: 'runtime-execution-2',
+            chatId: 'chat-2',
             usagePayloads: [
                 {
                     nodeId: 'llmAgentflow_0',
@@ -490,36 +388,289 @@ describe('TokenUsageService', () => {
             credentialAccesses: [{ credentialId: 'credential-llm', credentialName: 'DeepSeek Credential' }]
         })
 
-        const savedCredentialRows = Array.from(savedCredentialRowsById.values())
-        expect(savedCredentialRows).toHaveLength(1)
-        expect(savedCredentialRows[0]).toEqual(
+        const savedRow = Array.from(savedCredentialRowsById.values())[0]
+        expect(savedRow).toEqual(
             expect.objectContaining({
                 credentialId: 'credential-llm',
                 credentialName: 'DeepSeek Credential',
                 model: 'deepseek-chat',
-                attributionMode: 'ordered'
+                inputTokens: 100,
+                outputTokens: 50,
+                totalTokens: 150
+            })
+        )
+        expect(JSON.parse(savedRow.usageBreakdown)).toEqual(
+            expect.objectContaining({
+                raw_total_tokens: 300
             })
         )
 
-        const billedUsages = mockConsumeCreditByCredentialUsages.mock.calls[0][2]
-        expect(billedUsages).toEqual([
+        expect(mockConsumeCreditByBillingUsages).toHaveBeenCalledWith('workspace-1', 'user-1', [
             expect.objectContaining({
-                credentialId: 'credential-llm',
-                credentialName: 'DeepSeek Credential',
-                provider: 'chatDeepseek',
-                model: 'deepseek-chat',
-                totalTokens: 300,
-                inputTokens: 100,
-                outputTokens: 50,
-                billUsingTotalTokens: true,
-                usageBreakdown: expect.objectContaining({
-                    unclassified_tokens: 150
-                })
+                billingMode: 'token',
+                usage: {
+                    inputTokens: 100,
+                    outputTokens: 50,
+                    totalTokens: 150
+                }
             })
         ])
     })
 
-    it('uses aggregated credential metrics for record details when credential rows exist', async () => {
+    it('does not persist or bill estimated-only token usage from legacy compatibility payloads', async () => {
+        const { savedExecutionsById, savedCredentialRowsById, savedCredentialCallRowsById } = setupUsageRepositories()
+        mockConsumeCreditByBillingUsages.mockResolvedValue({
+            creditConsumed: 100,
+            creditBalance: 9900,
+            transactions: [],
+            usageResults: []
+        })
+
+        const { TokenUsageService } = await import('../../../src/enterprise/services/token-usage.service')
+        const service = new TokenUsageService()
+
+        await service.recordTokenUsage({
+            workspaceId: 'workspace-1',
+            organizationId: 'org-1',
+            userId: 'user-1',
+            flowType: 'AGENTFLOW',
+            flowId: 'flow-1',
+            executionId: 'runtime-execution-estimated-1',
+            chatId: 'chat-estimated-1',
+            usagePayloads: [
+                {
+                    nodeId: 'llmAgentflow_6',
+                    data: {
+                        input: {
+                            llmModelConfig: {
+                                credential: 'credential-llm',
+                                modelName: 'deepseek-chat',
+                                llmModel: 'chatDeepseek'
+                            }
+                        },
+                        output: {
+                            estimatedTokenUsage: {
+                                input_tokens: 60,
+                                output_tokens: 40,
+                                total_tokens: 100
+                            }
+                        }
+                    }
+                }
+            ],
+            credentialAccesses: []
+        })
+
+        expect(savedExecutionsById.size).toBe(0)
+        expect(savedCredentialRowsById.size).toBe(0)
+        expect(savedCredentialCallRowsById.size).toBe(0)
+        expect(mockConsumeCreditByBillingUsages).not.toHaveBeenCalled()
+    })
+
+    it('reuses existing execution by idempotency key without duplicate billing', async () => {
+        const { savedExecutionsById } = setupUsageRepositories()
+        mockConsumeCreditByBillingUsages.mockResolvedValue({
+            creditConsumed: 100,
+            creditBalance: 9900,
+            transactions: [],
+            usageResults: []
+        })
+
+        const { TokenUsageService } = await import('../../../src/enterprise/services/token-usage.service')
+        const service = new TokenUsageService()
+
+        const input = {
+            workspaceId: 'workspace-1',
+            organizationId: 'org-1',
+            userId: 'user-1',
+            flowType: 'AGENTFLOW' as const,
+            flowId: 'flow-1',
+            executionId: 'runtime-execution-3',
+            chatId: 'chat-3',
+            idempotencyKey: 'idempotent-execution-1',
+            usagePayloads: [
+                {
+                    auditSource: 'llm_callback',
+                    credentialId: 'credential-llm',
+                    credentialName: 'DeepSeek Credential',
+                    provider: 'chatDeepseek',
+                    model: 'deepseek-chat',
+                    tokenUsageCredentialCallId: 'call-llm-idempotent',
+                    output: {
+                        usage_metadata: { input_tokens: 90, output_tokens: 10, total_tokens: 100 }
+                    }
+                }
+            ],
+            credentialAccesses: [
+                {
+                    credentialId: 'credential-llm',
+                    credentialName: 'DeepSeek Credential',
+                    provider: 'chatDeepseek',
+                    model: 'deepseek-chat',
+                    tokenUsageCredentialCallId: 'call-llm-idempotent'
+                }
+            ]
+        }
+
+        await service.recordTokenUsage(input)
+        await service.recordTokenUsage(input)
+
+        expect(mockConsumeCreditByBillingUsages).toHaveBeenCalledTimes(1)
+        expect(savedExecutionsById.size).toBe(1)
+        expect(Array.from(savedExecutionsById.values())[0]).toEqual(
+            expect.objectContaining({
+                inputTokens: 90,
+                outputTokens: 10,
+                totalTokens: 100
+            })
+        )
+    })
+
+    it('appends additional resume payloads to the same execution and charges only the new call ids', async () => {
+        const { savedExecutionsById, savedCredentialRowsById, savedCredentialCallRowsById } = setupUsageRepositories()
+        mockConsumeCreditByBillingUsages
+            .mockResolvedValueOnce({
+                creditConsumed: 30,
+                creditBalance: 1970,
+                transactions: [],
+                usageResults: []
+            })
+            .mockResolvedValueOnce({
+                creditConsumed: 120,
+                creditBalance: 1850,
+                transactions: [],
+                usageResults: []
+            })
+
+        const { TokenUsageService } = await import('../../../src/enterprise/services/token-usage.service')
+        const service = new TokenUsageService()
+
+        const sharedExecutionIdentity = {
+            workspaceId: 'workspace-1',
+            organizationId: 'org-1',
+            userId: 'user-1',
+            flowType: 'AGENTFLOW' as const,
+            flowId: 'flow-1',
+            executionId: 'runtime-execution-resume-1',
+            chatId: 'chat-resume-1',
+            sessionId: 'session-resume-1'
+        }
+
+        await service.recordTokenUsage({
+            ...sharedExecutionIdentity,
+            idempotencyKey: 'AGENTFLOW:flow-1:runtime-execution-resume-1:chat-resume-1:session-resume-1',
+            usagePayloads: [
+                {
+                    auditSource: 'llm_callback',
+                    credentialId: 'credential-alibaba',
+                    credentialName: 'Alibaba Credential',
+                    provider: 'chatAlibabaTongyi',
+                    model: 'qwen3.5-plus',
+                    tokenUsageCredentialCallId: 'call-alibaba-1',
+                    output: {
+                        usage_metadata: { input_tokens: 266, output_tokens: 2075, total_tokens: 2341 }
+                    }
+                }
+            ],
+            credentialAccesses: [
+                {
+                    credentialId: 'credential-alibaba',
+                    credentialName: 'Alibaba Credential',
+                    provider: 'chatAlibabaTongyi',
+                    model: 'qwen3.5-plus',
+                    tokenUsageCredentialCallId: 'call-alibaba-1'
+                }
+            ]
+        })
+
+        await service.recordTokenUsage({
+            ...sharedExecutionIdentity,
+            idempotencyKey: 'AGENTFLOW:flow-1:runtime-execution-resume-1:chat-resume-1:session-resume-1',
+            usagePayloads: [
+                {
+                    auditSource: 'llm_callback',
+                    credentialId: 'credential-deepseek',
+                    credentialName: 'DeepSeek Credential',
+                    provider: 'chatDeepseek',
+                    model: 'deepseek-chat',
+                    tokenUsageCredentialCallId: 'call-deepseek-1',
+                    output: {
+                        usage_metadata: { input_tokens: 1803, output_tokens: 492, total_tokens: 2295 }
+                    }
+                },
+                {
+                    auditSource: 'llm_callback',
+                    credentialId: 'credential-deepseek',
+                    credentialName: 'DeepSeek Credential',
+                    provider: 'chatDeepseek',
+                    model: 'deepseek-chat',
+                    tokenUsageCredentialCallId: 'call-deepseek-2',
+                    output: {
+                        usage_metadata: { input_tokens: 564, output_tokens: 1029, total_tokens: 1593 }
+                    }
+                }
+            ],
+            credentialAccesses: [
+                {
+                    credentialId: 'credential-deepseek',
+                    credentialName: 'DeepSeek Credential',
+                    provider: 'chatDeepseek',
+                    model: 'deepseek-chat',
+                    tokenUsageCredentialCallId: 'call-deepseek-1'
+                },
+                {
+                    credentialId: 'credential-deepseek',
+                    credentialName: 'DeepSeek Credential',
+                    provider: 'chatDeepseek',
+                    model: 'deepseek-chat',
+                    tokenUsageCredentialCallId: 'call-deepseek-2'
+                }
+            ]
+        })
+
+        expect(mockConsumeCreditByBillingUsages).toHaveBeenCalledTimes(2)
+        expect(savedExecutionsById.size).toBe(1)
+        expect(Array.from(savedExecutionsById.values())[0]).toEqual(
+            expect.objectContaining({
+                inputTokens: 2633,
+                outputTokens: 3596,
+                totalTokens: 6229
+            })
+        )
+        expect(Array.from(savedCredentialRowsById.values())).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    credentialId: 'credential-alibaba',
+                    totalTokens: 2341
+                }),
+                expect.objectContaining({
+                    credentialId: 'credential-deepseek',
+                    totalTokens: 3888
+                })
+            ])
+        )
+        expect(Array.from(savedCredentialCallRowsById.values())).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'call-alibaba-1',
+                    billingMode: 'token',
+                    totalTokens: 2341
+                }),
+                expect.objectContaining({
+                    id: 'call-deepseek-1',
+                    billingMode: 'token',
+                    totalTokens: 2295
+                }),
+                expect.objectContaining({
+                    id: 'call-deepseek-2',
+                    billingMode: 'token',
+                    totalTokens: 1593
+                })
+            ])
+        )
+    })
+
+    it('returns image and charged credit fields in usage details', async () => {
         const executionQueryBuilder = createQueryBuilderMock({
             count: 1,
             many: [
@@ -542,7 +693,11 @@ describe('TokenUsageService', () => {
                     rejectedPredictionTokens: 0,
                     audioInputTokens: 0,
                     audioOutputTokens: 0,
-                    usageBreakdown: JSON.stringify({ units: 2 }),
+                    imageCount: 2,
+                    videoCount: 0,
+                    seconds: 0,
+                    characters: 0,
+                    usageBreakdown: JSON.stringify({ units: 2, generated_images: 2 }),
                     modelBreakdown: JSON.stringify({ 'doubao-seedream-5-0-250821': 165 }),
                     createdDate: new Date('2026-03-13T02:00:00.000Z')
                 }
@@ -557,18 +712,22 @@ describe('TokenUsageService', () => {
                 acceptedPredictionTokens: 0,
                 rejectedPredictionTokens: 0,
                 audioInputTokens: 0,
-                audioOutputTokens: 0
+                audioOutputTokens: 0,
+                imageCount: 2,
+                videoCount: 0,
+                seconds: 0,
+                characters: 0
             }
         })
 
         const credentialQueryBuilder = createQueryBuilderMock({
             many: [
                 {
-                    id: 'credential-llm',
+                    id: 'credential-image',
                     usageExecutionId: 'execution-1',
-                    credentialId: 'credential-text',
-                    credentialName: 'Text Credential',
-                    model: 'deepseek-chat',
+                    credentialId: 'credential-image',
+                    credentialName: 'Image Credential',
+                    model: 'doubao-seedream-5-0-250821',
                     usageCount: 1,
                     attributionMode: 'ordered',
                     inputTokens: 120,
@@ -581,38 +740,18 @@ describe('TokenUsageService', () => {
                     rejectedPredictionTokens: 0,
                     audioInputTokens: 0,
                     audioOutputTokens: 0,
-                    usageBreakdown: JSON.stringify({ source: 'usage_metadata' }),
-                    chargedCredit: 100,
-                    createdDate: new Date('2026-03-13T02:00:00.000Z')
-                },
-                {
-                    id: 'credential-image',
-                    usageExecutionId: 'execution-1',
-                    credentialId: 'credential-image',
-                    credentialName: 'Image Credential',
-                    model: 'doubao-seedream-5-0-250821',
-                    usageCount: 1,
-                    attributionMode: 'ordered',
-                    inputTokens: 0,
-                    outputTokens: 0,
-                    totalTokens: 0,
-                    cacheReadTokens: 0,
-                    cacheWriteTokens: 0,
-                    reasoningTokens: 0,
-                    acceptedPredictionTokens: 0,
-                    rejectedPredictionTokens: 0,
-                    audioInputTokens: 0,
-                    audioOutputTokens: 0,
+                    imageCount: 2,
+                    videoCount: 0,
+                    seconds: 0,
+                    characters: 0,
                     usageBreakdown: JSON.stringify({ units: 2, generated_images: 2, source: 'media_generation' }),
                     chargedCredit: 220,
-                    createdDate: new Date('2026-03-13T02:00:01.000Z')
+                    createdDate: new Date('2026-03-13T02:00:00.000Z')
                 }
             ]
         })
 
-        const credentialCallQueryBuilder = createQueryBuilderMock({
-            many: []
-        })
+        const credentialCallQueryBuilder = createQueryBuilderMock({ many: [] })
 
         mockGetRunningExpressApp.mockReturnValue({
             AppDataSource: {
@@ -664,16 +803,19 @@ describe('TokenUsageService', () => {
 
         const { TokenUsageService } = await import('../../../src/enterprise/services/token-usage.service')
         const service = new TokenUsageService()
-
         const result = await service.getUsageDetailsByUser('org-1', 'user-1')
 
-        expect(result.records).toHaveLength(1)
+        expect(result.total).toEqual(
+            expect.objectContaining({
+                imageCount: 2,
+                chargedCredit: 220
+            })
+        )
         expect(result.records[0]).toEqual(
             expect.objectContaining({
-                inputTokens: 120,
-                outputTokens: 45,
-                totalTokens: 165,
                 flowName: 'Flow 1',
+                imageCount: 2,
+                chargedCredit: 220,
                 usageBreakdown: expect.objectContaining({
                     units: 2,
                     generated_images: 2

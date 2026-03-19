@@ -1,12 +1,11 @@
 import { NextFunction, Request, Response } from 'express'
-import { convertTextToSpeechStream } from 'flowise-components'
+import { convertTextToSpeechStream, supportsTextToSpeechProviderUsageMetering } from 'flowise-components'
 import { StatusCodes } from 'http-status-codes'
 import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import chatflowsService from '../../services/chatflows'
 import textToSpeechService from '../../services/text-to-speech'
 import { databaseEntities } from '../../utils'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
-import logger from '../../utils/logger'
 
 const generateTextToSpeech = async (req: Request, res: Response) => {
     try {
@@ -99,6 +98,13 @@ const generateTextToSpeech = async (req: Request, res: Response) => {
             )
         }
 
+        if (req.user?.activeWorkspaceId && req.user?.id && !supportsTextToSpeechProviderUsageMetering(provider)) {
+            throw new InternalFlowiseError(
+                StatusCodes.BAD_REQUEST,
+                `Metering unsupported for text-to-speech provider "${provider}" without real provider usage`
+            )
+        }
+
         res.setHeader('Content-Type', 'text/event-stream')
         res.setHeader('Cache-Control', 'no-cache')
         res.setHeader('Connection', 'keep-alive')
@@ -131,7 +137,7 @@ const generateTextToSpeech = async (req: Request, res: Response) => {
         appServer.abortControllerPool.add(ttsAbortId, abortController)
 
         try {
-            await convertTextToSpeechStream(
+            const billingDetails = await convertTextToSpeechStream(
                 text,
                 textToSpeechConfig,
                 options,
@@ -160,41 +166,34 @@ const generateTextToSpeech = async (req: Request, res: Response) => {
                     }
                     res.write('event: tts_end\n')
                     res.write(`data: ${JSON.stringify(endResponse)}\n\n`)
-                    res.end()
-                    // Clean up from pool on successful completion
-                    appServer.abortControllerPool.remove(ttsAbortId)
                 }
             )
 
-            try {
-                const billingDetails = await textToSpeechService.consumeTextToSpeechCredit({
-                    text,
-                    provider,
-                    credentialId,
-                    model,
-                    baseUrl,
-                    languageType,
-                    instructions,
-                    optimizeInstructions,
-                    workspaceId: req.user?.activeWorkspaceId,
-                    userId: req.user?.id,
-                    options
-                })
+            const settledBillingDetails = await textToSpeechService.consumeTextToSpeechCredit({
+                provider,
+                credentialId,
+                model,
+                billingDetails,
+                workspaceId: req.user?.activeWorkspaceId,
+                userId: req.user?.id,
+                options
+            })
 
-                await textToSpeechService.recordTextToSpeechTokenUsage({
-                    workspaceId: req.user?.activeWorkspaceId,
-                    organizationId: req.user?.activeOrganizationId,
-                    userId: req.user?.id,
-                    flowType,
-                    flowId: chatflowId,
-                    chatId,
-                    chatMessageId,
-                    billingDetails,
-                    options
-                })
-            } catch (billingError) {
-                logger.warn(`Alibaba TTS credit consumption failed: ${billingError instanceof Error ? billingError.message : billingError}`)
-            }
+            await textToSpeechService.recordTextToSpeechTokenUsage({
+                workspaceId: req.user?.activeWorkspaceId,
+                organizationId: req.user?.activeOrganizationId,
+                userId: req.user?.id,
+                flowType,
+                flowId: chatflowId,
+                executionId: chatMessageId || chatId,
+                chatId,
+                chatMessageId,
+                billingDetails: settledBillingDetails,
+                options
+            })
+
+            res.end()
+            appServer.abortControllerPool.remove(ttsAbortId)
         } catch (error) {
             // Clean up from pool on error
             appServer.abortControllerPool.remove(ttsAbortId)

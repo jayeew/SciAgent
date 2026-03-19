@@ -50,7 +50,7 @@ describe('URL Handling For Phoenix Tracer', () => {
 })
 
 describe('Token usage audit callbacks', () => {
-    it('records aligned payload and credential access metadata exactly once per call id', async () => {
+    it('records aligned payload and credential access metadata exactly once per run id', async () => {
         const tokenAuditContext: Record<string, any> = {
             credentialMetadataById: {
                 'credential-1': {
@@ -82,8 +82,9 @@ describe('Token usage audit callbacks', () => {
             ]
         }
 
-        await callback.handleLLMEnd(output)
-        await callback.handleLLMEnd(output)
+        await callback.handleLLMStart({} as any, [], 'run-1')
+        await callback.handleLLMEnd(output, 'run-1')
+        await callback.handleLLMEnd(output, 'run-1')
 
         expect(tokenAuditContext.tokenUsagePayloads).toEqual([
             expect.objectContaining({
@@ -105,5 +106,54 @@ describe('Token usage audit callbacks', () => {
                 tokenUsageCredentialCallId: 'call-1'
             })
         ])
+    })
+
+    it('assigns a distinct call id to each LLM run handled by the same callback instance', async () => {
+        const tokenAuditContext: Record<string, any> = {
+            credentialMetadataById: {
+                'credential-1': {
+                    credentialName: 'DeepSeek Credential'
+                }
+            }
+        }
+        const [callback] = createTokenUsageAuditCallbacks({
+            tokenAuditContext,
+            credentialId: 'credential-1',
+            model: 'deepseek-chat',
+            provider: 'chatDeepseek'
+        })
+
+        const output = {
+            generations: [
+                [
+                    {
+                        message: {
+                            usage_metadata: {
+                                input_tokens: 10,
+                                output_tokens: 5,
+                                total_tokens: 15
+                            }
+                        }
+                    }
+                ]
+            ]
+        }
+
+        await callback.handleLLMStart({} as any, [], 'run-1')
+        await callback.handleLLMEnd(output, 'run-1')
+        await callback.handleLLMStart({} as any, [], 'run-2')
+        await callback.handleLLMEnd(output, 'run-2')
+
+        expect(tokenAuditContext.tokenUsagePayloads).toHaveLength(2)
+        expect(tokenAuditContext.credentialAccesses).toHaveLength(2)
+        expect(tokenAuditContext.tokenUsagePayloads[0].tokenUsageCredentialCallId).not.toBe(
+            tokenAuditContext.tokenUsagePayloads[1].tokenUsageCredentialCallId
+        )
+        expect(tokenAuditContext.credentialAccesses[0].tokenUsageCredentialCallId).toBe(
+            tokenAuditContext.tokenUsagePayloads[0].tokenUsageCredentialCallId
+        )
+        expect(tokenAuditContext.credentialAccesses[1].tokenUsageCredentialCallId).toBe(
+            tokenAuditContext.tokenUsagePayloads[1].tokenUsageCredentialCallId
+        )
     })
 })

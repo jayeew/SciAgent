@@ -40,4 +40,26 @@ describe('agentflowTokenUsage utility', () => {
 
         expect(seeds).toEqual([fallbackPayload])
     })
+
+    it('keeps non-token fallback seeds even when audited token payloads already exist', () => {
+        const fallbackPayload = {
+            output: {
+                mediaBilling: {
+                    billingMode: 'image_count',
+                    usage: {
+                        units: 1
+                    }
+                }
+            }
+        }
+
+        const seeds = getAgentflowTokenUsagePayloadSeeds({
+            fallbackPayload,
+            tokenAuditContext: {
+                tokenUsagePayloads: [{ model: 'deepseek-chat', usage_metadata: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } }]
+            }
+        })
+
+        expect(seeds).toEqual([fallbackPayload])
+    })
 })

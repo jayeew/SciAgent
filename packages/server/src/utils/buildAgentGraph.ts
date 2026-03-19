@@ -53,7 +53,9 @@ export const buildAgentGraph = async ({
     baseURL,
     signal,
     orgId,
-    workspaceId
+    workspaceId,
+    tokenAuditContext,
+    onTokenAuditFlush
 }: {
     agentflow: IChatFlow
     flowConfig: IFlowConfig
@@ -75,6 +77,8 @@ export const buildAgentGraph = async ({
     signal?: AbortController
     orgId: string
     workspaceId?: string
+    tokenAuditContext?: ICommonObject
+    onTokenAuditFlush?: (params?: { nodeId?: string; stage: 'stream_step' | 'final' | 'error' }) => Promise<void>
 }): Promise<any> => {
     try {
         const chatflowid = flowConfig.chatflowid
@@ -97,7 +101,8 @@ export const buildAgentGraph = async ({
             cachePool,
             uploads,
             baseURL,
-            signal: signal ?? new AbortController()
+            signal: signal ?? new AbortController(),
+            tokenAuditContext
         }
 
         let streamResults
@@ -277,6 +282,20 @@ export const buildAgentGraph = async ({
                                 }
                             }
                         }
+
+                        if (onTokenAuditFlush) {
+                            const outputNodeIds = Object.keys(output)
+                                .map((agentName) =>
+                                    output[agentName]?.messages?.length
+                                        ? output[agentName].messages[output[agentName].messages.length - 1]?.additional_kwargs?.nodeId
+                                        : undefined
+                                )
+                                .filter((nodeId): nodeId is string => typeof nodeId === 'string' && !!nodeId)
+                            await onTokenAuditFlush({
+                                nodeId: outputNodeIds[outputNodeIds.length - 1],
+                                stage: 'stream_step'
+                            })
+                        }
                     } else {
                         finalResult = output.__end__.messages.length ? output.__end__.messages.pop()?.content : ''
                         if (Array.isArray(finalResult)) finalResult = output.__end__.instructions
@@ -381,6 +400,10 @@ export const buildAgentGraph = async ({
                     sseStreamer.streamEndEvent(chatId)
                 }
 
+                if (onTokenAuditFlush) {
+                    await onTokenAuditFlush({ stage: 'final' })
+                }
+
                 return {
                     finalResult,
                     finalAction,
@@ -393,6 +416,9 @@ export const buildAgentGraph = async ({
         } catch (e) {
             // clear agent memory because checkpoints were saved during runtime
             await clearSessionMemory(nodes, componentNodes, chatId, appDataSource, orgId, sessionId)
+            if (onTokenAuditFlush) {
+                await onTokenAuditFlush({ stage: 'error' })
+            }
             if (getErrorMessage(e).includes('Aborted')) {
                 if (shouldStreamResponse && sseStreamer) {
                     sseStreamer.streamAbortEvent(chatId)

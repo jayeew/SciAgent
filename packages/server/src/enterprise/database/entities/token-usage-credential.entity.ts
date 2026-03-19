@@ -62,6 +62,18 @@ export class TokenUsageCredential {
     @Column({ type: 'int', default: 0 })
     audioOutputTokens: number
 
+    @Column({ type: 'int', default: 0 })
+    imageCount: number
+
+    @Column({ type: 'int', default: 0 })
+    videoCount: number
+
+    @Column({ type: 'int', default: 0 })
+    seconds: number
+
+    @Column({ type: 'int', default: 0 })
+    characters: number
+
     @Column({ type: 'text', nullable: true })
     usageBreakdown?: string
 
