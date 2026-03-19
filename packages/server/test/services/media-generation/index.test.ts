@@ -51,6 +51,34 @@ describe('mediaGenerationService', () => {
         })
     })
 
+    it('parses Alibaba image count billing details', () => {
+        const billingDetails = mediaGenerationService.getMediaGenerationBillingDetails({
+            mediaBilling: {
+                provider: 'alibaba-dashscope',
+                credentialId: 'credential-2',
+                model: 'qwen-image-2.0-pro',
+                source: 'media_generation',
+                tokenUsageCredentialCallId: 'call-img-1',
+                billingMode: 'image_count',
+                usage: {
+                    units: 3
+                }
+            }
+        } as any)
+
+        expect(billingDetails).toEqual({
+            provider: 'alibaba-dashscope',
+            credentialId: 'credential-2',
+            model: 'qwen-image-2.0-pro',
+            source: 'media_generation',
+            tokenUsageCredentialCallId: 'call-img-1',
+            billingMode: 'image_count',
+            usage: {
+                units: 3
+            }
+        })
+    })
+
     it('reuses or generates tokenUsageCredentialCallId', () => {
         const existingBilling = {
             tokenUsageCredentialCallId: 'existing-call-id'

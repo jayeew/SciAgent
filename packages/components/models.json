@@ -2565,6 +2565,27 @@
             ]
         },
         {
+            "name": "alibabaImage",
+            "models": [
+                {
+                    "label": "qwen-image-2.0-pro",
+                    "name": "qwen-image-2.0-pro"
+                },
+                {
+                    "label": "qwen-image-2.0-pro-2026-03-03",
+                    "name": "qwen-image-2.0-pro-2026-03-03"
+                },
+                {
+                    "label": "qwen-image-2.0",
+                    "name": "qwen-image-2.0"
+                },
+                {
+                    "label": "qwen-image-2.0-2026-03-03",
+                    "name": "qwen-image-2.0-2026-03-03"
+                }
+            ]
+        },
+        {
             "name": "doubaoImage",
             "models": [
                 {

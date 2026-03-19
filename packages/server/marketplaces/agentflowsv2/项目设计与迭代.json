@@ -2812,7 +2812,7 @@
             },
             "data": {
                 "id": "loopAgentflow_1",
-                "label": "回到方案生成",
+                "label": "回到方案生成（用户补充）",
                 "version": 1.2,
                 "name": "loopAgentflow",
                 "type": "Loop",
@@ -2820,7 +2820,7 @@
                 "hideOutput": true,
                 "baseClasses": ["Loop"],
                 "category": "Agent Flows",
-                "description": "用户补充意见或评审未通过时，回到方案生成继续迭代",
+                "description": "用户补充意见后，回到方案生成继续迭代",
                 "inputParams": [
                     {
                         "label": "Loop Back To",
@@ -2854,6 +2854,61 @@
             "positionAbsolute": {
                 "x": 2270,
                 "y": 240
+            },
+            "selected": false,
+            "dragging": false
+        },
+        {
+            "id": "loopAgentflow_2",
+            "type": "agentFlow",
+            "position": {
+                "x": 2270,
+                "y": 360
+            },
+            "data": {
+                "id": "loopAgentflow_2",
+                "label": "回到方案生成（评审未通过）",
+                "version": 1.2,
+                "name": "loopAgentflow",
+                "type": "Loop",
+                "color": "#FFA07A",
+                "hideOutput": true,
+                "baseClasses": ["Loop"],
+                "category": "Agent Flows",
+                "description": "用户认可后若评审仍未通过，回到方案生成继续迭代",
+                "inputParams": [
+                    {
+                        "label": "Loop Back To",
+                        "name": "loopBackToNode",
+                        "type": "asyncOptions",
+                        "loadMethod": "listPreviousNodes",
+                        "freeSolo": true,
+                        "id": "loopAgentflow_0-input-loopBackToNode-asyncOptions",
+                        "display": true
+                    },
+                    {
+                        "label": "Max Loop Count",
+                        "name": "maxLoopCount",
+                        "type": "number",
+                        "default": 5,
+                        "id": "loopAgentflow_0-input-maxLoopCount-number",
+                        "display": true
+                    }
+                ],
+                "inputAnchors": [],
+                "inputs": {
+                    "loopBackToNode": "llmAgentflow_1-方案生成",
+                    "maxLoopCount": 4
+                },
+                "outputAnchors": [],
+                "outputs": {},
+                "selected": false
+            },
+            "width": 184,
+            "height": 66,
+            "positionAbsolute": {
+                "x": 2270,
+                "y": 360
             },
             "selected": false,
             "dragging": false
@@ -3596,15 +3651,15 @@
         {
             "source": "conditionAgentflow_1",
             "sourceHandle": "conditionAgentflow_1-output-1",
-            "target": "loopAgentflow_1",
-            "targetHandle": "loopAgentflow_1",
+            "target": "loopAgentflow_2",
+            "targetHandle": "loopAgentflow_2",
             "data": {
                 "sourceColor": "#FFB938",
                 "targetColor": "#FFA07A",
                 "isHumanInput": false
             },
             "type": "agentFlow",
-            "id": "conditionAgentflow_1-conditionAgentflow_1-output-1-loopAgentflow_1-loopAgentflow_1"
+            "id": "conditionAgentflow_1-conditionAgentflow_1-output-1-loopAgentflow_2-loopAgentflow_2"
         },
         {
             "source": "llmAgentflow_9",
